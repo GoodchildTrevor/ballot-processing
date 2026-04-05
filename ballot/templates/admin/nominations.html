@@ -3,18 +3,29 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Номинации</h1>
 
-<div class="bg-white shadow rounded-xl p-6 mb-8">
+<div class="bg-white shadow rounded-xl p-6 mb-8" x-data="{ type: 'RANK' }">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Создать номинацию</h2>
   <form method="post" action="/admin/nominations" class="flex flex-wrap gap-3 items-end">
     <div>
       <label class="block text-xs text-gray-500 mb-1">Название</label>
-      <input type="text" name="name" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
+      <input type="text" name="name" required
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
     </div>
     <div>
       <label class="block text-xs text-gray-500 mb-1">Тип</label>
-      <select name="type" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-        <option value="RANK">RANK (рейтинг 1-10)</option>
-        <option value="PICK">PICK (выбрать одного)</option>
+      <select name="type" x-model="type"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+        <option value="RANK">RANK (рейтинг 1–10)</option>
+        <option value="PICK">PICK (выбрать N лучших)</option>
+      </select>
+    </div>
+    <div x-show="type === 'PICK'">
+      <label class="block text-xs text-gray-500 mb-1">Лимит выбора</label>
+      <select name="pick_limit"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+        {% for i in range(1, 6) %}
+        <option value="{{ i }}">{{ i }}</option>
+        {% endfor %}
       </select>
     </div>
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
@@ -24,7 +35,13 @@
 <div class="bg-white shadow rounded-xl p-6">
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
-      <tr><th class="pb-2 pr-4">ID</th><th class="pb-2 pr-4">Название</th><th class="pb-2 pr-4">Тип</th><th class="pb-2">Номинанты</th></tr>
+      <tr>
+        <th class="pb-2 pr-4">ID</th>
+        <th class="pb-2 pr-4">Название</th>
+        <th class="pb-2 pr-4">Тип</th>
+        <th class="pb-2 pr-4">Лимит</th>
+        <th class="pb-2">Номинанты</th>
+      </tr>
     </thead>
     <tbody>
       {% for nom in nominations %}
@@ -34,9 +51,17 @@
           <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
         </td>
         <td class="py-2 pr-4">
-          <span class="px-2 py-0.5 rounded text-xs font-semibold {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
             {{ nom.type.value }}
           </span>
+        </td>
+        <td class="py-2 pr-4 text-gray-500 text-xs">
+          {% if nom.type.value == 'PICK' %}
+            выбрать {{ nom.pick_limit or 1 }}
+          {% else %}
+            —
+          {% endif %}
         </td>
         <td class="py-2">{{ nom.nominees | length }}</td>
       </tr>

@@ -1,7 +1,8 @@
 import enum
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, ForeignKey, DateTime, Enum as SAEnum
+    Column, Integer, String, ForeignKey, DateTime,
+    Enum as SAEnum, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from ballot.database import Base
@@ -32,6 +33,7 @@ class Nomination(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     type = Column(SAEnum(NominationType), nullable=False)
+    pick_limit = Column(Integer, nullable=True)  # NULL for RANK; 1-5 for PICK
     nominees = relationship("Nominee", back_populates="nomination")
 
 
@@ -63,6 +65,9 @@ class Vote(Base):
     nominee_id = Column(Integer, ForeignKey("nominees.id"), nullable=False)
     voter = relationship("Voter", back_populates="votes")
     nominee = relationship("Nominee", back_populates="votes")
+    __table_args__ = (
+        UniqueConstraint("voter_id", "nominee_id", name="uq_vote_voter_nominee"),
+    )
 
 
 class Ranking(Base):

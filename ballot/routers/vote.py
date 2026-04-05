@@ -16,10 +16,7 @@ def index(request: Request):
 
 
 @router.post("/")
-async def enter_name(
-    request: Request,
-    db: Session = Depends(get_db),
-):
+async def enter_name(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     name = str(form.get("name", "")).strip()
     if not name:
@@ -52,11 +49,7 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/vote/{voter_id}")
-async def submit_vote(
-    voter_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-):
+async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get_db)):
     voter = db.get(Voter, voter_id)
     if not voter or voter.voted_at is not None:
         return RedirectResponse(url="/", status_code=303)
@@ -64,11 +57,11 @@ async def submit_vote(
     form = await request.form()
     nominations = db.query(Nomination).all()
 
+    errors = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
             for nominee in nom.nominees:
-                key = f"rank_{nom.id}_{nominee.film_id}"
-                val = form.get(key)
+                val = form.get(f"rank_{nom.id}_{nominee.film_id}")
                 if val:
                     db.add(Ranking(
                         voter_id=voter.id,
@@ -77,8 +70,11 @@ async def submit_vote(
                         rank=int(val),
                     ))
         elif nom.type == NominationType.PICK:
-            nominee_id = form.get(f"pick_{nom.id}")
-            if nominee_id:
+            chosen = form.getlist(f"pick_{nom.id}")
+            limit = nom.pick_limit or 1
+            # Server-side guard: silently trim to limit
+            chosen = chosen[:limit]
+            for nominee_id in chosen:
                 db.add(Vote(voter_id=voter.id, nominee_id=int(nominee_id)))
 
     voter.voted_at = datetime.now(timezone.utc)

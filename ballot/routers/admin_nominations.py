@@ -20,9 +20,12 @@ def list_nominations(request: Request, db: Session = Depends(get_db)):
 def create_nomination(
     name: str = Form(...),
     type: NominationType = Form(...),
+    pick_limit: int = Form(None),
     db: Session = Depends(get_db),
 ):
-    db.add(Nomination(name=name, type=type))
+    # pick_limit only meaningful for PICK; force NULL for RANK
+    limit = pick_limit if type == NominationType.PICK else None
+    db.add(Nomination(name=name, type=type, pick_limit=limit))
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
