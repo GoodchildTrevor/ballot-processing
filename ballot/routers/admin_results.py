@@ -49,7 +49,7 @@ def get_results(db: Session):
 @router.get("/results", response_class=HTMLResponse)
 def show_results(request: Request, db: Session = Depends(get_db)):
     results = get_results(db)
-    return templates.TemplateResponse("admin/results.html", {"request": request, "results": results})
+    return templates.TemplateResponse(request, "admin/results.html", {"results": results})
 
 
 @router.get("/results/export")

@@ -13,7 +13,7 @@ templates = Jinja2Templates(directory="ballot/templates")
 @router.get("/films", response_class=HTMLResponse)
 def list_films(request: Request, db: Session = Depends(get_db)):
     films = db.query(Film).order_by(Film.year.desc(), Film.title).all()
-    return templates.TemplateResponse("admin/films.html", {"request": request, "films": films})
+    return templates.TemplateResponse(request, "admin/films.html", {"films": films})
 
 
 @router.post("/films")
@@ -27,8 +27,7 @@ def create_film(
         return RedirectResponse(
             url=f"/admin/films?error=duplicate&title={title}&year={year}", status_code=303
         )
-    film = Film(title=title, year=year)
-    db.add(film)
+    db.add(Film(title=title, year=year))
     db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
 
@@ -41,8 +40,8 @@ def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).all()
     persons = db.query(Person).order_by(Person.name).all()
     return templates.TemplateResponse(
-        "admin/film_detail.html",
-        {"request": request, "film": film, "nominations": nominations, "persons": persons},
+        request, "admin/film_detail.html",
+        {"film": film, "nominations": nominations, "persons": persons},
     )
 
 
@@ -58,17 +57,13 @@ def add_nominee(
         return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
     if nom.type == NominationType.RANK:
         person_id = None
-    nominee = Nominee(nomination_id=nomination_id, film_id=film_id, person_id=person_id)
-    db.add(nominee)
+    db.add(Nominee(nomination_id=nomination_id, film_id=film_id, person_id=person_id))
     db.commit()
     return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
 
 
 @router.post("/nominees/{nominee_id}/delete")
-def delete_nominee(
-    nominee_id: int,
-    db: Session = Depends(get_db),
-):
+def delete_nominee(nominee_id: int, db: Session = Depends(get_db)):
     nominee = db.get(Nominee, nominee_id)
     film_id = nominee.film_id if nominee else None
     if nominee:
