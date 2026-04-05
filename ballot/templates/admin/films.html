@@ -49,6 +49,26 @@
 </script>
 
 <div x-data="filmsTable()" class="bg-white shadow rounded-xl p-6">
+
+  {# Year filter pills #}
+  <div class="flex flex-wrap gap-1 mb-3">
+    <button type="button"
+            @click="yearFilter = null"
+            :class="yearFilter === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+            class="px-3 py-1 rounded-full text-xs font-medium transition">
+      Все годы
+    </button>
+    <template x-for="y in allYears" :key="y">
+      <button type="button"
+              @click="yearFilter = y"
+              :class="yearFilter === y ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3 py-1 rounded-full text-xs font-medium transition"
+              x-text="y">
+      </button>
+    </template>
+  </div>
+
+  {# Search + counter #}
   <div class="flex flex-wrap gap-3 items-center mb-4">
     <input x-model="search" type="text" placeholder="Поиск по названию..."
            class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
@@ -117,8 +137,11 @@
 
 <script>
 function filmsTable() {
+  const allYears = [...new Set(FILMS_DATA.map(f => f.year))].sort((a, b) => b - a);
   return {
     search: '',
+    yearFilter: null,
+    allYears,
     col: 'year',
     dir: 'desc',
     sortBy(c) {
@@ -131,7 +154,11 @@ function filmsTable() {
     },
     filtered() {
       const q = this.search.toLowerCase();
-      let rows = FILMS_DATA.filter(f => !q || f.title.toLowerCase().includes(q));
+      let rows = FILMS_DATA.filter(f => {
+        const matchYear = this.yearFilter === null || f.year === this.yearFilter;
+        const matchSearch = !q || f.title.toLowerCase().includes(q);
+        return matchYear && matchSearch;
+      });
       const c = this.col, d = this.dir;
       rows.sort((a, b) => {
         let av = a[c], bv = b[c];
