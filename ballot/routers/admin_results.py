@@ -53,7 +53,7 @@ def show_results(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/results/export")
-def export_results(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+def export_results(db: Session = Depends(get_db)):
     results = get_results(db)
     wb = openpyxl.Workbook()
     wb.remove(wb.active)

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -16,12 +16,17 @@ def index(request: Request):
 
 
 @router.post("/")
-def enter_name(
+async def enter_name(
     request: Request,
-    name: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    name = name.strip()
+    form = await request.form()
+    name = str(form.get("name", "")).strip()
+    if not name:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": "Введите ник."},
+        )
     voter = db.query(Voter).filter(Voter.name == name).first()
     if not voter:
         voter = Voter(name=name)
@@ -40,7 +45,12 @@ def enter_name(
 def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
     voter = db.get(Voter, voter_id)
     if not voter:
-        return HTMLResponse("Voter not found", status_code=404)
+        return HTMLResponse("Участник не найден.", status_code=404)
+    if voter.voted_at is not None:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": "Вы уже проголосовали."},
+        )
     nominations = db.query(Nomination).all()
     rank_noms = [n for n in nominations if n.type == NominationType.RANK]
     pick_noms = [n for n in nominations if n.type == NominationType.PICK]
@@ -51,7 +61,7 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/vote/{voter_id}")
-def submit_vote(
+async def submit_vote(
     voter_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -60,10 +70,7 @@ def submit_vote(
     if not voter or voter.voted_at is not None:
         return RedirectResponse(url="/", status_code=303)
 
-    # Parse form data manually (async would need await, sync uses .form())
-    import asyncio
-    form = asyncio.get_event_loop().run_until_complete(request.form())
-
+    form = await request.form()
     nominations = db.query(Nomination).all()
 
     for nom in nominations:

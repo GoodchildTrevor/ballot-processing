@@ -21,12 +21,12 @@ def create_film(
     title: str = Form(...),
     year: int = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_admin),
 ):
     existing = db.query(Film).filter(Film.title == title, Film.year == year).first()
     if existing:
-        # Redirect back with error param
-        return RedirectResponse(url=f"/admin/films?error=duplicate&title={title}&year={year}", status_code=303)
+        return RedirectResponse(
+            url=f"/admin/films?error=duplicate&title={title}&year={year}", status_code=303
+        )
     film = Film(title=title, year=year)
     db.add(film)
     db.commit()
@@ -37,7 +37,7 @@ def create_film(
 def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
     film = db.get(Film, film_id)
     if not film:
-        return HTMLResponse("Film not found", status_code=404)
+        return HTMLResponse("Фильм не найден.", status_code=404)
     nominations = db.query(Nomination).all()
     persons = db.query(Person).order_by(Person.name).all()
     return templates.TemplateResponse(
@@ -52,7 +52,6 @@ def add_nominee(
     nomination_id: int = Form(...),
     person_id: int = Form(None),
     db: Session = Depends(get_db),
-    _: str = Depends(require_admin),
 ):
     nom = db.get(Nomination, nomination_id)
     if not nom:
@@ -69,7 +68,6 @@ def add_nominee(
 def delete_nominee(
     nominee_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_admin),
 ):
     nominee = db.get(Nominee, nominee_id)
     film_id = nominee.film_id if nominee else None

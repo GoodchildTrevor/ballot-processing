@@ -23,7 +23,6 @@ def create_nomination(
     name: str = Form(...),
     type: NominationType = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_admin),
 ):
     nom = Nomination(name=name, type=type)
     db.add(nom)
@@ -35,10 +34,29 @@ def create_nomination(
 def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_db)):
     nom = db.get(Nomination, nom_id)
     if not nom:
-        return HTMLResponse("Nomination not found", status_code=404)
+        return HTMLResponse("Номинация не найдена.", status_code=404)
     films = db.query(Film).order_by(Film.title).all()
     persons = db.query(Person).order_by(Person.name).all()
     return templates.TemplateResponse(
         "admin/nomination_detail.html",
         {"request": request, "nom": nom, "films": films, "persons": persons},
     )
+
+
+@router.post("/nominations/{nom_id}/nominees")
+def add_nominee_via_nomination(
+    nom_id: int,
+    film_id: int = Form(...),
+    person_id: int = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Add a nominee directly from nomination detail page."""
+    nom = db.get(Nomination, nom_id)
+    if not nom:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+    if nom.type == NominationType.RANK:
+        person_id = None
+    nominee = Nominee(nomination_id=nom_id, film_id=film_id, person_id=person_id)
+    db.add(nominee)
+    db.commit()
+    return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
