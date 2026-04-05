@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -49,15 +50,21 @@ def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
 def add_nominee(
     film_id: int,
     nomination_id: int = Form(...),
-    person_id: int = Form(None),
+    person_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nomination_id)
     if not nom:
         return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
-    if nom.type == NominationType.RANK:
-        person_id = None
-    db.add(Nominee(nomination_id=nomination_id, film_id=film_id, person_id=person_id))
+
+    pid: Optional[int] = None
+    if nom.type == NominationType.PICK and person_id and person_id.strip():
+        try:
+            pid = int(person_id)
+        except ValueError:
+            pid = None
+
+    db.add(Nominee(nomination_id=nomination_id, film_id=film_id, person_id=pid))
     db.commit()
     return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
 

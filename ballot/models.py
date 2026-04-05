@@ -33,7 +33,8 @@ class Nomination(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     type = Column(SAEnum(NominationType), nullable=False)
-    pick_limit = Column(Integer, nullable=True)  # NULL for RANK; 1-5 for PICK
+    pick_limit = Column(Integer, nullable=True)   # NULL for RANK; 1-5 for PICK
+    year_filter = Column(Integer, nullable=True)  # NULL = no filter; int = only films of that year
     nominees = relationship("Nominee", back_populates="nomination")
 
 
