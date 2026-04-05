@@ -15,61 +15,128 @@
   </form>
 </div>
 
-<div class="bg-white shadow rounded-xl p-6">
-  <p class="text-xs text-gray-400 mb-4">Всего персон: <strong>{{ persons | length }}</strong></p>
-  {% if persons %}
-  <table class="w-full text-sm" x-data="{ editing: null }">
-    <thead class="text-left text-gray-500 border-b">
+{# Serialise to JSON for Alpine search #}
+<script>
+const PERSONS_DATA = [
+  {% for person in persons %}
+  {
+    id: {{ person.id }},
+    name: {{ person.name | tojson }},
+    longlist_count: {{ person.nominees | length }},
+    longlists: [
+      {% for n in person.nominees %}
+      {
+        nom: {{ n.nomination.name | tojson }},
+        film: {{ n.film.title | tojson }},
+        year: {{ n.film.year }}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+</script>
+
+<div x-data="personsTable()" class="bg-white shadow rounded-xl p-6">
+
+  <div class="flex flex-wrap gap-3 items-center mb-4">
+    <input x-model="search" type="text" placeholder="Поиск по имени..."
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
+    <span class="text-xs text-gray-400" x-text="filtered().length + ' персон'"></span>
+  </div>
+
+  <table class="w-full text-sm">
+    <thead class="text-left text-gray-500 border-b select-none">
       <tr>
-        <th class="pb-2 pr-4">ID</th>
-        <th class="pb-2 pr-4">Имя</th>
-        <th class="pb-2 pr-4">Номинаций</th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('name')">
+          Имя <span x-text="sortIcon('name')" class="text-xs"></span>
+        </th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('longlist_count')">
+          Лонг-листов <span x-text="sortIcon('longlist_count')" class="text-xs"></span>
+        </th>
+        <th class="pb-2 pr-4">В лонг-листах</th>
         <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
-      {% for person in persons %}
-      <tr class="border-b last:border-0 hover:bg-gray-50" x-data="{ editing: false }">
-        <td class="py-2 pr-4 text-gray-400">{{ person.id }}</td>
+      <template x-for="p in filtered()" :key="p.id">
+        <tr class="border-b last:border-0 hover:bg-gray-50 align-top" x-data="{ editing: false }">
 
-        {# Name cell: view or inline edit #}
-        <td class="py-2 pr-4">
-          <span x-show="!editing" class="font-medium">{{ person.name }}</span>
-          <form x-show="editing" method="post" action="/admin/persons/{{ person.id }}/edit"
-                class="flex gap-2 items-center">
-            <input type="text" name="name" value="{{ person.name }}"
-                   class="border border-gray-300 rounded px-2 py-1 text-sm w-48 focus:ring-indigo-400 focus:outline-none" />
-            <button type="submit" class="text-xs text-indigo-600 hover:underline">Сохранить</button>
-            <button type="button" @click="editing = false" class="text-xs text-gray-400 hover:underline">Отмена</button>
-          </form>
-        </td>
+          {# Name / inline edit #}
+          <td class="py-2 pr-4">
+            <span x-show="!editing" class="font-medium" x-text="p.name"></span>
+            <form x-show="editing" :action="'/admin/persons/' + p.id + '/edit'"
+                  method="post" class="flex gap-2 items-center">
+              <input type="text" name="name" :value="p.name"
+                     class="border border-gray-300 rounded px-2 py-1 text-sm w-48 focus:ring-indigo-400 focus:outline-none" required />
+              <button type="submit" class="text-xs text-indigo-600 hover:underline">Сохранить</button>
+              <button type="button" @click="editing = false" class="text-xs text-gray-400 hover:underline">Отмена</button>
+            </form>
+          </td>
 
-        <td class="py-2 pr-4 text-gray-500 text-xs">
-          {{ person.nominees | length }}
-          номинац
-          {% if person.nominees %}
-          <span class="text-gray-300">—
-            {% for nom in person.nominees %}
-              {{ nom.nomination.name }}{% if not loop.last %}, {% endif %}
-            {% endfor %}
-          </span>
-          {% endif %}
-        </td>
+          {# Longlist count #}
+          <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="p.longlist_count || '—'"></td>
 
-        <td class="py-2 flex gap-3 justify-end">
-          <button type="button" @click="editing = !editing"
-                  class="text-xs text-indigo-500 hover:underline">Редактировать</button>
-          <form method="post" action="/admin/persons/{{ person.id }}/delete"
-                onsubmit="return confirm('Удалить {{ person.name }}?')">
-            <button class="text-xs text-red-500 hover:underline">Удалить</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
+          {# Longlist details: film (year) — nomination #}
+          <td class="py-2 pr-4">
+            <template x-if="p.longlists.length === 0">
+              <span class="text-gray-300 text-xs">—</span>
+            </template>
+            <template x-for="ll in p.longlists" :key="ll.nom + ll.film">
+              <div class="text-xs mb-0.5">
+                <span class="font-medium text-gray-700" x-text="ll.film"></span>
+                <span class="text-gray-400" x-text="' (' + ll.year + ')'"></span>
+                <span class="text-indigo-400 ml-1" x-text="'— ' + ll.nom"></span>
+              </div>
+            </template>
+          </td>
+
+          {# Actions #}
+          <td class="py-2 text-right whitespace-nowrap">
+            <button type="button" @click="editing = !editing"
+                    class="text-xs text-indigo-500 hover:underline mr-2"
+                    x-text="editing ? '✕' : 'Редактировать'"></button>
+            <form method="post" :action="'/admin/persons/' + p.id + '/delete'" class="inline"
+                  @submit.prevent="confirm('Удалить ' + p.name + '?') && $el.submit()">
+              <button class="text-xs text-red-500 hover:underline">Удалить</button>
+            </form>
+          </td>
+        </tr>
+      </template>
     </tbody>
   </table>
-  {% else %}
-  <p class="text-gray-400 text-sm">Персон пока нет. Добавьте режиссёров, актёров или композиторов.</p>
-  {% endif %}
+
+  <p x-show="filtered().length === 0" class="text-center text-gray-400 py-8 text-sm">Ничего не найдено.</p>
 </div>
+
+<script>
+function personsTable() {
+  return {
+    search: '',
+    col: 'name',
+    dir: 'asc',
+    sortBy(c) {
+      if (this.col === c) this.dir = this.dir === 'asc' ? 'desc' : 'asc';
+      else { this.col = c; this.dir = c === 'longlist_count' ? 'desc' : 'asc'; }
+    },
+    sortIcon(c) {
+      if (this.col !== c) return '⇕';
+      return this.dir === 'asc' ? '▲' : '▼';
+    },
+    filtered() {
+      const q = this.search.toLowerCase();
+      let rows = PERSONS_DATA.filter(p => !q || p.name.toLowerCase().includes(q));
+      const c = this.col, d = this.dir;
+      rows.sort((a, b) => {
+        let av = a[c], bv = b[c];
+        if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+        if (av < bv) return d === 'asc' ? -1 : 1;
+        if (av > bv) return d === 'asc' ? 1 : -1;
+        return 0;
+      });
+      return rows;
+    }
+  }
+}
+</script>
 {% endblock %}
