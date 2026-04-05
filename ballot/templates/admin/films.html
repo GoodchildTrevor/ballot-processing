@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Фильмы — Админка{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">Фильмы</h1>
+</div>
+
+{% set error = request.query_params.get('error') %}
+{% if error == 'duplicate' %}
+<div class="bg-red-100 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
+  Фильм «{{ request.query_params.get('title') }} ({{ request.query_params.get('year') }})» уже существует.
+</div>
+{% endif %}
+
+<div class="bg-white shadow rounded-xl p-6 mb-8">
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм</h2>
+  <form method="post" action="/admin/films" class="flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Название</label>
+      <input type="text" name="title" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Год</label>
+      <input type="number" name="year" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
+    </div>
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Добавить</button>
+  </form>
+</div>
+
+<div x-data="{ search: '' }" class="bg-white shadow rounded-xl p-6">
+  <div class="mb-4">
+    <input x-model="search" type="text" placeholder="Поиск по названию..."
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full max-w-sm focus:ring-indigo-400 focus:outline-none" />
+  </div>
+  <table class="w-full text-sm">
+    <thead class="text-left text-gray-500 border-b">
+      <tr>
+        <th class="pb-2 pr-4">ID</th>
+        <th class="pb-2 pr-4">Название</th>
+        <th class="pb-2 pr-4">Год</th>
+        <th class="pb-2">Номинации</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for film in films %}
+      <tr x-show="search === '' || '{{ film.title }}'.toLowerCase().includes(search.toLowerCase())"
+          class="border-b last:border-0 hover:bg-gray-50 transition">
+        <td class="py-2 pr-4 text-gray-400">{{ film.id }}</td>
+        <td class="py-2 pr-4">
+          <a href="/admin/films/{{ film.id }}" class="text-indigo-600 hover:underline font-medium">{{ film.title }}</a>
+        </td>
+        <td class="py-2 pr-4">{{ film.year }}</td>
+        <td class="py-2 text-gray-500 text-xs">
+          {% for nominee in film.nominees %}
+          <span class="inline-block bg-indigo-50 text-indigo-700 rounded px-2 py-0.5 mr-1 mb-1">{{ nominee.nomination.name }}</span>
+          {% else %}
+          <span class="text-gray-300">—</span>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

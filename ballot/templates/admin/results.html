@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Результаты — Админка{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold">Результаты</h1>
+  <a href="/admin/results/export" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">📥 Скачать .xlsx</a>
+</div>
+
+{% for item in results %}
+<div class="bg-white shadow rounded-xl p-6 mb-6">
+  <div class="flex items-center gap-3 mb-4">
+    <h2 class="text-lg font-bold text-gray-800">{{ item.nom.name }}</h2>
+    <span class="px-2 py-0.5 rounded text-xs font-semibold {{ 'bg-yellow-100 text-yellow-700' if item.nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+      {{ item.nom.type.value }}
+    </span>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="text-left text-gray-500 border-b">
+      <tr>
+        <th class="pb-2 pr-4">Место</th>
+        <th class="pb-2 pr-4">Участник</th>
+        <th class="pb-2">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for label, score in item.rows %}
+      <tr class="border-b last:border-0 hover:bg-gray-50">
+        <td class="py-2 pr-4 font-bold text-indigo-600">{{ loop.index }}</td>
+        <td class="py-2 pr-4">{{ label }}</td>
+        <td class="py-2 font-semibold">{{ score }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="py-4 text-gray-400 text-center">Голосов пока нет</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Бюллетень — {{ voter.name }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-10">
+    <h1 class="text-2xl font-bold text-indigo-700 mb-1">🎬 Бюллетень</h1>
+    <p class="text-gray-500 mb-8">Привет, <strong>{{ voter.name }}</strong>! Заполните все поля и нажмите «Отправить голос».</p>
+
+    <form method="post" action="/vote/{{ voter.id }}">
+
+      {% if rank_noms %}
+      <h2 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Рейтинговые номинации</h2>
+      {% for nom in rank_noms %}
+      <div class="bg-white rounded-xl shadow-sm p-6 mb-5">
+        <h3 class="font-bold text-indigo-700 mb-4">{{ nom.name }}</h3>
+        <p class="text-xs text-gray-400 mb-3">Поставьте каждому фильму место от 1 до 10 (1 — лучший)</p>
+        {% for nominee in nom.nominees %}
+        <div class="flex items-center justify-between py-2 border-b last:border-0">
+          <span class="text-sm text-gray-800">{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span></span>
+          <select name="rank_{{ nom.id }}_{{ nominee.film_id }}"
+                  class="ml-4 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-400 focus:outline-none">
+            <option value="">—</option>
+            {% for i in range(1, 11) %}
+            <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      {% if pick_noms %}
+      <h2 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Выбор победителя</h2>
+      {% for nom in pick_noms %}
+      <div class="bg-white rounded-xl shadow-sm p-6 mb-5">
+        <h3 class="font-bold text-indigo-700 mb-4">{{ nom.name }}</h3>
+        <div class="space-y-3">
+          {% for nominee in nom.nominees %}
+          <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-indigo-50 transition">
+            <input type="radio" name="pick_{{ nom.id }}" value="{{ nominee.id }}"
+                   class="accent-indigo-600 w-4 h-4" />
+            <span class="text-sm text-gray-800">
+              {% if nominee.person %}
+              {{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
+              {% else %}
+              {{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>
+              {% endif %}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <button type="submit"
+              class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base hover:bg-indigo-700 transition mt-4">
+        ✅ Отправить голос
+      </button>
+    </form>
+  </div>
+</body>
+</html>

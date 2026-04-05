@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ nom.name }}{% endblock %}
+{% block content %}
+<a href="/admin/nominations" class="text-sm text-indigo-500 hover:underline">← Все номинации</a>
+<h1 class="text-2xl font-bold mt-2 mb-1">{{ nom.name }}</h1>
+<span class="px-2 py-0.5 rounded text-xs font-semibold mb-6 inline-block {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+  {{ nom.type.value }}
+</span>
+
+<div class="bg-white shadow rounded-xl p-6 mb-8 mt-4">
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить номинанта</h2>
+  <form method="post" action="/admin/films/0/nominees" class="flex flex-wrap gap-3 items-end">
+    <input type="hidden" name="nomination_id" value="{{ nom.id }}" />
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Фильм</label>
+      <select name="film_id" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+        {% for film in films %}
+        <option value="{{ film.id }}">{{ film.title }} ({{ film.year }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if nom.type.value == 'PICK' %}
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Персона</label>
+      <select name="person_id" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+        <option value="">— нет —</option>
+        {% for person in persons %}
+        <option value="{{ person.id }}">{{ person.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Добавить</button>
+  </form>
+</div>
+
+<div class="bg-white shadow rounded-xl p-6">
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Номинанты</h2>
+  <table class="w-full text-sm">
+    <thead class="text-left text-gray-500 border-b">
+      <tr><th class="pb-2 pr-4">Фильм</th><th class="pb-2 pr-4">Персона</th><th class="pb-2"></th></tr>
+    </thead>
+    <tbody>
+      {% for nominee in nom.nominees %}
+      <tr class="border-b last:border-0 hover:bg-gray-50">
+        <td class="py-2 pr-4">{{ nominee.film.title }}</td>
+        <td class="py-2 pr-4">{{ nominee.person.name if nominee.person else '—' }}</td>
+        <td class="py-2">
+          <form method="post" action="/admin/nominees/{{ nominee.id }}/delete">
+            <button class="text-red-500 hover:underline text-xs">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
