@@ -21,12 +21,27 @@ def list_nominations(request: Request, db: Session = Depends(get_db)):
 def create_nomination(
     name: str = Form(...),
     type: NominationType = Form(...),
-    pick_limit: Optional[int] = Form(None),
-    year_filter: Optional[int] = Form(None),
+    pick_limit: Optional[str] = Form(None),
+    year_filter: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    limit = pick_limit if type == NominationType.PICK else None
-    db.add(Nomination(name=name, type=type, pick_limit=limit, year_filter=year_filter))
+    # Parse pick_limit
+    limit: Optional[int] = None
+    if type == NominationType.PICK and pick_limit and pick_limit.strip():
+        try:
+            limit = int(pick_limit)
+        except ValueError:
+            limit = 1
+
+    # Parse year_filter — empty string from form = None
+    yf: Optional[int] = None
+    if year_filter and year_filter.strip():
+        try:
+            yf = int(year_filter)
+        except ValueError:
+            yf = None
+
+    db.add(Nomination(name=name, type=type, pick_limit=limit, year_filter=yf))
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
@@ -36,7 +51,6 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
     nom = db.get(Nomination, nom_id)
     if not nom:
         return HTMLResponse("Номинация не найдена.", status_code=404)
-    # Apply year_filter if set
     film_q = db.query(Film).order_by(Film.title)
     if nom.year_filter:
         film_q = film_q.filter(Film.year == nom.year_filter)
@@ -52,7 +66,6 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
 def add_nominee_via_nomination(
     nom_id: int,
     film_id: int = Form(...),
-    # Accept as str then convert — empty string means None
     person_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
@@ -60,7 +73,6 @@ def add_nominee_via_nomination(
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
 
-    # Normalise person_id: empty string or RANK type -> None
     pid: Optional[int] = None
     if nom.type == NominationType.PICK and person_id and person_id.strip():
         try:
