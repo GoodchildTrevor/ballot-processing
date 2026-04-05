@@ -1,12 +1,13 @@
 services:
   web:
     build: .
+    container_name: ballot_processing
     ports:
-      - "8000:8000"
+      - "8099:8000"
     env_file:
       - .env
     volumes:
-      - ballot_data:/app/data   # mount directory, not a file
+      - ballot_data:/app/data
     restart: unless-stopped
 
 volumes:
