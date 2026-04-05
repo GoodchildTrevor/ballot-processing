@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from ballot.database import engine, Base
 import ballot.models  # noqa: F401 — registers all models
 from ballot.routers import vote, admin_films, admin_nominations, admin_voters, admin_results
@@ -13,3 +13,8 @@ app.include_router(admin_films.router)
 app.include_router(admin_nominations.router)
 app.include_router(admin_voters.router)
 app.include_router(admin_results.router)
+
+
+@app.get("/admin")
+def admin_root():
+    return RedirectResponse(url="/admin/films", status_code=302)
