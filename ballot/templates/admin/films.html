@@ -27,7 +27,6 @@
   </form>
 </div>
 
-{# Serialise films to JSON for Alpine sort/search #}
 <script>
   const FILMS_DATA = [
     {% for film in films %}
@@ -50,8 +49,6 @@
 </script>
 
 <div x-data="filmsTable()" class="bg-white shadow rounded-xl p-6">
-
-  {# Search + sort controls #}
   <div class="flex flex-wrap gap-3 items-center mb-4">
     <input x-model="search" type="text" placeholder="Поиск по названию..."
            class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
@@ -61,30 +58,22 @@
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b select-none">
       <tr>
-        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
-            @click="sortBy('title')">
-          Название
-          <span x-text="sortIcon('title')" class="text-xs"></span>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('title')">
+          Название <span x-text="sortIcon('title')" class="text-xs"></span>
         </th>
-        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
-            @click="sortBy('year')">
-          Год
-          <span x-text="sortIcon('year')" class="text-xs"></span>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('year')">
+          Год <span x-text="sortIcon('year')" class="text-xs"></span>
         </th>
-        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
-            @click="sortBy('nom_count')">
-          Номинаций
-          <span x-text="sortIcon('nom_count')" class="text-xs"></span>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('nom_count')">
+          Лонг-листов <span x-text="sortIcon('nom_count')" class="text-xs"></span>
         </th>
-        <th class="pb-2 pr-4">Номинанты</th>
+        <th class="pb-2 pr-4">В лонг-листах</th>
         <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
       <template x-for="film in filtered()" :key="film.id">
         <tr class="border-b last:border-0 hover:bg-gray-50 transition" x-data="{ editing: false }">
-
-          {# Title cell #}
           <td class="py-2 pr-4">
             <span x-show="!editing">
               <a :href="'/admin/films/' + film.id"
@@ -100,15 +89,9 @@
               <button type="button" @click="editing = false" class="text-xs text-gray-400 hover:underline">Отмена</button>
             </form>
           </td>
-
-          {# Year #}
           <td class="py-2 pr-4 tabular-nums" x-show="!editing" x-text="film.year"></td>
           <td class="py-2 pr-4" x-show="editing"></td>
-
-          {# Nom count #}
           <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="film.nom_count"></td>
-
-          {# Nom tags with person #}
           <td class="py-2 pr-4">
             <template x-for="n in film.noms" :key="n.nom_name">
               <span class="inline-block bg-indigo-50 text-indigo-700 rounded px-2 py-0.5 mr-1 mb-1 text-xs">
@@ -120,8 +103,6 @@
             </template>
             <span x-show="film.noms.length === 0" class="text-gray-300">—</span>
           </td>
-
-          {# Edit toggle #}
           <td class="py-2 text-right">
             <button @click="editing = !editing"
                     class="text-xs text-indigo-400 hover:text-indigo-600 hover:underline"
@@ -131,7 +112,6 @@
       </template>
     </tbody>
   </table>
-
   <p x-show="filtered().length === 0" class="text-center text-gray-400 py-8 text-sm">Ничего не найдено.</p>
 </div>
 

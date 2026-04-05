@@ -57,7 +57,7 @@
         <th class="pb-2 pr-4">Тип</th>
         <th class="pb-2 pr-4">Выбор</th>
         <th class="pb-2 pr-4">Год</th>
-        <th class="pb-2">Номинанты</th>
+        <th class="pb-2">Лонг-лист</th>
       </tr>
     </thead>
     <tbody>
@@ -94,7 +94,7 @@
           {% else %}—{% endif %}
         </td>
         <td class="py-2 pr-4 text-gray-500 text-xs">{{ nom.year_filter or '—' }}</td>
-        <td class="py-2">{{ nom.nominees | length }}</td>
+        <td class="py-2 tabular-nums">{{ nom.nominees | length }}</td>
       </tr>
       {% endfor %}
     </tbody>

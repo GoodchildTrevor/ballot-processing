@@ -9,7 +9,7 @@
     {{ nom.type.value }}
   </span>
   {% if nom.type.value == 'PICK' %}
-  <span class="text-xs text-gray-500">выбрать {{ nom.pick_limit or 1 }}</span>
+  <span class="text-xs text-gray-500">выбрать {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}</span>
   {% endif %}
   {% if nom.year_filter %}
   <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">год: {{ nom.year_filter }}</span>
@@ -17,7 +17,7 @@
 </div>
 
 <div class="bg-white shadow rounded-xl p-6 mb-8">
-  <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить номинанта</h2>
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм в лонг-лист</h2>
 
   {% if not films %}
   <p class="text-sm text-amber-600">
@@ -59,7 +59,7 @@
 </div>
 
 <div class="bg-white shadow rounded-xl p-6">
-  <h2 class="text-base font-semibold mb-4 text-gray-700">Номинанты ({{ nom.nominees | length }})</h2>
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }})</h2>
   {% if nom.nominees %}
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
@@ -86,7 +86,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-gray-400 text-sm">Номинантов пока нет.</p>
+  <p class="text-gray-400 text-sm">Лонг-лист пустой.</p>
   {% endif %}
 </div>
 {% endblock %}
