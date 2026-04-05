@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ballot_data:/app/ballot.db
+      - ballot_data:/app/data   # mount directory, not a file
     restart: unless-stopped
 
 volumes:
