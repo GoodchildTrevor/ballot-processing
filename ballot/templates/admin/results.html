@@ -10,27 +10,30 @@
 <div class="bg-white shadow rounded-xl p-6 mb-6">
   <div class="flex items-center gap-3 mb-4">
     <h2 class="text-lg font-bold text-gray-800">{{ item.nom.name }}</h2>
-    <span class="px-2 py-0.5 rounded text-xs font-semibold {{ 'bg-yellow-100 text-yellow-700' if item.nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+    <span class="px-2 py-0.5 rounded text-xs font-semibold
+      {{ 'bg-yellow-100 text-yellow-700' if item.nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
       {{ item.nom.type.value }}
     </span>
   </div>
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
       <tr>
-        <th class="pb-2 pr-4">Место</th>
-        <th class="pb-2 pr-4">Участник</th>
-        <th class="pb-2">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+        <th class="pb-2 pr-3 w-8">#</th>
+        <th class="pb-2 pr-4">Номинант</th>
+        <th class="pb-2 pr-4 tabular-nums">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+        <th class="pb-2 text-gray-400">Проголосовали</th>
       </tr>
     </thead>
     <tbody>
-      {% for label, score in item.rows %}
+      {% for row in item.rows %}
       <tr class="border-b last:border-0 hover:bg-gray-50">
-        <td class="py-2 pr-4 font-bold text-indigo-600">{{ loop.index }}</td>
-        <td class="py-2 pr-4">{{ label }}</td>
-        <td class="py-2 font-semibold">{{ score }}</td>
+        <td class="py-2 pr-3 font-bold text-indigo-600 tabular-nums">{{ loop.index }}</td>
+        <td class="py-2 pr-4">{{ row.label }}</td>
+        <td class="py-2 pr-4 font-semibold tabular-nums">{{ row.score }}</td>
+        <td class="py-2 text-gray-400 text-xs">{{ row.voters if row.voters else '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="py-4 text-gray-400 text-center">Голосов пока нет</td></tr>
+      <tr><td colspan="4" class="py-4 text-gray-400 text-center">Голосов пока нет</td></tr>
       {% endfor %}
     </tbody>
   </table>

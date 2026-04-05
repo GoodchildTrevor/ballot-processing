@@ -11,9 +11,18 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
+def _parse_int(v: Optional[str]) -> Optional[int]:
+    if v and v.strip():
+        try:
+            return int(v)
+        except ValueError:
+            pass
+    return None
+
+
 @router.get("/nominations", response_class=HTMLResponse)
 def list_nominations(request: Request, db: Session = Depends(get_db)):
-    nominations = db.query(Nomination).all()
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     return templates.TemplateResponse(request, "admin/nominations.html", {"nominations": nominations})
 
 
@@ -21,28 +30,39 @@ def list_nominations(request: Request, db: Session = Depends(get_db)):
 def create_nomination(
     name: str = Form(...),
     type: NominationType = Form(...),
-    pick_limit: Optional[str] = Form(None),
+    pick_min: Optional[str] = Form(None),
+    pick_max: Optional[str] = Form(None),
     year_filter: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    # Parse pick_limit
-    limit: Optional[int] = None
-    if type == NominationType.PICK and pick_limit and pick_limit.strip():
-        try:
-            limit = int(pick_limit)
-        except ValueError:
-            limit = 1
-
-    # Parse year_filter — empty string from form = None
-    yf: Optional[int] = None
-    if year_filter and year_filter.strip():
-        try:
-            yf = int(year_filter)
-        except ValueError:
-            yf = None
-
-    db.add(Nomination(name=name, type=type, pick_limit=limit, year_filter=yf))
+    pmin = _parse_int(pick_min) if type == NominationType.PICK else None
+    pmax = _parse_int(pick_max) if type == NominationType.PICK else None
+    yf = _parse_int(year_filter)
+    # sort_order = last + 1
+    last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
+    order = (last.sort_order + 1) if last else 0
+    db.add(Nomination(name=name, type=type, pick_min=pmin, pick_max=pmax, year_filter=yf, sort_order=order))
     db.commit()
+    return RedirectResponse(url="/admin/nominations", status_code=303)
+
+
+@router.post("/nominations/{nom_id}/move")
+def move_nomination(
+    nom_id: int,
+    direction: str = Form(...),  # "up" or "down"
+    db: Session = Depends(get_db),
+):
+    noms = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    idx = next((i for i, n in enumerate(noms) if n.id == nom_id), None)
+    if idx is None:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+    swap_idx = idx - 1 if direction == "up" else idx + 1
+    if 0 <= swap_idx < len(noms):
+        noms[idx].sort_order, noms[swap_idx].sort_order = noms[swap_idx].sort_order, noms[idx].sort_order
+        # ensure unique: reassign sequentially
+        for i, n in enumerate(sorted(noms, key=lambda x: x.sort_order)):
+            n.sort_order = i
+        db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
 
@@ -72,14 +92,7 @@ def add_nominee_via_nomination(
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
-
-    pid: Optional[int] = None
-    if nom.type == NominationType.PICK and person_id and person_id.strip():
-        try:
-            pid = int(person_id)
-        except ValueError:
-            pid = None
-
+    pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
     db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)

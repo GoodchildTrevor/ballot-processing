@@ -39,7 +39,7 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
         return HTMLResponse("Участник не найден.", status_code=404)
     if voter.voted_at is not None:
         return templates.TemplateResponse(request, "index.html", {"error": "Вы уже проголосовали."})
-    nominations = db.query(Nomination).all()
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     rank_noms = [n for n in nominations if n.type == NominationType.RANK]
     pick_noms = [n for n in nominations if n.type == NominationType.PICK]
     return templates.TemplateResponse(
@@ -57,7 +57,6 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
     form = await request.form()
     nominations = db.query(Nomination).all()
 
-    errors = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
             for nominee in nom.nominees:
@@ -71,9 +70,8 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
                     ))
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
-            limit = nom.pick_limit or 1
-            # Server-side guard: silently trim to limit
-            chosen = chosen[:limit]
+            pmax = nom.pick_max or 1
+            chosen = chosen[:pmax]
             for nominee_id in chosen:
                 db.add(Vote(voter_id=voter.id, nominee_id=int(nominee_id)))
 

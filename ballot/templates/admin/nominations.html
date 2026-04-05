@@ -16,22 +16,33 @@
       <select name="type" x-model="type"
               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
         <option value="RANK">RANK (рейтинг 1–10)</option>
-        <option value="PICK">PICK (выбрать N лучших)</option>
+        <option value="PICK">PICK (выбрать N)</option>
       </select>
     </div>
-    <div x-show="type === 'PICK'" x-cloak>
-      <label class="block text-xs text-gray-500 mb-1">Лимит выбора</label>
-      <select name="pick_limit"
-              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-        {% for i in range(1, 6) %}
-        <option value="{{ i }}">{{ i }}</option>
-        {% endfor %}
-      </select>
+    <div x-show="type === 'PICK'" x-cloak class="flex gap-2">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Мин выбор</label>
+        <select name="pick_min"
+                class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+          {% for i in range(1, 6) %}
+          <option value="{{ i }}">{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Макс выбор</label>
+        <select name="pick_max"
+                class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+          {% for i in range(1, 6) %}
+          <option value="{{ i }}">{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
     <div>
       <label class="block text-xs text-gray-500 mb-1">Фильтр по году <span class="text-gray-300">(необяз.)</span></label>
-      <input type="number" name="year_filter" placeholder="напр. 1994"
-             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-28 focus:ring-indigo-400 focus:outline-none" />
+      <input type="number" name="year_filter" placeholder="1994"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
     </div>
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
   </form>
@@ -41,10 +52,10 @@
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
       <tr>
-        <th class="pb-2 pr-4">ID</th>
+        <th class="pb-2 pr-2 w-16">Порядок</th>
         <th class="pb-2 pr-4">Название</th>
         <th class="pb-2 pr-4">Тип</th>
-        <th class="pb-2 pr-4">Лимит</th>
+        <th class="pb-2 pr-4">Выбор</th>
         <th class="pb-2 pr-4">Год</th>
         <th class="pb-2">Номинанты</th>
       </tr>
@@ -52,7 +63,22 @@
     <tbody>
       {% for nom in nominations %}
       <tr class="border-b last:border-0 hover:bg-gray-50">
-        <td class="py-2 pr-4 text-gray-400">{{ nom.id }}</td>
+        <td class="py-2 pr-2">
+          <div class="flex flex-col gap-0.5">
+            {% if not loop.first %}
+            <form method="post" action="/admin/nominations/{{ nom.id }}/move">
+              <input type="hidden" name="direction" value="up" />
+              <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none" title="Вверх">▲</button>
+            </form>
+            {% endif %}
+            {% if not loop.last %}
+            <form method="post" action="/admin/nominations/{{ nom.id }}/move">
+              <input type="hidden" name="direction" value="down" />
+              <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none" title="Вниз">▼</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
         <td class="py-2 pr-4">
           <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
         </td>
@@ -63,7 +89,8 @@
           </span>
         </td>
         <td class="py-2 pr-4 text-gray-500 text-xs">
-          {% if nom.type.value == 'PICK' %}выбрать {{ nom.pick_limit or 1 }}
+          {% if nom.type.value == 'PICK' %}
+            {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
           {% else %}—{% endif %}
         </td>
         <td class="py-2 pr-4 text-gray-500 text-xs">{{ nom.year_filter or '—' }}</td>
