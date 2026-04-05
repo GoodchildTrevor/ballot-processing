@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Фильмы — Админка{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-gray-800">Фильмы</h1>
-</div>
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Фильмы</h1>
 
 {% set error = request.query_params.get('error') %}
 {% if error == 'duplicate' %}
@@ -17,49 +15,154 @@
   <form method="post" action="/admin/films" class="flex flex-wrap gap-3 items-end">
     <div>
       <label class="block text-xs text-gray-500 mb-1">Название</label>
-      <input type="text" name="title" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
+      <input type="text" name="title" required
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
     </div>
     <div>
       <label class="block text-xs text-gray-500 mb-1">Год</label>
-      <input type="number" name="year" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
+      <input type="number" name="year" required
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
     </div>
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Добавить</button>
   </form>
 </div>
 
-<div x-data="{ search: '' }" class="bg-white shadow rounded-xl p-6">
-  <div class="mb-4">
+{# Serialise films to JSON for Alpine sort/search #}
+<script>
+  const FILMS_DATA = [
+    {% for film in films %}
+    {
+      id: {{ film.id }},
+      title: {{ film.title | tojson }},
+      year: {{ film.year }},
+      nom_count: {{ film.nominees | length }},
+      noms: [
+        {% for n in film.nominees %}
+        {
+          nom_name: {{ n.nomination.name | tojson }},
+          person: {{ n.person.name | tojson if n.person else 'null' }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ]
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+</script>
+
+<div x-data="filmsTable()" class="bg-white shadow rounded-xl p-6">
+
+  {# Search + sort controls #}
+  <div class="flex flex-wrap gap-3 items-center mb-4">
     <input x-model="search" type="text" placeholder="Поиск по названию..."
-           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full max-w-sm focus:ring-indigo-400 focus:outline-none" />
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
+    <span class="text-xs text-gray-400" x-text="filtered().length + ' фильмов'"></span>
   </div>
+
   <table class="w-full text-sm">
-    <thead class="text-left text-gray-500 border-b">
+    <thead class="text-left text-gray-500 border-b select-none">
       <tr>
-        <th class="pb-2 pr-4">ID</th>
-        <th class="pb-2 pr-4">Название</th>
-        <th class="pb-2 pr-4">Год</th>
-        <th class="pb-2">Номинации</th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
+            @click="sortBy('title')">
+          Название
+          <span x-text="sortIcon('title')" class="text-xs"></span>
+        </th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
+            @click="sortBy('year')">
+          Год
+          <span x-text="sortIcon('year')" class="text-xs"></span>
+        </th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600"
+            @click="sortBy('nom_count')">
+          Номинаций
+          <span x-text="sortIcon('nom_count')" class="text-xs"></span>
+        </th>
+        <th class="pb-2 pr-4">Номинанты</th>
+        <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
-      {% for film in films %}
-      <tr x-show="search === '' || '{{ film.title }}'.toLowerCase().includes(search.toLowerCase())"
-          class="border-b last:border-0 hover:bg-gray-50 transition">
-        <td class="py-2 pr-4 text-gray-400">{{ film.id }}</td>
-        <td class="py-2 pr-4">
-          <a href="/admin/films/{{ film.id }}" class="text-indigo-600 hover:underline font-medium">{{ film.title }}</a>
-        </td>
-        <td class="py-2 pr-4">{{ film.year }}</td>
-        <td class="py-2 text-gray-500 text-xs">
-          {% for nominee in film.nominees %}
-          <span class="inline-block bg-indigo-50 text-indigo-700 rounded px-2 py-0.5 mr-1 mb-1">{{ nominee.nomination.name }}</span>
-          {% else %}
-          <span class="text-gray-300">—</span>
-          {% endfor %}
-        </td>
-      </tr>
-      {% endfor %}
+      <template x-for="film in filtered()" :key="film.id">
+        <tr class="border-b last:border-0 hover:bg-gray-50 transition" x-data="{ editing: false }">
+
+          {# Title cell #}
+          <td class="py-2 pr-4">
+            <span x-show="!editing">
+              <a :href="'/admin/films/' + film.id"
+                 class="text-indigo-600 hover:underline font-medium" x-text="film.title"></a>
+            </span>
+            <form x-show="editing" :action="'/admin/films/' + film.id + '/edit'"
+                  method="post" class="flex gap-2 items-center flex-wrap">
+              <input type="text" name="title" :value="film.title"
+                     class="border border-gray-300 rounded px-2 py-1 text-sm w-48 focus:ring-indigo-400 focus:outline-none" required />
+              <input type="number" name="year" :value="film.year"
+                     class="border border-gray-300 rounded px-2 py-1 text-sm w-20 focus:ring-indigo-400 focus:outline-none" required />
+              <button type="submit" class="text-xs text-indigo-600 hover:underline">Сохранить</button>
+              <button type="button" @click="editing = false" class="text-xs text-gray-400 hover:underline">Отмена</button>
+            </form>
+          </td>
+
+          {# Year #}
+          <td class="py-2 pr-4 tabular-nums" x-show="!editing" x-text="film.year"></td>
+          <td class="py-2 pr-4" x-show="editing"></td>
+
+          {# Nom count #}
+          <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="film.nom_count"></td>
+
+          {# Nom tags with person #}
+          <td class="py-2 pr-4">
+            <template x-for="n in film.noms" :key="n.nom_name">
+              <span class="inline-block bg-indigo-50 text-indigo-700 rounded px-2 py-0.5 mr-1 mb-1 text-xs">
+                <span x-text="n.nom_name"></span>
+                <template x-if="n.person">
+                  <span class="text-indigo-400" x-text="' — ' + n.person"></span>
+                </template>
+              </span>
+            </template>
+            <span x-show="film.noms.length === 0" class="text-gray-300">—</span>
+          </td>
+
+          {# Edit toggle #}
+          <td class="py-2 text-right">
+            <button @click="editing = !editing"
+                    class="text-xs text-indigo-400 hover:text-indigo-600 hover:underline"
+                    x-text="editing ? '✕' : 'Редактировать'"></button>
+          </td>
+        </tr>
+      </template>
     </tbody>
   </table>
+
+  <p x-show="filtered().length === 0" class="text-center text-gray-400 py-8 text-sm">Ничего не найдено.</p>
 </div>
+
+<script>
+function filmsTable() {
+  return {
+    search: '',
+    col: 'year',
+    dir: 'desc',
+    sortBy(c) {
+      if (this.col === c) this.dir = this.dir === 'asc' ? 'desc' : 'asc';
+      else { this.col = c; this.dir = c === 'year' ? 'desc' : 'asc'; }
+    },
+    sortIcon(c) {
+      if (this.col !== c) return '⇕';
+      return this.dir === 'asc' ? '▲' : '▼';
+    },
+    filtered() {
+      const q = this.search.toLowerCase();
+      let rows = FILMS_DATA.filter(f => !q || f.title.toLowerCase().includes(q));
+      const c = this.col, d = this.dir;
+      rows.sort((a, b) => {
+        let av = a[c], bv = b[c];
+        if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+        if (av < bv) return d === 'asc' ? -1 : 1;
+        if (av > bv) return d === 'asc' ? 1 : -1;
+        return 0;
+      });
+      return rows;
+    }
+  }
+}
+</script>
 {% endblock %}
