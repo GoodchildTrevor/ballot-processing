@@ -123,8 +123,7 @@
           {% elif pmin == pmax %}Выберите ровно {{ pmax }}
           {% else %}Выберите от {{ pmin }} до {{ pmax }} кандидатов{% endif %}
           &mdash;
-          <span :class="isValid() ? 'text-green-500 font-semibold' : 'text-amber-500 font-semibold'"
-                x-text="count + ' выбрано'"></span>
+          <span :class="statusClass()" x-text="statusText()"></span>
         </p>
         <div class="bg-white rounded-xl shadow-sm divide-y">
           {% for nominee in nom.nominees %}
@@ -151,10 +150,10 @@
           {% endif %}
           {% endfor %}
         </div>
-        {# min-limit warning #}
-        <div x-show="count > 0 && !isValid()" x-cloak
+        {# partial-selection warning: shown only when 0 < count < pmin #}
+        <div x-show="count > 0 && count < pmin" x-cloak
              class="mt-2 text-xs text-red-500 font-medium">
-          <span x-text="'Минимум ' + pmin + ', выбрано ' + count"></span>
+          ⚠️ <span x-text="'Выбрано ' + count + ' — нужно минимум ' + pmin + ' или отменить выбор'"></span>
         </div>
       </div>
       {% endif %}
@@ -178,17 +177,16 @@
           <span class="text-sm font-medium text-gray-700">{{ nom.name }}</span>
           <div class="flex items-center gap-2">
             <span x-show="isDone({{ loop.index0 }})" class="text-green-500" x-cloak>✅</span>
-            <span x-show="!isDone({{ loop.index0 }})" class="text-amber-400 text-xs" x-cloak>⚠️ не заполнено</span>
+            <span x-show="!isDone({{ loop.index0 }})" class="text-amber-400 text-xs" x-cloak>⚠️ незаполнено</span>
             <button type="button" @click="goTo({{ loop.index0 }})"
                     class="text-xs text-indigo-500 hover:underline">Изменить</button>
           </div>
         </div>
         {% endfor %}
       </div>
-      {# block submit if anything not done #}
       <div x-show="!allDone()" x-cloak
            class="mb-4 text-sm text-red-500 font-medium text-center">
-        ⚠️ Заполните все номинации перед отправкой
+        ⚠️ Есть номинации с неполным выбором
       </div>
       <button type="submit"
               :disabled="!allDone()"
@@ -199,7 +197,7 @@
       </button>
     </div>
 
-  </div>{# max-w #}
+  </div>
   </form>
 
   {# ── Bottom nav ── #}
@@ -212,7 +210,6 @@
                      hover:enabled:bg-gray-100">
         ← Назад
       </button>
-
       <div class="flex gap-1 items-center">
         <template x-for="i in totalSlides + 2" :key="i">
           <button type="button"
@@ -223,7 +220,6 @@
                   class="transition-all duration-200"></button>
         </template>
       </div>
-
       <button type="button" @click="nextOrWarn()"
               :disabled="current === totalSlides"
               class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
@@ -244,7 +240,8 @@
       total: 0, filled: 0,
       init() {
         this.total = this.$el.querySelectorAll('select').length;
-        nomDone[idx] = () => this.allFilled();
+        // RANK: all-or-nothing (0 filled = skip ok, partial = blocked)
+        nomDone[idx] = () => this.filled === 0 || this.allFilled();
       },
       onChange() {
         this.filled = [...this.$el.querySelectorAll('select')].filter(s => s.value !== '').length;
@@ -256,7 +253,10 @@
   function pickBlock(idx, pmin, pmax) {
     return {
       pmin, pmax, count: 0, checked: {},
-      init() { nomDone[idx] = () => this.isValid(); },
+      init() {
+        // PICK: 0 = skip (ok), 1..pmin-1 = partial (blocked), pmin..pmax = ok
+        nomDone[idx] = () => this.isValid();
+      },
       onChange() {
         if (this.pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
@@ -264,8 +264,19 @@
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
       },
-      // valid = count within [pmin, pmax]
-      isValid() { return this.count >= this.pmin && this.count <= this.pmax; }
+      isValid() {
+        return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax);
+      },
+      statusClass() {
+        if (this.count === 0) return 'text-gray-400 font-semibold';
+        if (this.count < this.pmin) return 'text-red-500 font-semibold';
+        return 'text-green-500 font-semibold';
+      },
+      statusText() {
+        if (this.count === 0) return 'не выбрано (пропуск)';
+        if (this.count < this.pmin) return this.count + ' — недостаточно';
+        return this.count + ' выбрано';
+      }
     }
   }
 
@@ -273,7 +284,6 @@
     return {
       current: -1,
       totalSlides: TOTAL_NOMS,
-      warnSlide: null,
 
       init() {
         this.showSlide(this.current);
@@ -284,7 +294,6 @@
       },
 
       showSlide(idx) {
-        this.warnSlide = null;
         document.querySelectorAll('.slide').forEach(el => el.classList.remove('active'));
         const el = document.getElementById('slide-' + idx);
         if (el) el.classList.add('active');
@@ -294,17 +303,11 @@
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
 
-      // Номинационный слайд: не пускаем вперёд если не заполнено
       nextOrWarn() {
         const idx = this.current;
         if (idx >= 0 && idx < this.totalSlides && !this.isDone(idx)) {
-          this.warnSlide = idx;
-          // shake effect
           const el = document.getElementById('slide-' + idx);
-          if (el) {
-            el.classList.add('shake');
-            setTimeout(() => el.classList.remove('shake'), 500);
-          }
+          if (el) { el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 500); }
           return;
         }
         if (this.current < this.totalSlides) this.goTo(this.current + 1);

@@ -62,17 +62,22 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
                 1 for n in nom.nominees
                 if form.get(f"rank_{nom.id}_{n.film_id}")
             )
-            if filled < len(nom.nominees):
-                errors.append(f"Номинация «{nom.name}»: заполните все значения рейтинга.")
+            # 0 = skip (ok), partial = blocked
+            if 0 < filled < len(nom.nominees):
+                errors.append(
+                    f"Номинация «{nom.name}»: заполните все значения рейтинга или не выбирайте ничего."
+                )
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
             pmin = nom.pick_min or 1
             pmax = nom.pick_max or 1
-            if len(chosen) < pmin:
+            n = len(chosen)
+            # 0 = skip (ok), 1..pmin-1 = partial (blocked), pmin..pmax = ok, >pmax = blocked
+            if 0 < n < pmin:
                 errors.append(
-                    f"Номинация «{nom.name}»: выберите минимум {pmin} (выбрано {len(chosen)})."
+                    f"Номинация «{nom.name}»: выбрано {n}, нужно минимум {pmin} или отмените выбор."
                 )
-            if len(chosen) > pmax:
+            if n > pmax:
                 errors.append(
                     f"Номинация «{nom.name}»: можно выбрать не более {pmax}."
                 )
