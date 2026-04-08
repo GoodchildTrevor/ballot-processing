@@ -31,7 +31,6 @@
     </thead>
     <tbody>
       {% for row in item.rows %}
-      {# Highlight exactly the first nominees_count rows by list position #}
       {% set hl = item.nom.nominees_count and loop.index <= item.nom.nominees_count %}
       <tr class="border-b last:border-0 {{ 'bg-green-50 hover:bg-green-100' if hl else 'hover:bg-gray-50' }}">
         <td class="py-2 pr-3 font-bold tabular-nums {{ 'text-green-600' if hl else 'text-indigo-600' }}">{{ loop.index }}</td>
@@ -42,15 +41,15 @@
             {% if row.voter_list %}
               <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
                 {% for entry in row.voter_list %}
-                  {{ entry.name }}<span class="font-mono bg-gray-100 px-1 rounded ml-0.5">№3{{ entry.rank }}</span>{% if not loop.last %}, {% endif %}
+                  {{ entry.name }}<span class="font-mono bg-gray-100 px-1 rounded ml-0.5">&#8470;{{ entry.rank }}</span>{% if not loop.last %} , {% endif %}
                 {% endfor %}
               </span>
             {% else %}
-              <span class="text-gray-300">—</span>
+              <span class="text-gray-300">&mdash;</span>
             {% endif %}
           {% else %}
             <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
-              {{ row.voters if row.voters else '—' }}
+              {{ row.voters if row.voters else '&mdash;' }}
             </span>
           {% endif %}
         </td>
