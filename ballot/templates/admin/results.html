@@ -15,7 +15,7 @@
       {{ item.nom.type.value }}
     </span>
     {% if item.nom.type.value == 'PICK' and item.nom.pick_max %}
-    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-600">
+    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
       Номинантов: {{ item.nom.pick_max }}
     </span>
     {% endif %}
@@ -31,26 +31,30 @@
     </thead>
     <tbody>
       {% for row in item.rows %}
-      {% set highlight = item.nom.type.value == 'PICK' and item.nom.pick_max and row.is_nominee %}
-      <tr class="border-b last:border-0 {{ 'bg-red-50 hover:bg-red-100' if highlight else 'hover:bg-gray-50' }}">
+      {# PICK: highlight rows where dense_rank <= pick_max #}
+      {% set pick_highlight = item.nom.type.value == 'PICK' and item.nom.pick_max and row.is_nominee %}
+      {# RANK: highlight rows tied for first place (same score as first row) #}
+      {% set rank_highlight = item.nom.type.value == 'RANK' and item.rows and row.score == item.rows[0].score %}
+      {% set hl = pick_highlight or rank_highlight %}
+      <tr class="border-b last:border-0 {{ 'bg-green-50 hover:bg-green-100' if hl else 'hover:bg-gray-50' }}">
         <td class="py-2 pr-3 font-bold tabular-nums
-          {{ 'text-red-500' if highlight else 'text-indigo-600' }}">{{ loop.index }}</td>
-        <td class="py-2 pr-4 {{ 'font-semibold text-red-700' if highlight else '' }}">{{ row.label }}</td>
+          {{ 'text-green-600' if hl else 'text-indigo-600' }}">{{ loop.index }}</td>
+        <td class="py-2 pr-4 {{ 'font-semibold text-green-800' if hl else '' }}">{{ row.label }}</td>
         <td class="py-2 pr-4 font-semibold tabular-nums
-          {{ 'text-red-600' if highlight else '' }}">{{ row.score }}</td>
+          {{ 'text-green-700' if hl else '' }}">{{ row.score }}</td>
         <td class="py-2 text-xs">
           {% if item.nom.type.value == 'RANK' %}
             {% if row.voter_list %}
-              <span class="text-gray-400">
+              <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
                 {% for entry in row.voter_list %}
-                  {{ entry.name }} <span class="font-mono bg-gray-100 px-1 rounded">№{{ entry.rank }}</span>{% if not loop.last %}, {% endif %}
+                  {{ entry.name }}<span class="font-mono bg-gray-100 px-1 rounded ml-0.5">№{{ entry.rank }}</span>{% if not loop.last %}, {% endif %}
                 {% endfor %}
               </span>
             {% else %}
               <span class="text-gray-300">—</span>
             {% endif %}
           {% else %}
-            <span class="{{ 'text-red-400' if highlight else 'text-gray-400' }}">
+            <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
               {{ row.voters if row.voters else '—' }}
             </span>
           {% endif %}
