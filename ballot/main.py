@@ -33,15 +33,19 @@ def login(
     db: Session = Depends(get_db),
 ):
     name = name.strip()
-    voter = db.query(Voter).filter(Voter.name == name).first()
-    if not voter:
+    if not name:
         return templates.TemplateResponse(
             request, "index.html",
-            {"error": f"Ник «{name}» не найден. Обратитесь к организатору."},
+            {"error": "Введите ник."},
             status_code=400,
         )
+    voter = db.query(Voter).filter(Voter.name == name).first()
+    if not voter:
+        voter = Voter(name=name)
+        db.add(voter)
+        db.commit()
+        db.refresh(voter)
     response = RedirectResponse(url="/vote", status_code=303)
-    # Cookie value must be ASCII-safe — store numeric ID, not the name
     response.set_cookie(key="voter_id", value=str(voter.id), httponly=True, samesite="lax")
     return response
 
