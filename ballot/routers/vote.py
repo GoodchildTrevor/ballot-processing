@@ -40,11 +40,9 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
     if voter.voted_at is not None:
         return templates.TemplateResponse(request, "index.html", {"error": "Вы уже проголосовали."})
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    rank_noms = [n for n in nominations if n.type == NominationType.RANK]
-    pick_noms = [n for n in nominations if n.type == NominationType.PICK]
     return templates.TemplateResponse(
         request, "vote.html",
-        {"voter": voter, "rank_noms": rank_noms, "pick_noms": pick_noms},
+        {"voter": voter, "nominations": nominations},
     )
 
 
