@@ -19,7 +19,7 @@
          :style="'width:' + progressPct() + '%'"></div>
   </div>
 
-  {# ── Thin top bar with voter name only ── #}
+  {# ── Thin top bar ── #}
   <div class="fixed top-1 left-0 right-0 z-40 px-4 pt-2 pb-1">
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
   </div>
@@ -27,9 +27,7 @@
   <form method="post" action="/vote/{{ voter.id }}" id="ballotForm">
   <div class="max-w-2xl mx-auto px-4 pt-12 pb-28">
 
-    {# ═══════════════════════════════════════════
-       SLIDE -1 — TOC
-    ═══════════════════════════════════════════ #}
+    {# ═══════════ SLIDE -1 — TOC ═══════════ #}
     <div class="slide" id="slide--1">
       <div class="mb-8">
         <h1 class="text-4xl font-extrabold text-gray-900 leading-tight mb-2">Бюллетень</h1>
@@ -68,14 +66,12 @@
       </button>
     </div>
 
-    {# ═══════════════════════════════════════════
-       SLIDES 0..N-1 — Nominations
-    ═══════════════════════════════════════════ #}
+    {# ═══════════ SLIDES 0..N-1 — Nominations ═══════════ #}
     {% for nom in nominations %}
     {% set idx = loop.index0 %}
     <div class="slide" id="slide-{{ idx }}">
 
-      {# ── Slide breadcrumb: TOC link + counter ── #}
+      {# breadcrumb #}
       <div class="flex items-center gap-3 mb-3">
         <button type="button" @click="goTo(-1)"
                 class="text-sm font-medium text-indigo-500 hover:text-indigo-700 hover:underline transition">
@@ -155,15 +151,18 @@
           {% endif %}
           {% endfor %}
         </div>
+        {# min-limit warning #}
+        <div x-show="count > 0 && !isValid()" x-cloak
+             class="mt-2 text-xs text-red-500 font-medium">
+          <span x-text="'Минимум ' + pmin + ', выбрано ' + count"></span>
+        </div>
       </div>
       {% endif %}
 
     </div>{# end slide #}
     {% endfor %}
 
-    {# ═══════════════════════════════════════════
-       SLIDE N — Final submit
-    ═══════════════════════════════════════════ #}
+    {# ═══════════ SLIDE N — Final submit ═══════════ #}
     <div class="slide" id="slide-{{ nominations | length }}">
       <div class="flex items-center gap-3 mb-6">
         <button type="button" @click="goTo(-1)"
@@ -186,8 +185,16 @@
         </div>
         {% endfor %}
       </div>
+      {# block submit if anything not done #}
+      <div x-show="!allDone()" x-cloak
+           class="mb-4 text-sm text-red-500 font-medium text-center">
+        ⚠️ Заполните все номинации перед отправкой
+      </div>
       <button type="submit"
-              class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base hover:bg-indigo-700 transition">
+              :disabled="!allDone()"
+              class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base
+                     hover:enabled:bg-indigo-700 transition
+                     disabled:opacity-40 disabled:cursor-not-allowed">
         ✅ Отправить голос
       </button>
     </div>
@@ -217,7 +224,7 @@
         </template>
       </div>
 
-      <button type="button" @click="next()"
+      <button type="button" @click="nextOrWarn()"
               :disabled="current === totalSlides"
               class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
                      disabled:opacity-30 disabled:cursor-not-allowed
@@ -251,10 +258,13 @@
       pmin, pmax, count: 0, checked: {},
       init() { nomDone[idx] = () => this.isValid(); },
       onChange() {
-        this.count = Object.values(this.checked).filter(Boolean).length;
-        if (this.pmax === 1)
+        if (this.pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
+        } else {
+          this.count = Object.values(this.checked).filter(Boolean).length;
+        }
       },
+      // valid = count within [pmin, pmax]
       isValid() { return this.count >= this.pmin && this.count <= this.pmax; }
     }
   }
@@ -263,28 +273,67 @@
     return {
       current: -1,
       totalSlides: TOTAL_NOMS,
+      warnSlide: null,
+
       init() {
         this.showSlide(this.current);
         window.addEventListener('keydown', e => {
-          if (e.key === 'ArrowRight') this.next();
+          if (e.key === 'ArrowRight') this.nextOrWarn();
           if (e.key === 'ArrowLeft')  this.prev();
         });
       },
+
       showSlide(idx) {
+        this.warnSlide = null;
         document.querySelectorAll('.slide').forEach(el => el.classList.remove('active'));
         const el = document.getElementById('slide-' + idx);
         if (el) el.classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       },
+
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
-      next()     { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
+
+      // Номинационный слайд: не пускаем вперёд если не заполнено
+      nextOrWarn() {
+        const idx = this.current;
+        if (idx >= 0 && idx < this.totalSlides && !this.isDone(idx)) {
+          this.warnSlide = idx;
+          // shake effect
+          const el = document.getElementById('slide-' + idx);
+          if (el) {
+            el.classList.add('shake');
+            setTimeout(() => el.classList.remove('shake'), 500);
+          }
+          return;
+        }
+        if (this.current < this.totalSlides) this.goTo(this.current + 1);
+      },
+
       progressPct() {
         return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100);
       },
-      isDone(idx) { return nomDone[idx] ? nomDone[idx]() : false; }
+
+      isDone(idx) { return nomDone[idx] ? nomDone[idx]() : false; },
+
+      allDone() {
+        for (let i = 0; i < this.totalSlides; i++) {
+          if (!this.isDone(i)) return false;
+        }
+        return true;
+      }
     }
   }
   </script>
+  <style>
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%      { transform: translateX(-6px); }
+      40%      { transform: translateX(6px); }
+      60%      { transform: translateX(-4px); }
+      80%      { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.45s ease; }
+  </style>
 </body>
 </html>

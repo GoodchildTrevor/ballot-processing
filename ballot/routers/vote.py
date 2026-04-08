@@ -53,7 +53,36 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
         return RedirectResponse(url="/", status_code=303)
 
     form = await request.form()
-    nominations = db.query(Nomination).all()
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+
+    errors = []
+    for nom in nominations:
+        if nom.type == NominationType.RANK:
+            filled = sum(
+                1 for n in nom.nominees
+                if form.get(f"rank_{nom.id}_{n.film_id}")
+            )
+            if filled < len(nom.nominees):
+                errors.append(f"Номинация «{nom.name}»: заполните все значения рейтинга.")
+        elif nom.type == NominationType.PICK:
+            chosen = form.getlist(f"pick_{nom.id}")
+            pmin = nom.pick_min or 1
+            pmax = nom.pick_max or 1
+            if len(chosen) < pmin:
+                errors.append(
+                    f"Номинация «{nom.name}»: выберите минимум {pmin} (выбрано {len(chosen)})."
+                )
+            if len(chosen) > pmax:
+                errors.append(
+                    f"Номинация «{nom.name}»: можно выбрать не более {pmax}."
+                )
+
+    if errors:
+        return templates.TemplateResponse(
+            request, "vote.html",
+            {"voter": voter, "nominations": nominations, "errors": errors},
+            status_code=422,
+        )
 
     for nom in nominations:
         if nom.type == NominationType.RANK:
@@ -69,8 +98,7 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
             pmax = nom.pick_max or 1
-            chosen = chosen[:pmax]
-            for nominee_id in chosen:
+            for nominee_id in chosen[:pmax]:
                 db.add(Vote(voter_id=voter.id, nominee_id=int(nominee_id)))
 
     voter.voted_at = datetime.now(timezone.utc)
