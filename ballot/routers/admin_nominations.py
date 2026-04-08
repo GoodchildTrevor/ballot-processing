@@ -64,7 +64,18 @@ def edit_nomination(
     nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
     nom.year_filter = _parse_int(year_filter)
     db.commit()
-    return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+    return RedirectResponse(url="/admin/nominations", status_code=303)
+
+
+@router.post("/nominations/{nom_id}/delete")
+def delete_nomination(nom_id: int, db: Session = Depends(get_db)):
+    nom = db.get(Nomination, nom_id)
+    if nom:
+        # cascade delete nominees first
+        db.query(Nominee).filter(Nominee.nomination_id == nom_id).delete()
+        db.delete(nom)
+        db.commit()
+    return RedirectResponse(url="/admin/nominations", status_code=303)
 
 
 @router.post("/nominations/{nom_id}/move")
