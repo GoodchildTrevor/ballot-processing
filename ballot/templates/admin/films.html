@@ -53,14 +53,14 @@
   {# Year filter pills #}
   <div class="flex flex-wrap gap-1 mb-3">
     <button type="button"
-            @click="yearFilter = null"
+            @click="setYear(null)"
             :class="yearFilter === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
             class="px-3 py-1 rounded-full text-xs font-medium transition">
       Все годы
     </button>
     <template x-for="y in allYears" :key="y">
       <button type="button"
-              @click="yearFilter = y"
+              @click="setYear(y)"
               :class="yearFilter === y ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
               class="px-3 py-1 rounded-full text-xs font-medium transition"
               x-text="y">
@@ -70,7 +70,7 @@
 
   {# Search + counter #}
   <div class="flex flex-wrap gap-3 items-center mb-4">
-    <input x-model="search" type="text" placeholder="Поиск по названию..."
+    <input x-model="search" @input="saveState()" type="text" placeholder="Поиск по названию..."
            class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
     <span class="text-xs text-gray-400" x-text="filtered().length + ' фильмов'"></span>
   </div>
@@ -136,14 +136,38 @@
 </div>
 
 <script>
+const FILMS_SS_KEY = 'films_filter_v1';
+
 function filmsTable() {
   const allYears = [...new Set(FILMS_DATA.map(f => f.year))].sort((a, b) => b - a);
+
+  // restore saved state
+  let saved = {};
+  try { saved = JSON.parse(sessionStorage.getItem(FILMS_SS_KEY) || '{}'); } catch(_) {}
+  const initYear = (saved.yearFilter !== undefined && (saved.yearFilter === null || allYears.includes(saved.yearFilter)))
+    ? saved.yearFilter : null;
+
   return {
-    search: '',
-    yearFilter: null,
+    search: saved.search || '',
+    yearFilter: initYear,
     allYears,
     col: 'year',
     dir: 'desc',
+
+    saveState() {
+      try {
+        sessionStorage.setItem(FILMS_SS_KEY, JSON.stringify({
+          yearFilter: this.yearFilter,
+          search: this.search,
+        }));
+      } catch(_) {}
+    },
+
+    setYear(y) {
+      this.yearFilter = y;
+      this.saveState();
+    },
+
     sortBy(c) {
       if (this.col === c) this.dir = this.dir === 'asc' ? 'desc' : 'asc';
       else { this.col = c; this.dir = c === 'year' ? 'desc' : 'asc'; }
