@@ -38,7 +38,6 @@ def create_nomination(
     pmin = _parse_int(pick_min) if type == NominationType.PICK else None
     pmax = _parse_int(pick_max) if type == NominationType.PICK else None
     yf = _parse_int(year_filter)
-    # sort_order = last + 1
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
     db.add(Nomination(name=name, type=type, pick_min=pmin, pick_max=pmax, year_filter=yf, sort_order=order))
@@ -46,10 +45,32 @@ def create_nomination(
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
 
+@router.post("/nominations/{nom_id}/edit")
+def edit_nomination(
+    nom_id: int,
+    name: str = Form(...),
+    type: NominationType = Form(...),
+    pick_min: Optional[str] = Form(None),
+    pick_max: Optional[str] = Form(None),
+    year_filter: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    nom = db.get(Nomination, nom_id)
+    if not nom:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+    nom.name = name.strip()
+    nom.type = type
+    nom.pick_min = _parse_int(pick_min) if type == NominationType.PICK else None
+    nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
+    nom.year_filter = _parse_int(year_filter)
+    db.commit()
+    return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+
+
 @router.post("/nominations/{nom_id}/move")
 def move_nomination(
     nom_id: int,
-    direction: str = Form(...),  # "up" or "down"
+    direction: str = Form(...),
     db: Session = Depends(get_db),
 ):
     noms = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
@@ -59,7 +80,6 @@ def move_nomination(
     swap_idx = idx - 1 if direction == "up" else idx + 1
     if 0 <= swap_idx < len(noms):
         noms[idx].sort_order, noms[swap_idx].sort_order = noms[swap_idx].sort_order, noms[idx].sort_order
-        # ensure unique: reassign sequentially
         for i, n in enumerate(sorted(noms, key=lambda x: x.sort_order)):
             n.sort_order = i
         db.commit()

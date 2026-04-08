@@ -2,20 +2,88 @@
 {% block title %}{{ nom.name }}{% endblock %}
 {% block content %}
 <a href="/admin/nominations" class="text-sm text-indigo-500 hover:underline">← Все номинации</a>
-<h1 class="text-2xl font-bold mt-2 mb-1">{{ nom.name }}</h1>
-<div class="flex items-center gap-2 mb-6">
-  <span class="px-2 py-0.5 rounded text-xs font-semibold
-    {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
-    {{ nom.type.value }}
-  </span>
-  {% if nom.type.value == 'PICK' %}
-  <span class="text-xs text-gray-500">выбрать {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}</span>
-  {% endif %}
-  {% if nom.year_filter %}
-  <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">год: {{ nom.year_filter }}</span>
-  {% endif %}
+
+{# ── Header with inline edit toggle ── #}
+<div x-data="{ editing: false }" class="mt-2 mb-6">
+
+  {# View mode #}
+  <div x-show="!editing" class="flex items-start gap-3">
+    <div>
+      <h1 class="text-2xl font-bold">{{ nom.name }}</h1>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="px-2 py-0.5 rounded text-xs font-semibold
+          {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+          {{ nom.type.value }}
+        </span>
+        {% if nom.type.value == 'PICK' %}
+        <span class="text-xs text-gray-500">выбрать {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}</span>
+        {% endif %}
+        {% if nom.year_filter %}
+        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">год: {{ nom.year_filter }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <button type="button" @click="editing = true"
+            class="mt-1 text-xs text-indigo-500 hover:underline whitespace-nowrap">Редактировать</button>
+  </div>
+
+  {# Edit mode #}
+  <div x-show="editing" x-cloak>
+    <form method="post" action="/admin/nominations/{{ nom.id }}/edit"
+          x-data="{ nomType: '{{ nom.type.value }}' }"
+          class="bg-white shadow rounded-xl p-5 space-y-4 max-w-lg">
+      <h2 class="text-base font-semibold text-gray-700">Редактировать номинацию</h2>
+
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Название</label>
+        <input type="text" name="name" value="{{ nom.name }}" required
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Тип</label>
+        <select name="type" x-model="nomType"
+                class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+          <option value="RANK" {% if nom.type.value == 'RANK' %}selected{% endif %}>RANK — рейтинг</option>
+          <option value="PICK" {% if nom.type.value == 'PICK' %}selected{% endif %}>PICK — выбор</option>
+        </select>
+      </div>
+
+      <div x-show="nomType === 'PICK'" class="flex gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Мин. выбор</label>
+          <input type="number" name="pick_min" min="1"
+                 value="{{ nom.pick_min or '' }}"
+                 class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Макс. выбор</label>
+          <input type="number" name="pick_max" min="1"
+                 value="{{ nom.pick_max or '' }}"
+                 class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Фильтр по году <span class="text-gray-300">(необяз.)</span></label>
+        <input type="number" name="year_filter" min="1900" max="2100"
+               value="{{ nom.year_filter or '' }}"
+               placeholder="напр. 2007"
+               class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+      </div>
+
+      <div class="flex gap-2 pt-1">
+        <button type="submit"
+                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition">Сохранить</button>
+        <button type="button" @click="editing = false"
+                class="text-sm text-gray-500 hover:underline px-2">Отмена</button>
+      </div>
+    </form>
+  </div>
+
 </div>
 
+{# ── Add to longlist ── #}
 <div class="bg-white shadow rounded-xl p-6 mb-8">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм в лонг-лист</h2>
 
@@ -58,7 +126,6 @@
     <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : ''" />
     <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
 
-    {# ── Year tabs — only when nomination has NO year_filter ── #}
     {% if not nom.year_filter %}
     <div>
       <p class="text-xs text-gray-500 mb-1">Фильтр по году</p>
@@ -78,7 +145,6 @@
     </div>
     {% endif %}
 
-    {# ── Pickers row ── #}
     <div class="flex flex-wrap gap-3 items-end">
 
       {# Film picker #}
@@ -113,7 +179,6 @@
       </div>
 
       {% if nom.type.value == 'PICK' %}
-      {# Person picker #}
       <div>
         <label class="block text-xs text-gray-500 mb-1">Персона <span class="text-gray-300">(необяз.)</span></label>
         <div class="flex items-center gap-1">
@@ -208,6 +273,7 @@
   {% endif %}
 </div>
 
+{# ── Longlist table ── #}
 <div class="bg-white shadow rounded-xl p-6">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }})</h2>
   {% if nom.nominees %}
