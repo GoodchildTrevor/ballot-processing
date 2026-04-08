@@ -1,10 +1,7 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-# Store DB in a dedicated directory so Docker volume mounts work correctly.
-# A file-level volume mount (ballot.db) can block SQLite from creating the file;
-# mounting a directory (data/) instead is always safe.
 DB_DIR = os.getenv("DB_DIR", "/app/data")
 os.makedirs(DB_DIR, exist_ok=True)
 
@@ -24,3 +21,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Columns added after initial deploy — safe to run every startup (IF NOT EXISTS not
+# supported in SQLite ALTER TABLE, so we catch the OperationalError instead).
+_MIGRATIONS = [
+    "ALTER TABLE nominations ADD COLUMN nominees_count INTEGER",
+]
+
+
+def run_migrations():
+    with engine.connect() as conn:
+        for stmt in _MIGRATIONS:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                # Column already exists — safe to ignore
+                pass
