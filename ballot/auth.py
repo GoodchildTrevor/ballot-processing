@@ -25,15 +25,22 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 def require_voter(request: Request, db: Session = Depends(get_db)):
-    """FastAPI dependency: reads voter_name cookie, loads Voter from DB,
+    """Reads voter_id cookie (int), loads Voter from DB,
     stores it in request.state.voter. Redirects to / if missing or unknown."""
-    name = request.cookies.get("voter_name")
-    if not name:
+    raw = request.cookies.get("voter_id")
+    if not raw:
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             headers={"Location": "/"},
         )
-    voter = db.query(Voter).filter(Voter.name == name).first()
+    try:
+        voter_id = int(raw)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/"},
+        )
+    voter = db.get(Voter, voter_id)
     if not voter:
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,

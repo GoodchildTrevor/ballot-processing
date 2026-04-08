@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from ballot.database import engine, Base, run_migrations, get_db
-from fastapi import Depends
 import ballot.models  # noqa: F401
 from ballot.models import Voter
 from ballot.routers import vote, admin_films, admin_nominations, admin_voters, admin_results, admin_persons
@@ -42,7 +41,8 @@ def login(
             status_code=400,
         )
     response = RedirectResponse(url="/vote", status_code=303)
-    response.set_cookie(key="voter_name", value=name, httponly=True, samesite="lax")
+    # Cookie value must be ASCII-safe — store numeric ID, not the name
+    response.set_cookie(key="voter_id", value=str(voter.id), httponly=True, samesite="lax")
     return response
 
 
