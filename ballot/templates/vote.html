@@ -19,8 +19,9 @@
          :style="'width:' + progressPct() + '%'"></div>
   </div>
 
-  {# ── Header ── #}
-  <div class="fixed top-1 left-0 right-0 z-40 flex items-center justify-between px-4 pt-2 pb-1">
+  {# ── Header (hidden on TOC) ── #}
+  <div class="fixed top-1 left-0 right-0 z-40 flex items-center justify-between px-4 pt-2 pb-1"
+       x-show="current !== -1">
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
     <button @click="goTo(-1)"
             class="text-xs text-indigo-500 hover:underline">← Оглавление</button>
@@ -33,14 +34,17 @@
        SLIDE -1 — TOC
     ═══════════════════════════════════════════ #}
     <div class="slide" id="slide--1">
-      <h1 class="text-2xl font-bold text-indigo-700 mb-2">🎥 Бюллетень</h1>
-      <p class="text-gray-500 mb-6">{{ voter.name }}, выберите номинацию чтобы перейти к ней.</p>
+      <div class="mb-8">
+        <p class="text-sm text-gray-400 mb-1">🎥 {{ voter.name }}</p>
+        <h1 class="text-4xl font-extrabold text-gray-900 leading-tight mb-2">Бюллетень</h1>
+        <p class="text-gray-500">Выберите номинацию, чтобы перейти к ней.</p>
+      </div>
       <div class="space-y-3">
         {% for nom in nominations %}
         <button type="button" @click="goTo({{ loop.index0 }})"
                 class="w-full flex items-center justify-between bg-white rounded-xl shadow-sm px-5 py-4 hover:shadow-md hover:bg-indigo-50 transition text-left group">
           <div>
-            <div class="font-semibold text-gray-800 group-hover:text-indigo-700">{{ nom.name }}</div>
+            <div class="text-base font-semibold text-gray-800 group-hover:text-indigo-700">{{ nom.name }}</div>
             <div class="text-xs text-gray-400 mt-0.5">
               {% if nom.type.value == 'RANK' %}
                 🏆 Рейтинг от 1 до 10
@@ -57,7 +61,7 @@
           </div>
           <div class="flex items-center gap-2">
             <span x-show="isDone({{ loop.index0 }})" class="text-green-500 text-lg" x-cloak>✅</span>
-            <span class="text-gray-300 group-hover:text-indigo-400">›</span>
+            <span class="text-gray-300 group-hover:text-indigo-400 text-lg">›</span>
           </div>
         </button>
         {% endfor %}
@@ -220,8 +224,6 @@
   <script>
   const TOTAL_NOMS = {{ nominations | length }};
 
-  // ── Per-nomination done-state registry ──
-  // Each nomination registers itself here when its Alpine component inits.
   const nomDone = {};
 
   function rankBlock(idx) {
@@ -229,7 +231,6 @@
       total: 0,
       filled: 0,
       init() {
-        // count selects inside this block
         this.total = this.$el.querySelectorAll('select').length;
         nomDone[idx] = () => this.allFilled();
       },
@@ -250,7 +251,6 @@
       },
       onChange() {
         this.count = Object.values(this.checked).filter(Boolean).length;
-        // radio case: count checked radios
         if (this.pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
         }
@@ -263,12 +263,11 @@
 
   function ballot() {
     return {
-      current: -1,      // -1 = TOC, 0..N-1 = nominations, N = submit
+      current: -1,
       totalSlides: TOTAL_NOMS,
 
       init() {
         this.showSlide(this.current);
-        // keyboard arrows
         window.addEventListener('keydown', e => {
           if (e.key === 'ArrowRight') this.next();
           if (e.key === 'ArrowLeft')  this.prev();
@@ -288,19 +287,14 @@
       },
 
       next() {
-        if (this.current < this.totalSlides) {
-          this.goTo(this.current + 1);
-        }
+        if (this.current < this.totalSlides) this.goTo(this.current + 1);
       },
 
       prev() {
-        if (this.current > -1) {
-          this.goTo(this.current - 1);
-        }
+        if (this.current > -1) this.goTo(this.current - 1);
       },
 
       progressPct() {
-        // TOC = 0%, last slide = 100%
         return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100);
       },
 
