@@ -18,6 +18,7 @@ class Film(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
     year = Column(Integer, nullable=False)
+    url = Column(String, nullable=True)
     nominees = relationship("Nominee", back_populates="film")
 
 
@@ -25,6 +26,7 @@ class Person(Base):
     __tablename__ = "persons"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
+    url = Column(String, nullable=True)
     nominees = relationship("Nominee", back_populates="person")
 
 
@@ -48,6 +50,7 @@ class Nominee(Base):
     film_id = Column(Integer, ForeignKey("films.id"), nullable=False)
     person_id = Column(Integer, ForeignKey("persons.id"), nullable=True)
     song = Column(String, nullable=True)
+    song_url = Column(String, nullable=True)
     nomination = relationship("Nomination", back_populates="nominees")
     film = relationship("Film", back_populates="nominees")
     person = relationship("Person", back_populates="nominees")

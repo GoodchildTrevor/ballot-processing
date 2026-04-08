@@ -29,6 +29,9 @@ _MIGRATIONS = [
     "ALTER TABLE nominations ADD COLUMN nominees_count INTEGER",
     "ALTER TABLE voters ADD COLUMN draft JSON",
     "ALTER TABLE nominees ADD COLUMN song TEXT",
+    "ALTER TABLE films ADD COLUMN url TEXT",
+    "ALTER TABLE persons ADD COLUMN url TEXT",
+    "ALTER TABLE nominees ADD COLUMN song_url TEXT",
 ]
 
 

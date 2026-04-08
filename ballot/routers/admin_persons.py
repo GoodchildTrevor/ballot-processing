@@ -18,13 +18,17 @@ def list_persons(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/persons")
-def create_person(name: str = Form(...), db: Session = Depends(get_db)):
+def create_person(
+    name: str = Form(...),
+    url: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     name = name.strip()
     if not name:
         return RedirectResponse(url="/admin/persons", status_code=303)
     existing = db.query(Person).filter(Person.name == name).first()
     if not existing:
-        db.add(Person(name=name))
+        db.add(Person(name=name, url=url.strip() if url and url.strip() else None))
         db.commit()
     return RedirectResponse(url="/admin/persons", status_code=303)
 
@@ -33,7 +37,6 @@ def create_person(name: str = Form(...), db: Session = Depends(get_db)):
 def delete_person(person_id: int, db: Session = Depends(get_db)):
     person = db.get(Person, person_id)
     if person:
-        # Detach from nominees before deleting
         db.query(Nominee).filter(Nominee.person_id == person_id).update({"person_id": None})
         db.delete(person)
         db.commit()
@@ -44,10 +47,12 @@ def delete_person(person_id: int, db: Session = Depends(get_db)):
 def edit_person(
     person_id: int,
     name: str = Form(...),
+    url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     person = db.get(Person, person_id)
     if person:
         person.name = name.strip()
+        person.url = url.strip() if url and url.strip() else None
         db.commit()
     return RedirectResponse(url="/admin/persons", status_code=303)

@@ -5,23 +5,28 @@
 
 <div class="bg-white shadow rounded-xl p-6 mb-8">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить персону</h2>
-  <form method="post" action="/admin/persons" class="flex gap-3 items-end">
+  <form method="post" action="/admin/persons" class="flex flex-wrap gap-3 items-end">
     <div>
       <label class="block text-xs text-gray-500 mb-1">Имя</label>
       <input type="text" name="name" required placeholder="напр. Кристофер Нолан"
              class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 focus:ring-indigo-400 focus:outline-none" />
     </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Ссылка <span class="text-gray-300">(необяз.)</span></label>
+      <input type="url" name="url" placeholder="https://..."
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
+    </div>
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Добавить</button>
   </form>
 </div>
 
-{# Serialise to JSON for Alpine search #}
 <script>
 const PERSONS_DATA = [
   {% for person in persons %}
   {
     id: {{ person.id }},
     name: {{ person.name | tojson }},
+    url: {{ person.url | tojson if person.url else 'null' }},
     longlist_count: {{ person.nominees | length }},
     longlists: [
       {% for n in person.nominees %}
@@ -62,22 +67,30 @@ const PERSONS_DATA = [
       <template x-for="p in filtered()" :key="p.id">
         <tr class="border-b last:border-0 hover:bg-gray-50 align-top" x-data="{ editing: false }">
 
-          {# Name / inline edit #}
           <td class="py-2 pr-4">
-            <span x-show="!editing" class="font-medium" x-text="p.name"></span>
+            <span x-show="!editing">
+              <template x-if="p.url">
+                <a :href="p.url" target="_blank" rel="noopener noreferrer"
+                   class="font-medium text-indigo-600 hover:underline" x-text="p.name"></a>
+              </template>
+              <template x-if="!p.url">
+                <span class="font-medium" x-text="p.name"></span>
+              </template>
+            </span>
             <form x-show="editing" :action="'/admin/persons/' + p.id + '/edit'"
-                  method="post" class="flex gap-2 items-center">
+                  method="post" class="flex flex-wrap gap-2 items-center">
               <input type="text" name="name" :value="p.name"
                      class="border border-gray-300 rounded px-2 py-1 text-sm w-48 focus:ring-indigo-400 focus:outline-none" required />
+              <input type="url" name="url" :value="p.url || ''"
+                     placeholder="https://..."
+                     class="border border-gray-300 rounded px-2 py-1 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
               <button type="submit" class="text-xs text-indigo-600 hover:underline">Сохранить</button>
               <button type="button" @click="editing = false" class="text-xs text-gray-400 hover:underline">Отмена</button>
             </form>
           </td>
 
-          {# Longlist count #}
           <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="p.longlist_count || '—'"></td>
 
-          {# Longlist details: film (year) — nomination #}
           <td class="py-2 pr-4">
             <template x-if="p.longlists.length === 0">
               <span class="text-gray-300 text-xs">—</span>
@@ -91,7 +104,6 @@ const PERSONS_DATA = [
             </template>
           </td>
 
-          {# Actions #}
           <td class="py-2 text-right whitespace-nowrap">
             <button type="button" @click="editing = !editing"
                     class="text-xs text-indigo-500 hover:underline mr-2"

@@ -25,9 +25,10 @@ def list_films(request: Request, db: Session = Depends(get_db)):
 def create_film(
     title: str = Form(...),
     year: int = Form(...),
+    url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    db.add(Film(title=title.strip(), year=year))
+    db.add(Film(title=title.strip(), year=year, url=url.strip() if url and url.strip() else None))
     db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
 
@@ -37,12 +38,14 @@ def edit_film(
     film_id: int,
     title: str = Form(...),
     year: int = Form(...),
+    url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     film = db.get(Film, film_id)
     if film:
         film.title = title.strip()
         film.year = year
+        film.url = url.strip() if url and url.strip() else None
         db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
 
@@ -77,6 +80,7 @@ def edit_nominee(
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
     song: Optional[str] = Form(None),
+    song_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nominee = db.get(Nominee, nominee_id)
@@ -84,6 +88,7 @@ def edit_nominee(
         nominee.film_id = film_id
         nominee.person_id = int(person_id) if person_id and person_id.strip() else None
         nominee.song = song.strip() if song and song.strip() else None
+        nominee.song_url = song_url.strip() if song_url and song_url.strip() else None
         db.commit()
     back = "/admin/nominations/" + str(nominee.nomination_id) if nominee else "/admin/films"
     return RedirectResponse(url=back, status_code=303)
