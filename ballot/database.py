@@ -28,6 +28,7 @@ def get_db():
 _MIGRATIONS = [
     "ALTER TABLE nominations ADD COLUMN nominees_count INTEGER",
     "ALTER TABLE voters ADD COLUMN draft JSON",
+    "ALTER TABLE nominees ADD COLUMN song TEXT",
 ]
 
 
