@@ -26,7 +26,6 @@ def get_results(db: Session):
                 .order_by(func.sum(11 - Ranking.rank).desc())
                 .all()
             )
-            # voters who ranked each film: {film_title: [(voter_name, rank), ...]}
             film_voters_map = {}
             for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
                 film = db.get(Film, r.film_id)
@@ -37,15 +36,12 @@ def get_results(db: Session):
             rows = []
             for r in rows_raw:
                 voter_entries = film_voters_map.get(r.title, [])
-                # sort by voter name
                 voter_entries.sort(key=lambda x: x[0])
                 rows.append({
                     "label": r.title,
                     "score": r.score,
-                    # list of {name, rank} for template
                     "voter_list": [{"name": n, "rank": rank} for n, rank in voter_entries],
-                    # plain string for xlsx
-                    "voters": ", ".join(f"{n} ({rank})" for n, rank in voter_entries),
+                    "voters": ", ".join(f"{n} ({rank})" for n, rank in voter_entries),
                 })
             results.append({"nom": nom, "rows": rows})
         else:
@@ -58,7 +54,6 @@ def get_results(db: Session):
                 .all()
             )
 
-            # Build scored rows first
             scored = []
             for nominee, votes in rows_raw:
                 label = nominee.film.title
@@ -69,11 +64,8 @@ def get_results(db: Session):
                 )
                 scored.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
 
-            # DENSE RANK: assign dense rank by score descending
-            # pick_max is the target nominee count
-            pick_max = nom.pick_max  # can be None
+            pick_max = nom.pick_max
             if pick_max and scored:
-                # Compute dense ranks
                 sorted_scores = sorted(set(r["score"] for r in scored), reverse=True)
                 score_to_dense_rank = {s: i + 1 for i, s in enumerate(sorted_scores)}
                 for row in scored:
@@ -102,14 +94,14 @@ def export_results(db: Session = Depends(get_db)):
     for item in results:
         ws = wb.create_sheet(title=item["nom"].name[:31])
         if item["nom"].type == NominationType.RANK:
-            ws.append(["Участник", "Очки", "Проголосовали (место)"])
+            ws.append(["\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a", "\u041e\u0447\u043a\u0438", "\u041f\u0440\u043e\u0433\u043e\u043b\u043e\u0441\u043e\u0432\u0430\u043b\u0438 (\u043c\u0435\u0441\u0442\u043e)"])
         else:
-            ws.append(["Участник", "Голоса", "Проголосовали",
-                       "Номинант" if item["nom"].pick_max else ""])
+            ws.append(["\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a", "\u0413\u043e\u043b\u043e\u0441\u0430", "\u041f\u0440\u043e\u0433\u043e\u043b\u043e\u0441\u043e\u0432\u0430\u043b\u0438",
+                       "\u041d\u043e\u043c\u0438\u043d\u0430\u043d\u0442" if item["nom"].pick_max else ""])
         for row in item["rows"]:
             extra = []
             if item["nom"].type == NominationType.PICK and item["nom"].pick_max:
-                extra = ["✅ Номинант" if row.get("is_nominee") else ""]
+                extra = ["\u2705 \u041d\u043e\u043c\u0438\u043d\u0430\u043d\u0442" if row.get("is_nominee") else ""]
             ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
