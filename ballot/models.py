@@ -33,8 +33,9 @@ class Nomination(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     type = Column(SAEnum(NominationType), nullable=False)
-    pick_min = Column(Integer, nullable=True)   # min choices for PICK (default 1)
-    pick_max = Column(Integer, nullable=True)   # max choices for PICK
+    pick_min = Column(Integer, nullable=True)    # min choices for PICK (default 1)
+    pick_max = Column(Integer, nullable=True)    # max choices for PICK
+    nominees_count = Column(Integer, nullable=True)  # how many nominees pass to final shortlist
     year_filter = Column(Integer, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
     nominees = relationship("Nominee", back_populates="nomination")

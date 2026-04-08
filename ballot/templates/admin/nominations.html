@@ -40,6 +40,11 @@
       </div>
     </div>
     <div>
+      <label class="block text-xs text-gray-500 mb-1">Номинантов <span class="text-gray-300">(необяз.)</span></label>
+      <input type="number" name="nominees_count" min="1" placeholder="нет"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
+    </div>
+    <div>
       <label class="block text-xs text-gray-500 mb-1">Фильтр по году <span class="text-gray-300">(необяз.)</span></label>
       <input type="number" name="year_filter" placeholder="1994"
              class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
@@ -56,6 +61,7 @@
         <th class="pb-2 pr-4">Название</th>
         <th class="pb-2 pr-4">Тип</th>
         <th class="pb-2 pr-4">Выбор</th>
+        <th class="pb-2 pr-4">Номинантов</th>
         <th class="pb-2 pr-4">Год</th>
         <th class="pb-2 pr-4">Лонг-лист</th>
         <th class="pb-2"></th>
@@ -65,7 +71,7 @@
       {% for nom in nominations %}
       <tr class="border-b last:border-0 align-top" x-data="{ editing: false, nomType: '{{ nom.type.value }}' }">
 
-        {# ─ Move buttons ─ #}
+        {# Move buttons #}
         <td class="py-2 pr-2">
           <div class="flex flex-col gap-0.5">
             {% if not loop.first %}
@@ -83,8 +89,8 @@
           </div>
         </td>
 
-        {# ─ Name / inline edit form ─ #}
-        <td class="py-2 pr-4" colspan x-bind:colspan="editing ? 4 : 1">
+        {# Name / inline edit form #}
+        <td class="py-2 pr-4" x-bind:colspan="editing ? 6 : 1">
           <template x-if="!editing">
             <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
           </template>
@@ -119,6 +125,11 @@
                 </div>
               </template>
               <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Номинантов</label>
+                <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}" placeholder="нет"
+                       class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+              </div>
+              <div>
                 <label class="block text-xs text-gray-400 mb-0.5">Год</label>
                 <input type="number" name="year_filter" min="1900" max="2100"
                        value="{{ nom.year_filter or '' }}" placeholder="нет"
@@ -134,7 +145,7 @@
           </template>
         </td>
 
-        {# ─ Type badge (hidden while editing) ─ #}
+        {# Type badge #}
         <td class="py-2 pr-4" x-show="!editing">
           <span class="px-2 py-0.5 rounded text-xs font-semibold
             {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
@@ -142,20 +153,29 @@
           </span>
         </td>
 
-        {# ─ Pick range (hidden while editing) ─ #}
+        {# Pick range #}
         <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">
           {% if nom.type.value == 'PICK' %}
             {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
           {% else %}—{% endif %}
         </td>
 
-        {# ─ Year (hidden while editing) ─ #}
+        {# Nominees count #}
+        <td class="py-2 pr-4 text-xs" x-show="!editing">
+          {% if nom.nominees_count %}
+          <span class="px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-semibold">{{ nom.nominees_count }}</span>
+          {% else %}
+          <span class="text-gray-300">—</span>
+          {% endif %}
+        </td>
+
+        {# Year #}
         <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
 
-        {# ─ Longlist count (hidden while editing) ─ #}
+        {# Longlist count #}
         <td class="py-2 pr-4 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
 
-        {# ─ Actions ─ #}
+        {# Actions #}
         <td class="py-2 text-right whitespace-nowrap">
           <button type="button" @click="editing = !editing"
                   class="text-xs text-indigo-500 hover:underline mr-2"

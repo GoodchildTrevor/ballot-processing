@@ -32,15 +32,22 @@ def create_nomination(
     type: NominationType = Form(...),
     pick_min: Optional[str] = Form(None),
     pick_max: Optional[str] = Form(None),
+    nominees_count: Optional[str] = Form(None),
     year_filter: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     pmin = _parse_int(pick_min) if type == NominationType.PICK else None
     pmax = _parse_int(pick_max) if type == NominationType.PICK else None
+    nc = _parse_int(nominees_count)
     yf = _parse_int(year_filter)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
-    db.add(Nomination(name=name, type=type, pick_min=pmin, pick_max=pmax, year_filter=yf, sort_order=order))
+    db.add(Nomination(
+        name=name, type=type,
+        pick_min=pmin, pick_max=pmax,
+        nominees_count=nc,
+        year_filter=yf, sort_order=order,
+    ))
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
@@ -52,6 +59,7 @@ def edit_nomination(
     type: NominationType = Form(...),
     pick_min: Optional[str] = Form(None),
     pick_max: Optional[str] = Form(None),
+    nominees_count: Optional[str] = Form(None),
     year_filter: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
@@ -62,6 +70,7 @@ def edit_nomination(
     nom.type = type
     nom.pick_min = _parse_int(pick_min) if type == NominationType.PICK else None
     nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
+    nom.nominees_count = _parse_int(nominees_count)
     nom.year_filter = _parse_int(year_filter)
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
@@ -71,7 +80,6 @@ def edit_nomination(
 def delete_nomination(nom_id: int, db: Session = Depends(get_db)):
     nom = db.get(Nomination, nom_id)
     if nom:
-        # cascade delete nominees first
         db.query(Nominee).filter(Nominee.nomination_id == nom_id).delete()
         db.delete(nom)
         db.commit()
