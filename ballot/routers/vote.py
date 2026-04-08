@@ -11,52 +11,17 @@ router = APIRouter(dependencies=[Depends(require_voter)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _nominee_label(nominee: Nominee) -> str:
-    """Human-readable label: Song (Film), Person (Film), or Film (year)."""
-    if nominee.song:
-        return f"{nominee.song} ({nominee.film.title})"
-    if nominee.person:
-        return f"{nominee.person.name} ({nominee.film.title})"
-    return f"{nominee.film.title} ({nominee.film.year})"
-
-
 @router.get("/vote", response_class=HTMLResponse)
 def vote_page(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    existing_votes = {v.nominee_id for v in voter.votes}
-    existing_ranks = {
-        r.nomination_id: r.rank for r in voter.rankings
-    }
-
-    noms_data = []
-    for nom in nominations:
-        if nom.type == NominationType.PICK:
-            items = [
-                {"id": n.id, "label": _nominee_label(n)}
-                for n in nom.nominees
-            ]
-            noms_data.append({
-                "nom": nom,
-                "items": items,
-                "voted_ids": list(existing_votes & {n["id"] for n in items}),
-            })
-        else:
-            films = [
-                {"id": n.film_id, "title": n.film.title, "year": n.film.year}
-                for n in nom.nominees
-            ]
-            noms_data.append({
-                "nom": nom,
-                "films": films,
-                "current_rank": existing_ranks.get(nom.id),
-            })
-
     draft = voter.draft or {}
+    draft_restored = bool(draft)
     return templates.TemplateResponse(request, "vote.html", {
         "voter": voter,
-        "noms_data": noms_data,
+        "nominations": nominations,
         "draft": draft,
+        "draft_restored": draft_restored,
     })
 
 
@@ -74,7 +39,6 @@ async def submit_vote(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     form = await request.form()
 
-    # Clear previous votes and rankings
     db.query(Vote).filter(Vote.voter_id == voter.id).delete()
     db.query(Ranking).filter(Ranking.voter_id == voter.id).delete()
 
