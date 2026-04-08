@@ -23,10 +23,11 @@ def get_db():
         db.close()
 
 
-# Columns added after initial deploy — safe to run every startup (IF NOT EXISTS not
-# supported in SQLite ALTER TABLE, so we catch the OperationalError instead).
+# Columns added after initial deploy — safe to run every startup.
+# SQLite does not support IF NOT EXISTS in ALTER TABLE, so we catch OperationalError.
 _MIGRATIONS = [
     "ALTER TABLE nominations ADD COLUMN nominees_count INTEGER",
+    "ALTER TABLE voters ADD COLUMN draft JSON",
 ]
 
 
