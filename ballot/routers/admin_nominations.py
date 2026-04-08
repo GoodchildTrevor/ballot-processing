@@ -125,7 +125,6 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
     films = film_q.all()
     persons = db.query(Person).order_by(Person.name).all()
     years = _get_years(db)
-    # IDs already in the longlist for duplicate highlighting
     added_film_ids = {n.film_id for n in nom.nominees}
     return templates.TemplateResponse(
         request, "admin/nomination_detail.html",
@@ -145,18 +144,20 @@ def add_nominee_via_nomination(
     nom_id: int,
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
+    song: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
     pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
+    song_val = song.strip() if song and song.strip() else None
 
-    # Duplicate check: same nomination + same film + same person
     existing = db.query(Nominee).filter(
         Nominee.nomination_id == nom_id,
         Nominee.film_id == film_id,
         Nominee.person_id == pid,
+        Nominee.song == song_val,
     ).first()
     if existing:
         return RedirectResponse(
@@ -164,6 +165,6 @@ def add_nominee_via_nomination(
             status_code=303,
         )
 
-    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid))
+    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, song=song_val))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)

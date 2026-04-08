@@ -47,6 +47,7 @@ class Nominee(Base):
     nomination_id = Column(Integer, ForeignKey("nominations.id"), nullable=False)
     film_id = Column(Integer, ForeignKey("films.id"), nullable=False)
     person_id = Column(Integer, ForeignKey("persons.id"), nullable=True)
+    song = Column(String, nullable=True)
     nomination = relationship("Nomination", back_populates="nominees")
     film = relationship("Film", back_populates="nominees")
     person = relationship("Person", back_populates="nominees")
@@ -58,7 +59,7 @@ class Voter(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     voted_at = Column(DateTime, nullable=True)
-    draft = Column(JSON, nullable=True)  # autosaved ballot draft
+    draft = Column(JSON, nullable=True)
     votes = relationship("Vote", back_populates="voter")
     rankings = relationship("Ranking", back_populates="voter")
 

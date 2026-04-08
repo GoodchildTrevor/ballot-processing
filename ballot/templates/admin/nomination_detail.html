@@ -3,10 +3,7 @@
 {% block content %}
 <a href="/admin/nominations" class="text-sm text-indigo-500 hover:underline">← Все номинации</a>
 
-{# ── Header with inline edit toggle ── #}
 <div x-data="{ editing: false }" class="mt-2 mb-6">
-
-  {# View mode #}
   <div x-show="!editing" class="flex items-start gap-3">
     <div>
       <h1 class="text-2xl font-bold">{{ nom.name }}</h1>
@@ -27,19 +24,16 @@
             class="mt-1 text-xs text-indigo-500 hover:underline whitespace-nowrap">Редактировать</button>
   </div>
 
-  {# Edit mode #}
   <div x-show="editing" x-cloak>
     <form method="post" action="/admin/nominations/{{ nom.id }}/edit"
           x-data="{ nomType: '{{ nom.type.value }}' }"
           class="bg-white shadow rounded-xl p-5 space-y-4 max-w-lg">
       <h2 class="text-base font-semibold text-gray-700">Редактировать номинацию</h2>
-
       <div>
         <label class="block text-xs text-gray-500 mb-1">Название</label>
         <input type="text" name="name" value="{{ nom.name }}" required
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
       </div>
-
       <div>
         <label class="block text-xs text-gray-500 mb-1">Тип</label>
         <select name="type" x-model="nomType"
@@ -48,22 +42,18 @@
           <option value="PICK" {% if nom.type.value == 'PICK' %}selected{% endif %}>PICK — выбор</option>
         </select>
       </div>
-
       <div x-show="nomType === 'PICK'" class="flex gap-3">
         <div>
           <label class="block text-xs text-gray-500 mb-1">Мин. выбор</label>
-          <input type="number" name="pick_min" min="1"
-                 value="{{ nom.pick_min or '' }}"
+          <input type="number" name="pick_min" min="1" value="{{ nom.pick_min or '' }}"
                  class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
         </div>
         <div>
           <label class="block text-xs text-gray-500 mb-1">Макс. выбор</label>
-          <input type="number" name="pick_max" min="1"
-                 value="{{ nom.pick_max or '' }}"
+          <input type="number" name="pick_max" min="1" value="{{ nom.pick_max or '' }}"
                  class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
         </div>
       </div>
-
       <div>
         <label class="block text-xs text-gray-500 mb-1">Год <span class="text-gray-300">(необяз.)</span></label>
         <select name="year_filter"
@@ -74,7 +64,6 @@
           {% endfor %}
         </select>
       </div>
-
       <div class="flex gap-2 pt-1">
         <button type="submit"
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition">Сохранить</button>
@@ -83,7 +72,6 @@
       </div>
     </form>
   </div>
-
 </div>
 
 {# ── Add to longlist ── #}
@@ -92,7 +80,7 @@
 
   {% if error == 'duplicate' %}
   <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
-    Фильм уже есть в лонг-листе с такой же персоной.
+    Такой номинант уже есть в лонг-листе.
   </div>
   {% endif %}
 
@@ -144,16 +132,13 @@
     <div>
       <p class="text-xs text-gray-500 mb-1">Фильтр по году</p>
       <div class="flex flex-wrap gap-1">
-        <button type="button"
-                @click="yearTab = null"
+        <button type="button" @click="yearTab = null"
                 :class="yearTab === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
                 class="px-3 py-1 rounded-full text-xs font-medium transition">Все</button>
         <template x-for="y in filmYears" :key="y">
-          <button type="button"
-                  @click="yearTab = y; filmSel = null"
+          <button type="button" @click="yearTab = y; filmSel = null"
                   :class="yearTab === y ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                  class="px-3 py-1 rounded-full text-xs font-medium transition"
-                  x-text="y"></button>
+                  class="px-3 py-1 rounded-full text-xs font-medium transition" x-text="y"></button>
         </template>
       </div>
     </div>
@@ -201,6 +186,7 @@
       </div>
 
       {% if nom.type.value == 'PICK' %}
+      {# Person picker #}
       <div>
         <label class="block text-xs text-gray-500 mb-1">Персона <span class="text-gray-300">(необяз.)</span></label>
         <div class="flex items-center gap-1">
@@ -233,9 +219,7 @@
                         <span x-show="p.noms.includes(THIS_NOM_NAME)"
                               class="flex-shrink-0 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">уже есть</span>
                       </div>
-                      <div x-show="p.noms.length > 0"
-                           class="text-xs text-gray-400 mt-0.5 truncate"
-                           x-text="p.noms.join(', ')"></div>
+                      <div x-show="p.noms.length > 0" class="text-xs text-gray-400 mt-0.5 truncate" x-text="p.noms.join(', ')"></div>
                     </button>
                   </li>
                 </template>
@@ -243,11 +227,17 @@
               </ul>
             </div>
           </div>
-          <button x-show="personSel" type="button"
-                  @click="personSel = null"
-                  title="Сбросить"
-                  class="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">&times;</button>
+          <button x-show="personSel" type="button" @click="personSel = null"
+                  title="Сбросить" class="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">&times;</button>
         </div>
+      </div>
+
+      {# Song field #}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Песня <span class="text-gray-300">(необяз.)</span></label>
+        <input type="text" name="song" x-model="songVal"
+               placeholder="Название песни..."
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
       </div>
       {% endif %}
 
@@ -273,6 +263,7 @@
       {% if nom.type.value == 'PICK' %}
       persons,
       personQ: '', personOpen: false, personSel: null,
+      songVal: '',
       {% endif %}
       visibleFilms() {
         let rows = (!NOM_HAS_YEAR_FILTER && this.yearTab !== null)
@@ -309,13 +300,14 @@
     { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
-  function rowEditor(currentPersonId, currentFilmId) {
+  function rowEditor(currentPersonId, currentFilmId, currentSong) {
     return {
       editing: false,
       personSel: null,
       personQ: '', personOpen: false,
       filmSel: null,
       filmQ: '', filmOpen: false,
+      songVal: currentSong || '',
       init() {
         {% if nom.type.value == 'PICK' %}
         this.personSel = ALL_PERSONS.find(p => p.id === currentPersonId) || null;
@@ -345,15 +337,15 @@
         <th class="pb-2 pr-4">Фильм</th>
         <th class="pb-2 pr-4">Год</th>
         <th class="pb-2 pr-4">Персона</th>
+        <th class="pb-2 pr-4">Песня</th>
         <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
       {% for nominee in nom.nominees %}
       <tr class="border-b last:border-0 align-top"
-          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }})">
+          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }}, {{ nominee.song | tojson if nominee.song else 'null' }})">
 
-        {# Film cell #}
         <td class="py-2 pr-4 font-medium">
           <span x-show="!editing">{{ nominee.film.title }}</span>
           <div x-show="editing" x-cloak class="relative" style="min-width:200px">
@@ -379,13 +371,11 @@
           </div>
         </td>
 
-        {# Year cell #}
         <td class="py-2 pr-4 text-gray-400">
           <span x-show="!editing">{{ nominee.film.year }}</span>
           <span x-show="editing" x-cloak x-text="filmSel ? filmSel.year : ''"></span>
         </td>
 
-        {# Person cell #}
         <td class="py-2 pr-4">
           <span x-show="!editing">{{ nominee.person.name if nominee.person else '—' }}</span>
           {% if nom.type.value == 'PICK' %}
@@ -418,15 +408,25 @@
           {% endif %}
         </td>
 
-        {# Actions cell #}
+        {# Song cell #}
+        <td class="py-2 pr-4">
+          <span x-show="!editing">{{ nominee.song if nominee.song else '—' }}</span>
+          {% if nom.type.value == 'PICK' %}
+          <input x-show="editing" x-cloak type="text" x-model="songVal"
+                 placeholder="Песня..."
+                 class="border border-gray-300 rounded-lg px-2 py-1.5 text-xs w-40 focus:ring-indigo-400 focus:outline-none" />
+          {% else %}
+          <span x-show="editing" x-cloak class="text-xs text-gray-400 italic">N/A (RANK)</span>
+          {% endif %}
+        </td>
+
         <td class="py-2 text-right whitespace-nowrap">
           <form x-show="editing" x-cloak method="post" action="/admin/nominees/{{ nominee.id }}/edit"
-                @submit.prevent
-                x-ref="editForm">
+                @submit.prevent x-ref="editForm">
             <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : '{{ nominee.film_id }}'" />
             <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
-            <button type="button"
-                    @click="$refs.editForm.submit()"
+            <input type="hidden" name="song"      :value="songVal" />
+            <button type="button" @click="$refs.editForm.submit()"
                     class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg mr-1 transition">Сохранить</button>
             <button type="button" @click="editing=false;init()"
                     class="text-xs text-gray-400 hover:underline">Отмена</button>

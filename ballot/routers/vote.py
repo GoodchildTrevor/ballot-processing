@@ -1,142 +1,119 @@
-import json
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from typing import Optional
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from ballot.database import get_db
-from ballot.models import Voter, Nomination, NominationType, Vote, Ranking
+from ballot.models import Nomination, NominationType, Nominee, Vote, Ranking, Voter
+from ballot.auth import require_voter
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_voter)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-@router.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+def _nominee_label(nominee: Nominee) -> str:
+    """Human-readable label: Song (Film), Person (Film), or Film (year)."""
+    if nominee.song:
+        return f"{nominee.song} ({nominee.film.title})"
+    if nominee.person:
+        return f"{nominee.person.name} ({nominee.film.title})"
+    return f"{nominee.film.title} ({nominee.film.year})"
 
 
-@router.post("/")
-async def enter_name(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    name = str(form.get("name", "")).strip()
-    if not name:
-        return templates.TemplateResponse(request, "index.html", {"error": "Введите ник."})
-    voter = db.query(Voter).filter(Voter.name == name).first()
-    if not voter:
-        voter = Voter(name=name)
-        db.add(voter)
-        db.commit()
-        db.refresh(voter)
-    if voter.voted_at is not None:
-        return templates.TemplateResponse(request, "index.html", {"error": "Вы уже проголосовали."})
-    return RedirectResponse(url=f"/vote/{voter.id}", status_code=303)
-
-
-@router.get("/vote/{voter_id}", response_class=HTMLResponse)
-def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
-    voter = db.get(Voter, voter_id)
-    if not voter:
-        return HTMLResponse("Участник не найден.", status_code=404)
-    if voter.voted_at is not None:
-        return templates.TemplateResponse(request, "index.html", {"error": "Вы уже проголосовали."})
+@router.get("/vote", response_class=HTMLResponse)
+def vote_page(request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    return templates.TemplateResponse(
-        request, "vote.html",
-        {
-            "voter": voter,
-            "nominations": nominations,
-            "draft": voter.draft or {},
-        },
-    )
+    existing_votes = {v.nominee_id for v in voter.votes}
+    existing_ranks = {
+        r.nomination_id: r.rank for r in voter.rankings
+    }
+
+    noms_data = []
+    for nom in nominations:
+        if nom.type == NominationType.PICK:
+            items = [
+                {"id": n.id, "label": _nominee_label(n)}
+                for n in nom.nominees
+            ]
+            noms_data.append({
+                "nom": nom,
+                "items": items,
+                "voted_ids": list(existing_votes & {n["id"] for n in items}),
+            })
+        else:
+            films = [
+                {"id": n.film_id, "title": n.film.title, "year": n.film.year}
+                for n in nom.nominees
+            ]
+            noms_data.append({
+                "nom": nom,
+                "films": films,
+                "current_rank": existing_ranks.get(nom.id),
+            })
+
+    draft = voter.draft or {}
+    return templates.TemplateResponse(request, "vote.html", {
+        "voter": voter,
+        "noms_data": noms_data,
+        "draft": draft,
+    })
 
 
-# NOTE: this route MUST be defined before POST /vote/{voter_id} to avoid
-# FastAPI matching /vote/123/draft as /vote/{voter_id} with voter_id="123/draft".
-@router.post("/vote/{voter_id}/draft")
-async def save_draft(voter_id: int, request: Request, db: Session = Depends(get_db)):
-    """Autosave draft ballot — called from JS on every change."""
-    voter = db.get(Voter, voter_id)
-    if not voter or voter.voted_at is not None:
-        return JSONResponse({"ok": False}, status_code=403)
-    try:
-        data = await request.json()
-    except Exception:
-        return JSONResponse({"ok": False}, status_code=400)
-    voter.draft = data
+@router.post("/vote/draft")
+async def save_draft(request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    body = await request.json()
+    voter.draft = body
     db.commit()
-    return JSONResponse({"ok": True})
+    return {"ok": True}
 
 
-@router.post("/vote/{voter_id}")
-async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get_db)):
-    voter = db.get(Voter, voter_id)
-    if not voter or voter.voted_at is not None:
-        return RedirectResponse(url="/", status_code=303)
-
+@router.post("/vote")
+async def submit_vote(request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
     form = await request.form()
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
 
-    errors = []
+    # Clear previous votes and rankings
+    db.query(Vote).filter(Vote.voter_id == voter.id).delete()
+    db.query(Ranking).filter(Ranking.voter_id == voter.id).delete()
+
+    nominations = db.query(Nomination).all()
     for nom in nominations:
-        if nom.type == NominationType.RANK:
-            rank_max = nom.nominees_count or len(nom.nominees)
-            vals = [form.get(f"rank_{nom.id}_{n.film_id}") for n in nom.nominees]
-            filled = [v for v in vals if v]
-
-            # All nominations are optional — skip is allowed.
-            # Only validate if at least one value is filled.
-            if filled and len(set(filled)) < len(filled):
-                errors.append(
-                    f"Номинация «{nom.name}»: два фильма на одном месте."
-                )
-            elif filled:
-                bad = [v for v in filled if not (1 <= int(v) <= rank_max)]
-                if bad:
-                    errors.append(
-                        f"Номинация «{nom.name}»: место должно быть от 1 до {rank_max}."
-                    )
-
-        elif nom.type == NominationType.PICK:
-            chosen = form.getlist(f"pick_{nom.id}")
-            pmin = nom.pick_min or 1
-            pmax = nom.pick_max or 1
-            n = len(chosen)
-            # Optional — only validate if something was chosen.
-            if 0 < n < pmin:
-                errors.append(
-                    f"Номинация «{nom.name}»: выбрано {n}, нужно минимум {pmin} или отмените выбор."
-                )
-            if n > pmax:
-                errors.append(
-                    f"Номинация «{nom.name}»: можно выбрать не более {pmax}."
-                )
-
-    if errors:
-        return templates.TemplateResponse(
-            request, "vote.html",
-            {"voter": voter, "nominations": nominations, "errors": errors, "draft": voter.draft or {}},
-            status_code=422,
-        )
-
-    for nom in nominations:
-        if nom.type == NominationType.RANK:
+        if nom.type == NominationType.PICK:
+            key = f"pick_{nom.id}"
+            raw = form.getlist(key)
+            for val in raw:
+                try:
+                    nid = int(val)
+                    if db.get(Nominee, nid):
+                        db.add(Vote(voter_id=voter.id, nominee_id=nid))
+                except ValueError:
+                    pass
+        else:
             for nominee in nom.nominees:
-                val = form.get(f"rank_{nom.id}_{nominee.film_id}")
+                key = f"rank_{nom.id}_{nominee.film_id}"
+                val = form.get(key)
                 if val:
-                    db.add(Ranking(
-                        voter_id=voter.id,
-                        nomination_id=nom.id,
-                        film_id=nominee.film_id,
-                        rank=int(val),
-                    ))
-        elif nom.type == NominationType.PICK:
-            chosen = form.getlist(f"pick_{nom.id}")
-            pmax = nom.pick_max or 1
-            for nominee_id in chosen[:pmax]:
-                db.add(Vote(voter_id=voter.id, nominee_id=int(nominee_id)))
+                    try:
+                        rank = int(val)
+                        if 1 <= rank <= len(nom.nominees):
+                            db.add(Ranking(
+                                voter_id=voter.id,
+                                nomination_id=nom.id,
+                                film_id=nominee.film_id,
+                                rank=rank,
+                            ))
+                    except ValueError:
+                        pass
 
+    from datetime import datetime, timezone
     voter.voted_at = datetime.now(timezone.utc)
-    voter.draft = None  # clear draft on final submit
+    voter.draft = None
     db.commit()
-    return templates.TemplateResponse(request, "thankyou.html", {"voter": voter})
+    return RedirectResponse(url="/thank-you", status_code=303)
+
+
+@router.get("/thank-you", response_class=HTMLResponse)
+def thank_you(request: Request):
+    return templates.TemplateResponse(request, "thank_you.html", {})
