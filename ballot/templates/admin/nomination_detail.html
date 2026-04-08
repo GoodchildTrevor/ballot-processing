@@ -27,139 +27,181 @@
   </p>
   {% else %}
 
-  {# Serialise films list for Alpine #}
   <script>
   const NOM_FILMS = [
     {% for film in films %}
     { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
+
+  {% if nom.type.value == 'PICK' %}
+  // person.noms — nominations where this person already appears in THIS nomination's longlist
+  const NOM_PERSONS = [
+    {% for person in persons %}
+    {
+      id: {{ person.id }},
+      name: {{ person.name | tojson }},
+      noms: [
+        {% for nominee in person.nominees %}
+        {{ nominee.nomination.name | tojson }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ]
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+  const THIS_NOM_NAME = {{ nom.name | tojson }};
+  {% endif %}
   </script>
 
   <form method="post" action="/admin/nominations/{{ nom.id }}/nominees"
-        x-data="filmPicker()" class="space-y-3">
+        x-data="formPicker()" class="space-y-3">
 
-    {# Hidden real select that gets submitted #}
-    <input type="hidden" name="film_id" :value="selected ? selected.id : ''" />
+    <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : ''" />
+    <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
 
-    {# Year tabs #}
+    {# ── Year tabs ── #}
     <div>
       <p class="text-xs text-gray-500 mb-1">Фильтр по году</p>
       <div class="flex flex-wrap gap-1">
         <button type="button"
                 @click="yearTab = null"
-                :class="yearTab === null
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                class="px-3 py-1 rounded-full text-xs font-medium transition">
-          Все
-        </button>
-        <template x-for="y in years" :key="y">
+                :class="yearTab === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                class="px-3 py-1 rounded-full text-xs font-medium transition">Все</button>
+        <template x-for="y in filmYears" :key="y">
           <button type="button"
-                  @click="yearTab = y; selected = null"
-                  :class="yearTab === y
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                  @click="yearTab = y; filmSel = null"
+                  :class="yearTab === y ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
                   class="px-3 py-1 rounded-full text-xs font-medium transition"
-                  x-text="y">
-          </button>
+                  x-text="y"></button>
         </template>
       </div>
     </div>
 
-    {# Search + dropdown #}
     <div class="flex flex-wrap gap-3 items-end">
+
+      {# ── Film picker ── #}
       <div class="relative" style="min-width:260px">
         <label class="block text-xs text-gray-500 mb-1">Фильм</label>
-
-        {# Display box — shows selected or placeholder #}
-        <button type="button"
-                @click="open = !open"
+        <button type="button" @click="filmOpen = !filmOpen"
                 class="w-full text-left border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-indigo-400 focus:outline-none flex items-center justify-between gap-2">
-          <span :class="selected ? 'text-gray-800' : 'text-gray-400'"
-                x-text="selected ? selected.title + ' (' + selected.year + ')' : '— выбрать —'"></span>
-          <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor">
-            <path d="M6 8L1 3h10z"/>
-          </svg>
+          <span :class="filmSel ? 'text-gray-800' : 'text-gray-400'"
+                x-text="filmSel ? filmSel.title + ' (' + filmSel.year + ')' : '— выбрать —'"></span>
+          <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
         </button>
-
-        {# Dropdown panel #}
-        <div x-show="open" x-cloak @click.outside="open = false"
+        <div x-show="filmOpen" x-cloak @click.outside="filmOpen = false"
              class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-
           <div class="p-2 border-b border-gray-100">
-            <input x-ref="search"
-                   x-model="q"
-                   type="text"
-                   placeholder="Поиск..."
+            <input x-model="filmQ" type="text" placeholder="Поиск..."
                    class="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-indigo-400 focus:outline-none" />
           </div>
-
           <ul class="max-h-60 overflow-y-auto">
             <template x-for="f in visibleFilms()" :key="f.id">
               <li>
-                <button type="button"
-                        @click="selected = f; open = false; q = ''"
-                        :class="selected && selected.id === f.id
-                          ? 'bg-indigo-50 text-indigo-700 font-medium'
-                          : 'hover:bg-gray-50 text-gray-700'"
+                <button type="button" @click="filmSel = f; filmOpen = false; filmQ = ''"
+                        :class="filmSel && filmSel.id === f.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-700'"
                         class="w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2">
                   <span x-text="f.title"></span>
                   <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.year"></span>
                 </button>
               </li>
             </template>
-            <li x-show="visibleFilms().length === 0"
-                class="px-3 py-3 text-xs text-gray-400 text-center">Ничего не найдено</li>
+            <li x-show="visibleFilms().length === 0" class="px-3 py-3 text-xs text-gray-400 text-center">Ничего не найдено</li>
           </ul>
         </div>
       </div>
 
       {% if nom.type.value == 'PICK' %}
-      <div>
+      {# ── Person picker ── #}
+      <div class="relative" style="min-width:220px">
         <label class="block text-xs text-gray-500 mb-1">Персона <span class="text-gray-300">(необяз.)</span></label>
-        <select name="person_id"
-                class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-          <option value="">— нет —</option>
-          {% for person in persons %}
-          <option value="{{ person.id }}">{{ person.name }}</option>
-          {% endfor %}
-        </select>
+        <button type="button" @click="personOpen = !personOpen"
+                class="w-full text-left border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-indigo-400 focus:outline-none flex items-center justify-between gap-2">
+          <span :class="personSel ? 'text-gray-800' : 'text-gray-400'"
+                x-text="personSel ? personSel.name : '— нет —'"></span>
+          <div class="flex items-center gap-1 flex-shrink-0">
+            <button x-show="personSel" type="button"
+                    @click.stop="personSel = null"
+                    class="text-gray-300 hover:text-gray-500 leading-none text-base">&times;</button>
+            <svg class="w-3 h-3 text-gray-400" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
+          </div>
+        </button>
+        <div x-show="personOpen" x-cloak @click.outside="personOpen = false"
+             class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div class="p-2 border-b border-gray-100">
+            <input x-model="personQ" type="text" placeholder="Поиск по имени..."
+                   @input="" 
+                   class="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-indigo-400 focus:outline-none" />
+          </div>
+          <ul class="max-h-64 overflow-y-auto">
+            {# «Нет» option #}
+            <li>
+              <button type="button" @click="personSel = null; personOpen = false"
+                      :class="!personSel ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-500'"
+                      class="w-full text-left px-3 py-2 text-sm italic">— нет —</button>
+            </li>
+            <template x-for="p in visiblePersons()" :key="p.id">
+              <li>
+                <button type="button" @click="personSel = p; personOpen = false; personQ = ''"
+                        :class="personSel && personSel.id === p.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-700'"
+                        class="w-full text-left px-3 py-2 text-sm">
+                  <div class="flex items-center justify-between gap-2">
+                    <span x-text="p.name"></span>
+                    {# Badge: already in THIS nomination #}
+                    <span x-show="p.noms.includes(THIS_NOM_NAME)"
+                          class="flex-shrink-0 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">уже есть</span>
+                  </div>
+                  {# Other nominations hint #}
+                  <div x-show="p.noms.length > 0"
+                       class="text-xs text-gray-400 mt-0.5 truncate"
+                       x-text="p.noms.join(', ')"></div>
+                </button>
+              </li>
+            </template>
+            <li x-show="visiblePersons().length === 0" class="px-3 py-3 text-xs text-gray-400 text-center">Ничего не найдено</li>
+          </ul>
+        </div>
       </div>
       {% endif %}
 
       <button type="submit"
-              :disabled="!selected"
-              :class="selected ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
-              class="text-white px-4 py-2 rounded-lg text-sm transition">
-        Добавить
-      </button>
+              :disabled="!filmSel"
+              :class="filmSel ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
+              class="px-4 py-2 rounded-lg text-sm transition">Добавить</button>
     </div>
-
   </form>
 
   <script>
-  function filmPicker() {
-    const all = NOM_FILMS.slice().sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-    const allYears = [...new Set(all.map(f => f.year))].sort((a, b) => b - a);
+  function formPicker() {
+    const films = NOM_FILMS.slice().sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+    const filmYears = [...new Set(films.map(f => f.year))].sort((a, b) => b - a);
+    {% if nom.type.value == 'PICK' %}
+    const persons = (typeof NOM_PERSONS !== 'undefined' ? NOM_PERSONS : [])
+      .slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    {% endif %}
     return {
-      all,
-      years: allYears,
+      films, filmYears,
       yearTab: null,
-      q: '',
-      open: false,
-      selected: null,
+      filmQ: '', filmOpen: false, filmSel: null,
+      {% if nom.type.value == 'PICK' %}
+      persons,
+      personQ: '', personOpen: false, personSel: null,
+      {% endif %}
       visibleFilms() {
         let rows = this.yearTab !== null
-          ? this.all.filter(f => f.year === this.yearTab)
-          : this.all;
-        if (this.q.trim()) {
-          const q = this.q.toLowerCase();
-          rows = rows.filter(f => f.title.toLowerCase().includes(q));
-        }
+          ? this.films.filter(f => f.year === this.yearTab)
+          : this.films;
+        const q = this.filmQ.toLowerCase().trim();
+        if (q) rows = rows.filter(f => f.title.toLowerCase().includes(q));
         return rows;
-      }
-    }
+      },
+      {% if nom.type.value == 'PICK' %}
+      visiblePersons() {
+        const q = this.personQ.toLowerCase().trim();
+        if (!q) return this.persons;
+        return this.persons.filter(p => p.name.toLowerCase().includes(q));
+      },
+      {% endif %}
+    };
   }
   </script>
   {% endif %}
