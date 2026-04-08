@@ -51,6 +51,8 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
     )
 
 
+# NOTE: this route MUST be defined before POST /vote/{voter_id} to avoid
+# FastAPI matching /vote/123/draft as /vote/{voter_id} with voter_id="123/draft".
 @router.post("/vote/{voter_id}/draft")
 async def save_draft(voter_id: int, request: Request, db: Session = Depends(get_db)):
     """Autosave draft ballot — called from JS on every change."""
@@ -82,11 +84,9 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
             vals = [form.get(f"rank_{nom.id}_{n.film_id}") for n in nom.nominees]
             filled = [v for v in vals if v]
 
-            if 0 < len(filled) < rank_max:
-                errors.append(
-                    f"Номинация «{nom.name}»: заполните все {rank_max} мест или не выбирайте ничего."
-                )
-            elif filled and len(set(filled)) < len(filled):
+            # All nominations are optional — skip is allowed.
+            # Only validate if at least one value is filled.
+            if filled and len(set(filled)) < len(filled):
                 errors.append(
                     f"Номинация «{nom.name}»: два фильма на одном месте."
                 )
@@ -102,6 +102,7 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
             pmin = nom.pick_min or 1
             pmax = nom.pick_max or 1
             n = len(chosen)
+            # Optional — only validate if something was chosen.
             if 0 < n < pmin:
                 errors.append(
                     f"Номинация «{nom.name}»: выбрано {n}, нужно минимум {pmin} или отмените выбор."
