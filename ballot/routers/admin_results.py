@@ -26,18 +26,27 @@ def get_results(db: Session):
                 .order_by(func.sum(11 - Ranking.rank).desc())
                 .all()
             )
-            # voters who ranked each film
-            film_voters = {}
+            # voters who ranked each film: {film_title: [(voter_name, rank), ...]}
+            film_voters_map = {}
             for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
-                film_voters.setdefault(r.film_id, []).append(r)
+                film = db.get(Film, r.film_id)
+                voter = db.get(Voter, r.voter_id)
+                if film and voter:
+                    film_voters_map.setdefault(film.title, []).append((voter.name, r.rank))
+
             rows = []
             for r in rows_raw:
-                film = db.query(Film).filter(Film.title == r.title).first()
-                fv = film_voters.get(film.id, []) if film else []
-                voter_names = ", ".join(
-                    sorted(set(db.get(Voter, rv.voter_id).name for rv in fv))
-                )
-                rows.append({"label": r.title, "score": r.score, "voters": voter_names})
+                voter_entries = film_voters_map.get(r.title, [])
+                # sort by voter name
+                voter_entries.sort(key=lambda x: x[0])
+                rows.append({
+                    "label": r.title,
+                    "score": r.score,
+                    # list of {name, rank} for template
+                    "voter_list": [{"name": n, "rank": rank} for n, rank in voter_entries],
+                    # plain string for xlsx
+                    "voters": ", ".join(f"{n} ({rank})" for n, rank in voter_entries),
+                })
             results.append({"nom": nom, "rows": rows})
         else:
             rows_raw = (
@@ -48,7 +57,9 @@ def get_results(db: Session):
                 .order_by(func.count(Vote.id).desc())
                 .all()
             )
-            rows = []
+
+            # Build scored rows first
+            scored = []
             for nominee, votes in rows_raw:
                 label = nominee.film.title
                 if nominee.person:
@@ -56,8 +67,24 @@ def get_results(db: Session):
                 voter_names = ", ".join(
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes)
                 )
-                rows.append({"label": label, "score": votes, "voters": voter_names})
-            results.append({"nom": nom, "rows": rows})
+                scored.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
+
+            # DENSE RANK: assign dense rank by score descending
+            # pick_max is the target nominee count
+            pick_max = nom.pick_max  # can be None
+            if pick_max and scored:
+                # Compute dense ranks
+                sorted_scores = sorted(set(r["score"] for r in scored), reverse=True)
+                score_to_dense_rank = {s: i + 1 for i, s in enumerate(sorted_scores)}
+                for row in scored:
+                    row["dense_rank"] = score_to_dense_rank[row["score"]]
+                    row["is_nominee"] = row["dense_rank"] <= pick_max
+            else:
+                for row in scored:
+                    row["dense_rank"] = None
+                    row["is_nominee"] = False
+
+            results.append({"nom": nom, "rows": scored})
     return results
 
 
@@ -74,9 +101,16 @@ def export_results(db: Session = Depends(get_db)):
     wb.remove(wb.active)
     for item in results:
         ws = wb.create_sheet(title=item["nom"].name[:31])
-        ws.append(["Участник", "Очки / Голоса", "Проголосовали"])
+        if item["nom"].type == NominationType.RANK:
+            ws.append(["Участник", "Очки", "Проголосовали (место)"])
+        else:
+            ws.append(["Участник", "Голоса", "Проголосовали",
+                       "Номинант" if item["nom"].pick_max else ""])
         for row in item["rows"]:
-            ws.append([row["label"], row["score"], row["voters"]])
+            extra = []
+            if item["nom"].type == NominationType.PICK and item["nom"].pick_max:
+                extra = ["✅ Номинант" if row.get("is_nominee") else ""]
+            ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

@@ -14,6 +14,11 @@
       {{ 'bg-yellow-100 text-yellow-700' if item.nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
       {{ item.nom.type.value }}
     </span>
+    {% if item.nom.type.value == 'PICK' and item.nom.pick_max %}
+    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-600">
+      Номинантов: {{ item.nom.pick_max }}
+    </span>
+    {% endif %}
   </div>
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
@@ -26,11 +31,30 @@
     </thead>
     <tbody>
       {% for row in item.rows %}
-      <tr class="border-b last:border-0 hover:bg-gray-50">
-        <td class="py-2 pr-3 font-bold text-indigo-600 tabular-nums">{{ loop.index }}</td>
-        <td class="py-2 pr-4">{{ row.label }}</td>
-        <td class="py-2 pr-4 font-semibold tabular-nums">{{ row.score }}</td>
-        <td class="py-2 text-gray-400 text-xs">{{ row.voters if row.voters else '—' }}</td>
+      {% set highlight = item.nom.type.value == 'PICK' and item.nom.pick_max and row.is_nominee %}
+      <tr class="border-b last:border-0 {{ 'bg-red-50 hover:bg-red-100' if highlight else 'hover:bg-gray-50' }}">
+        <td class="py-2 pr-3 font-bold tabular-nums
+          {{ 'text-red-500' if highlight else 'text-indigo-600' }}">{{ loop.index }}</td>
+        <td class="py-2 pr-4 {{ 'font-semibold text-red-700' if highlight else '' }}">{{ row.label }}</td>
+        <td class="py-2 pr-4 font-semibold tabular-nums
+          {{ 'text-red-600' if highlight else '' }}">{{ row.score }}</td>
+        <td class="py-2 text-xs">
+          {% if item.nom.type.value == 'RANK' %}
+            {% if row.voter_list %}
+              <span class="text-gray-400">
+                {% for entry in row.voter_list %}
+                  {{ entry.name }} <span class="font-mono bg-gray-100 px-1 rounded">№{{ entry.rank }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </span>
+            {% else %}
+              <span class="text-gray-300">—</span>
+            {% endif %}
+          {% else %}
+            <span class="{{ 'text-red-400' if highlight else 'text-gray-400' }}">
+              {{ row.voters if row.voters else '—' }}
+            </span>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
       <tr><td colspan="4" class="py-4 text-gray-400 text-center">Голосов пока нет</td></tr>
