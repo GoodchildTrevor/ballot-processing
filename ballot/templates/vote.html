@@ -30,7 +30,7 @@
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
   </div>
 
-  <form method="post" action="/vote/{{ voter.id }}" id="ballotForm">
+  <form method="post" action="/vote" id="ballotForm">
   <div class="max-w-2xl mx-auto px-4 pt-12 pb-28">
 
     {# TOC slide #}
@@ -249,24 +249,19 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
-  const VOTER_ID   = {{ voter.id }};
   const TOTAL_NOMS = {{ nominations | length }};
   const nomDone    = {};
   let   saveTimer  = null;
 
-  // Collect current form state as flat key->value dict
   function collectFormData() {
     const data = {};
     const form = document.getElementById('ballotForm');
-    // selects (RANK)
     form.querySelectorAll('select').forEach(sel => {
       if (sel.name && sel.value) data[sel.name] = sel.value;
     });
-    // radios (PICK single)
     form.querySelectorAll('input[type=radio]:checked').forEach(r => {
       data[r.name] = r.value;
     });
-    // checkboxes (PICK multi)
     const cbGroups = {};
     form.querySelectorAll('input[type=checkbox]').forEach(cb => {
       if (!cbGroups[cb.name]) cbGroups[cb.name] = [];
@@ -276,13 +271,12 @@
     return data;
   }
 
-  // Debounced autosave — fires 1.5s after last change
   function scheduleSave() {
     clearTimeout(saveTimer);
     window.dispatchEvent(new CustomEvent('draft-saving'));
     saveTimer = setTimeout(async () => {
       try {
-        const res = await fetch(`/vote/${VOTER_ID}/draft`, {
+        const res = await fetch('/vote/draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(collectFormData()),
@@ -300,7 +294,6 @@
       values: [],
       init() {
         const selects = this.$el.querySelectorAll('select');
-        // Read initial values (may be pre-filled from draft)
         this.values = Array.from(selects).map(s => s.value || '');
         this._refreshOptions();
         nomDone[idx] = () => this.allFilled() && !this.hasDuplicates();
@@ -331,7 +324,6 @@
     return {
       pmin, pmax, count: 0, checked: {},
       init() {
-        // Count pre-checked inputs from draft restore
         if (pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
         } else {
