@@ -17,6 +17,11 @@ app.include_router(admin_results.router)
 app.include_router(admin_persons.router)
 
 
+@app.get("/")
+def root():
+    return RedirectResponse(url="/vote", status_code=302)
+
+
 @app.get("/admin")
 def admin_root():
     return RedirectResponse(url="/admin/films", status_code=302)
