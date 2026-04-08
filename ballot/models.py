@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, DateTime,
-    Enum as SAEnum, UniqueConstraint
+    Enum as SAEnum, UniqueConstraint, JSON
 )
 from sqlalchemy.orm import relationship
 from ballot.database import Base
@@ -33,9 +33,9 @@ class Nomination(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     type = Column(SAEnum(NominationType), nullable=False)
-    pick_min = Column(Integer, nullable=True)    # min choices for PICK (default 1)
-    pick_max = Column(Integer, nullable=True)    # max choices for PICK
-    nominees_count = Column(Integer, nullable=True)  # how many nominees pass to final shortlist
+    pick_min = Column(Integer, nullable=True)
+    pick_max = Column(Integer, nullable=True)
+    nominees_count = Column(Integer, nullable=True)
     year_filter = Column(Integer, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
     nominees = relationship("Nominee", back_populates="nomination")
@@ -58,6 +58,7 @@ class Voter(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     voted_at = Column(DateTime, nullable=True)
+    draft = Column(JSON, nullable=True)  # autosaved ballot draft
     votes = relationship("Vote", back_populates="voter")
     rankings = relationship("Ranking", back_populates="voter")
 

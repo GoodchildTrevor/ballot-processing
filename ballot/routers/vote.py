@@ -1,6 +1,7 @@
+import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from ballot.database import get_db
@@ -42,8 +43,27 @@ def ballot(voter_id: int, request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     return templates.TemplateResponse(
         request, "vote.html",
-        {"voter": voter, "nominations": nominations},
+        {
+            "voter": voter,
+            "nominations": nominations,
+            "draft": voter.draft or {},
+        },
     )
+
+
+@router.post("/vote/{voter_id}/draft")
+async def save_draft(voter_id: int, request: Request, db: Session = Depends(get_db)):
+    """Autosave draft ballot — called from JS on every change."""
+    voter = db.get(Voter, voter_id)
+    if not voter or voter.voted_at is not None:
+        return JSONResponse({"ok": False}, status_code=403)
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False}, status_code=400)
+    voter.draft = data
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/vote/{voter_id}")
@@ -58,18 +78,17 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
     errors = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
-            # rank_max: configured places, fallback to longlist length
             rank_max = nom.nominees_count or len(nom.nominees)
             vals = [form.get(f"rank_{nom.id}_{n.film_id}") for n in nom.nominees]
             filled = [v for v in vals if v]
 
-            if 0 < len(filled) < len(nom.nominees):
+            if 0 < len(filled) < rank_max:
                 errors.append(
-                    f"Номинация «{nom.name}»: заполните все значения рейтинга или не выбирайте ничего."
+                    f"Номинация «{nom.name}»: заполните все {rank_max} мест или не выбирайте ничего."
                 )
             elif filled and len(set(filled)) < len(filled):
                 errors.append(
-                    f"Номинация «{nom.name}»: два фильма на одном месте — каждому фильму своё место."
+                    f"Номинация «{nom.name}»: два фильма на одном месте."
                 )
             elif filled:
                 bad = [v for v in filled if not (1 <= int(v) <= rank_max)]
@@ -95,7 +114,7 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
     if errors:
         return templates.TemplateResponse(
             request, "vote.html",
-            {"voter": voter, "nominations": nominations, "errors": errors},
+            {"voter": voter, "nominations": nominations, "errors": errors, "draft": voter.draft or {}},
             status_code=422,
         )
 
@@ -117,5 +136,6 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
                 db.add(Vote(voter_id=voter.id, nominee_id=int(nominee_id)))
 
     voter.voted_at = datetime.now(timezone.utc)
+    voter.draft = None  # clear draft on final submit
     db.commit()
     return templates.TemplateResponse(request, "thankyou.html", {"voter": voter})

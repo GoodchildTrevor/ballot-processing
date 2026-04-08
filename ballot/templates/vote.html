@@ -17,7 +17,16 @@
     <div class="h-1 bg-indigo-500 transition-all duration-300"
          :style="'width:' + progressPct() + '%'"></div>
   </div>
-  <div class="fixed top-1 left-0 right-0 z-40 px-4 pt-2 pb-1">
+
+  {# Autosave status indicator #}
+  <div class="fixed top-2 right-3 z-50 text-xs flex items-center gap-1 transition-opacity duration-300"
+       :class="saveStatus === 'idle' ? 'opacity-0' : 'opacity-100'">
+    <span x-show="saveStatus === 'saving'" class="text-gray-400">⏳ Сохраняю...</span>
+    <span x-show="saveStatus === 'saved'"  class="text-green-500">✓ Черновик сохранён</span>
+    <span x-show="saveStatus === 'error'"  class="text-red-400">⚠️ Не удалось сохранить</span>
+  </div>
+
+  <div class="fixed top-1 left-3 z-40 pt-2 pb-1">
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
   </div>
 
@@ -30,6 +39,11 @@
         <h1 class="text-4xl font-extrabold text-gray-900 leading-tight mb-2">Бюллетень</h1>
         <p class="text-gray-500">Выберите номинацию, чтобы перейти к ней.</p>
       </div>
+      {% if draft_restored %}
+      <div class="mb-4 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-700">
+        💾 Черновик восстановлен. Продолжайте с того места, где остановились.
+      </div>
+      {% endif %}
       <div class="space-y-3">
         {% for nom in nominations %}
         <button type="button" @click="goTo({{ loop.index0 }})"
@@ -90,17 +104,21 @@
       </p>
       <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
         {% for nominee in nom.nominees %}
+        {% set draft_key = 'rank_' ~ nom.id ~ '_' ~ nominee.film_id %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
             {{ nominee.film.title }}
             <span class="text-gray-400 text-xs">({{ nominee.film.year }})</span>
           </span>
           <select name="rank_{{ nom.id }}_{{ nominee.film_id }}"
-                  @change="onChange($event, {{ loop.index0 }})"
+                  @change="onChange($event, {{ loop.index0 }}); scheduleSave()"
                   class="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-400 focus:outline-none">
             <option value="">—</option>
             {% for i in range(1, rank_max + 1) %}
-            <option value="{{ i }}">{{ i }}</option>
+            <option value="{{ i }}"
+              {% if draft.get(draft_key) == i|string %}selected{% endif %}>
+              {{ i }}
+            </option>
             {% endfor %}
           </select>
         </div>
@@ -128,10 +146,13 @@
         </p>
         <div class="bg-white rounded-xl shadow-sm divide-y">
           {% for nominee in nom.nominees %}
+          {% set pick_key = 'pick_' ~ nom.id %}
           {% if pmax == 1 %}
           <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition">
             <input type="radio" name="pick_{{ nom.id }}" value="{{ nominee.id }}"
-                   @change="onChange()" class="accent-indigo-600 w-4 h-4" />
+                   @change="onChange(); scheduleSave()"
+                   {% if draft.get(pick_key) == nominee.id|string %}checked{% endif %}
+                   class="accent-indigo-600 w-4 h-4" />
             <span class="text-sm text-gray-800">
               {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
               {% else %}{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>{% endif %}
@@ -141,7 +162,8 @@
           <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition"
                  :class="{ 'opacity-40 pointer-events-none': !checked['{{ nominee.id }}'] && count >= pmax }">
             <input type="checkbox" name="pick_{{ nom.id }}" value="{{ nominee.id }}"
-                   x-model="checked['{{ nominee.id }}']" @change="onChange()"
+                   x-model="checked['{{ nominee.id }}']" @change="onChange(); scheduleSave()"
+                   {% if draft.get(pick_key) and nominee.id|string in draft.get(pick_key, []) %}checked{% endif %}
                    class="accent-indigo-600 w-4 h-4" />
             <span class="text-sm text-gray-800">
               {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
@@ -227,8 +249,50 @@
 
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
+  const VOTER_ID   = {{ voter.id }};
   const TOTAL_NOMS = {{ nominations | length }};
-  const nomDone = {};
+  const nomDone    = {};
+  let   saveTimer  = null;
+
+  // Collect current form state as flat key->value dict
+  function collectFormData() {
+    const data = {};
+    const form = document.getElementById('ballotForm');
+    // selects (RANK)
+    form.querySelectorAll('select').forEach(sel => {
+      if (sel.name && sel.value) data[sel.name] = sel.value;
+    });
+    // radios (PICK single)
+    form.querySelectorAll('input[type=radio]:checked').forEach(r => {
+      data[r.name] = r.value;
+    });
+    // checkboxes (PICK multi)
+    const cbGroups = {};
+    form.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      if (!cbGroups[cb.name]) cbGroups[cb.name] = [];
+      if (cb.checked) cbGroups[cb.name].push(cb.value);
+    });
+    Object.assign(data, cbGroups);
+    return data;
+  }
+
+  // Debounced autosave — fires 1.5s after last change
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    window.dispatchEvent(new CustomEvent('draft-saving'));
+    saveTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/vote/${VOTER_ID}/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(collectFormData()),
+        });
+        window.dispatchEvent(new CustomEvent(res.ok ? 'draft-saved' : 'draft-error'));
+      } catch {
+        window.dispatchEvent(new CustomEvent('draft-error'));
+      }
+    }, 1500);
+  }
 
   function rankBlock(idx, maxRank) {
     return {
@@ -236,8 +300,9 @@
       values: [],
       init() {
         const selects = this.$el.querySelectorAll('select');
-        this.values = Array.from(selects).map(() => '');
-        // Done when exactly maxRank unique ranks are assigned, no duplicates
+        // Read initial values (may be pre-filled from draft)
+        this.values = Array.from(selects).map(s => s.value || '');
+        this._refreshOptions();
         nomDone[idx] = () => this.allFilled() && !this.hasDuplicates();
       },
       onChange(event, i) {
@@ -253,13 +318,8 @@
           });
         });
       },
-      filledCount() {
-        return this.values.filter(v => v !== '').length;
-      },
-      // Ready when exactly maxRank rows have a value (one film may be left blank)
-      allFilled() {
-        return this.filledCount() === this.maxRank;
-      },
+      filledCount() { return this.values.filter(v => v !== '').length; },
+      allFilled()   { return this.filledCount() === this.maxRank; },
       hasDuplicates() {
         const filled = this.values.filter(v => v !== '');
         return new Set(filled).size < filled.length;
@@ -270,7 +330,18 @@
   function pickBlock(idx, pmin, pmax) {
     return {
       pmin, pmax, count: 0, checked: {},
-      init() { nomDone[idx] = () => this.isValid(); },
+      init() {
+        // Count pre-checked inputs from draft restore
+        if (pmax === 1) {
+          this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
+        } else {
+          this.$el.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+            this.checked[cb.value] = true;
+          });
+          this.count = Object.values(this.checked).filter(Boolean).length;
+        }
+        nomDone[idx] = () => this.isValid();
+      },
       onChange() {
         if (this.pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
@@ -278,7 +349,7 @@
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
       },
-      isValid() { return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax); },
+      isValid()    { return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax); },
       statusClass() {
         if (this.count === 0) return 'text-gray-400 font-semibold';
         if (this.count < this.pmin) return 'text-red-500 font-semibold';
@@ -296,12 +367,21 @@
     return {
       current: -1,
       totalSlides: TOTAL_NOMS,
+      saveStatus: 'idle',
+      _savedTimer: null,
       init() {
         this.showSlide(this.current);
         window.addEventListener('keydown', e => {
           if (e.key === 'ArrowRight') this.nextOrWarn();
           if (e.key === 'ArrowLeft')  this.prev();
         });
+        window.addEventListener('draft-saving', () => { this.saveStatus = 'saving'; });
+        window.addEventListener('draft-saved',  () => {
+          this.saveStatus = 'saved';
+          clearTimeout(this._savedTimer);
+          this._savedTimer = setTimeout(() => { this.saveStatus = 'idle'; }, 2500);
+        });
+        window.addEventListener('draft-error',  () => { this.saveStatus = 'error'; });
       },
       showSlide(idx) {
         document.querySelectorAll('.slide').forEach(el => el.classList.remove('active'));
@@ -321,7 +401,7 @@
         if (this.current < this.totalSlides) this.goTo(this.current + 1);
       },
       progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      isDone(idx) { return nomDone[idx] ? nomDone[idx]() : false; },
+      isDone(idx)   { return nomDone[idx] ? nomDone[idx]() : false; },
       allDone() {
         for (let i = 0; i < this.totalSlides; i++) { if (!this.isDone(i)) return false; }
         return true;
