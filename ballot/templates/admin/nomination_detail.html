@@ -274,6 +274,46 @@
 </div>
 
 {# ── Longlist table ── #}
+<script>
+  {% if nom.type.value == 'PICK' %}
+  const ALL_PERSONS = [
+    {% for person in persons %}
+    { id: {{ person.id }}, name: {{ person.name | tojson }} }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+  {% endif %}
+  const ALL_FILMS = [
+    {% for film in films %}
+    { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+  function rowEditor(currentPersonId, currentFilmId) {
+    return {
+      editing: false,
+      personSel: null,
+      personQ: '', personOpen: false,
+      filmSel: null,
+      filmQ: '', filmOpen: false,
+      init() {
+        {% if nom.type.value == 'PICK' %}
+        this.personSel = ALL_PERSONS.find(p => p.id === currentPersonId) || null;
+        {% endif %}
+        this.filmSel = ALL_FILMS.find(f => f.id === currentFilmId) || null;
+      },
+      visiblePersons() {
+        const q = this.personQ.toLowerCase().trim();
+        if (!q) return ALL_PERSONS;
+        return ALL_PERSONS.filter(p => p.name.toLowerCase().includes(q));
+      },
+      visibleFilms() {
+        const q = this.filmQ.toLowerCase().trim();
+        if (!q) return ALL_FILMS;
+        return ALL_FILMS.filter(f => f.title.toLowerCase().includes(q));
+      },
+    };
+  }
+</script>
+
 <div class="bg-white shadow rounded-xl p-6">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }})</h2>
   {% if nom.nominees %}
@@ -288,21 +328,106 @@
     </thead>
     <tbody>
       {% for nominee in nom.nominees %}
-      <tr class="border-b last:border-0 hover:bg-gray-50">
-        <td class="py-2 pr-4 font-medium">{{ nominee.film.title }}</td>
-        <td class="py-2 pr-4 text-gray-400">{{ nominee.film.year }}</td>
-        <td class="py-2 pr-4">{{ nominee.person.name if nominee.person else '—' }}</td>
-        <td class="py-2">
-          <form method="post" action="/admin/nominees/{{ nominee.id }}/delete">
-            <button class="text-red-500 hover:underline text-xs">Удалить</button>
-          </form>
+      <tr class="border-b last:border-0 align-top"
+          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }})">
+
+        {# Film cell #}
+        <td class="py-2 pr-4 font-medium">
+          <span x-show="!editing">{{ nominee.film.title }}</span>
+          <div x-show="editing" x-cloak class="relative" style="min-width:200px">
+            <button type="button" @click="filmOpen = !filmOpen"
+                    class="w-full text-left border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white flex items-center justify-between gap-1">
+              <span x-text="filmSel ? filmSel.title + ' (' + filmSel.year + ')' : '—'"></span>
+              <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
+            </button>
+            <div x-show="filmOpen" x-cloak @click.outside="filmOpen=false"
+                 class="absolute z-50 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+              <div class="p-2 border-b"><input x-model="filmQ" type="text" placeholder="Поиск..."
+                     class="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none" /></div>
+              <ul class="max-h-48 overflow-y-auto">
+                <template x-for="f in visibleFilms()" :key="f.id">
+                  <li><button type="button" @click="filmSel=f;filmOpen=false;filmQ=''"
+                          :class="filmSel && filmSel.id===f.id?'bg-indigo-50 text-indigo-700 font-medium':'hover:bg-gray-50'"
+                          class="w-full text-left px-3 py-2 text-xs flex justify-between gap-2">
+                    <span x-text="f.title"></span><span class="text-gray-400" x-text="f.year"></span>
+                  </button></li>
+                </template>
+              </ul>
+            </div>
+          </div>
         </td>
+
+        {# Year cell #}
+        <td class="py-2 pr-4 text-gray-400">
+          <span x-show="!editing">{{ nominee.film.year }}</span>
+          <span x-show="editing" x-cloak x-text="filmSel ? filmSel.year : ''"></span>
+        </td>
+
+        {# Person cell #}
+        <td class="py-2 pr-4">
+          <span x-show="!editing">{{ nominee.person.name if nominee.person else '—' }}</span>
+          {% if nom.type.value == 'PICK' %}
+          <div x-show="editing" x-cloak class="relative flex items-center gap-1" style="min-width:180px">
+            <button type="button" @click="personOpen = !personOpen"
+                    class="flex-1 text-left border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white flex items-center justify-between gap-1">
+              <span :class="personSel ? 'text-gray-800' : 'text-gray-400'"
+                    x-text="personSel ? personSel.name : '— нет —'"></span>
+              <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
+            </button>
+            <div x-show="personOpen" x-cloak @click.outside="personOpen=false"
+                 class="absolute z-50 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+              <div class="p-2 border-b"><input x-model="personQ" type="text" placeholder="Имя..."
+                     class="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none" /></div>
+              <ul class="max-h-48 overflow-y-auto">
+                <li><button type="button" @click="personSel=null;personOpen=false"
+                        class="w-full text-left px-3 py-2 text-xs italic text-gray-500 hover:bg-gray-50">— нет —</button></li>
+                <template x-for="p in visiblePersons()" :key="p.id">
+                  <li><button type="button" @click="personSel=p;personOpen=false;personQ=''"
+                          :class="personSel && personSel.id===p.id?'bg-indigo-50 text-indigo-700 font-medium':'hover:bg-gray-50'"
+                          class="w-full text-left px-3 py-2 text-xs" x-text="p.name"></button></li>
+                </template>
+              </ul>
+            </div>
+            <button x-show="personSel" type="button" @click="personSel=null"
+                    class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+          </div>
+          {% else %}
+          <span x-show="editing" x-cloak class="text-xs text-gray-400 italic">N/A (RANK)</span>
+          {% endif %}
+        </td>
+
+        {# Actions cell #}
+        <td class="py-2 text-right whitespace-nowrap">
+          {# Save form (shown while editing) #}
+          <form x-show="editing" x-cloak method="post" action="/admin/nominees/{{ nominee.id }}/edit"
+                @submit.prevent
+                x-ref="editForm">
+            <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : '{{ nominee.film_id }}'" />
+            <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
+            <button type="button"
+                    @click="$refs.editForm.submit()"
+                    class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg mr-1 transition">Сохранить</button>
+            <button type="button" @click="editing=false;init()"
+                    class="text-xs text-gray-400 hover:underline">Отмена</button>
+          </form>
+          {# Row buttons (shown while not editing) #}
+          <div x-show="!editing" class="flex items-center justify-end gap-2">
+            <button type="button" @click="editing=true"
+                    class="text-xs text-indigo-500 hover:underline">Изменить</button>
+            <form method="post" action="/admin/nominees/{{ nominee.id }}/delete"
+                  @submit.prevent="confirm('Удалить «{{ nominee.film.title }}»?') && $el.submit()">
+              <input type="hidden" name="back" value="nomination" />
+              <button class="text-xs text-red-500 hover:underline">Удалить</button>
+            </form>
+          </div>
+        </td>
+
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="text-gray-400 text-sm">Лонг-лист пустой.</p>
+  <p class="text-gray-400 text-sm">Лонг-лист пусто.</p>
   {% endif %}
 </div>
 {% endblock %}

@@ -82,15 +82,51 @@ def add_nominee(
     return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
 
 
+@router.post("/nominees/{nominee_id}/edit")
+def edit_nominee(
+    nominee_id: int,
+    person_id: Optional[str] = Form(None),
+    film_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Update person (and optionally film) on a nominee. Redirects to referring nomination page."""
+    nominee = db.get(Nominee, nominee_id)
+    if not nominee:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+    # update person
+    if person_id is not None:
+        if person_id.strip():
+            try:
+                nominee.person_id = int(person_id)
+            except ValueError:
+                nominee.person_id = None
+        else:
+            nominee.person_id = None
+    # update film
+    if film_id is not None and film_id.strip():
+        try:
+            nominee.film_id = int(film_id)
+        except ValueError:
+            pass
+    db.commit()
+    return RedirectResponse(url=f"/admin/nominations/{nominee.nomination_id}", status_code=303)
+
+
 @router.post("/nominees/{nominee_id}/delete")
-def delete_nominee(nominee_id: int, db: Session = Depends(get_db)):
+def delete_nominee(
+    nominee_id: int,
+    back: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     nominee = db.get(Nominee, nominee_id)
     nom_id = nominee.nomination_id if nominee else None
-    film_id = nominee.film_id if nominee else None
+    film_id_val = nominee.film_id if nominee else None
     if nominee:
         db.delete(nominee)
         db.commit()
-    # redirect back to whichever detail page makes sense
-    if film_id:
-        return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
+    # respect 'back' hint from the form
+    if back == "nomination" and nom_id:
+        return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+    if film_id_val:
+        return RedirectResponse(url=f"/admin/films/{film_id_val}", status_code=303)
     return RedirectResponse(url="/admin/films", status_code=303)
