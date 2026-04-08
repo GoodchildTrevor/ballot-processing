@@ -33,6 +33,7 @@
     { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
+  const NOM_HAS_YEAR_FILTER = {{ 'true' if nom.year_filter else 'false' }};
   {% if nom.type.value == 'PICK' %}
   const NOM_PERSONS = [
     {% for person in persons %}
@@ -57,7 +58,8 @@
     <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : ''" />
     <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
 
-    {# ── Year tabs ── #}
+    {# ── Year tabs — only when nomination has NO year_filter ── #}
+    {% if not nom.year_filter %}
     <div>
       <p class="text-xs text-gray-500 mb-1">Фильтр по году</p>
       <div class="flex flex-wrap gap-1">
@@ -74,6 +76,7 @@
         </template>
       </div>
     </div>
+    {% endif %}
 
     {# ── Pickers row ── #}
     <div class="flex flex-wrap gap-3 items-end">
@@ -110,12 +113,10 @@
       </div>
 
       {% if nom.type.value == 'PICK' %}
-      {# Person picker: trigger + optional clear button sit side-by-side #}
+      {# Person picker #}
       <div>
         <label class="block text-xs text-gray-500 mb-1">Персона <span class="text-gray-300">(необяз.)</span></label>
         <div class="flex items-center gap-1">
-
-          {# Trigger button #}
           <div class="relative" style="min-width:220px">
             <button type="button" @click="personOpen = !personOpen"
                     class="w-full text-left border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-indigo-400 focus:outline-none flex items-center justify-between gap-2">
@@ -123,8 +124,6 @@
                     x-text="personSel ? personSel.name : '— нет —'"></span>
               <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
             </button>
-
-            {# Dropdown #}
             <div x-show="personOpen" x-cloak @click.outside="personOpen = false"
                  class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
               <div class="p-2 border-b border-gray-100">
@@ -157,13 +156,10 @@
               </ul>
             </div>
           </div>
-
-          {# Clear button — outside the trigger, only when selection exists #}
           <button x-show="personSel" type="button"
                   @click="personSel = null"
                   title="Сбросить"
                   class="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">&times;</button>
-
         </div>
       </div>
       {% endif %}
@@ -192,7 +188,7 @@
       personQ: '', personOpen: false, personSel: null,
       {% endif %}
       visibleFilms() {
-        let rows = this.yearTab !== null
+        let rows = (!NOM_HAS_YEAR_FILTER && this.yearTab !== null)
           ? this.films.filter(f => f.year === this.yearTab)
           : this.films;
         const q = this.filmQ.toLowerCase().trim();
