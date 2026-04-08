@@ -13,18 +13,11 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _apply_dense_rank(rows: list, count: int | None) -> list:
-    """Add dense_rank and is_nominee keys to each row dict."""
-    if count and rows:
-        sorted_scores = sorted(set(r["score"] for r in rows), reverse=True)
-        score_to_dr = {s: i + 1 for i, s in enumerate(sorted_scores)}
-        for row in rows:
-            row["dense_rank"] = score_to_dr[row["score"]]
-            row["is_nominee"] = row["dense_rank"] <= count
-    else:
-        for row in rows:
-            row["dense_rank"] = None
-            row["is_nominee"] = False
+def _annotate_rows(rows: list, count: int | None) -> list:
+    """Add 1-based position and is_nominee (by position, not dense rank)."""
+    for i, row in enumerate(rows):
+        row["position"] = i + 1
+        row["is_nominee"] = bool(count and (i + 1) <= count)
     return rows
 
 
@@ -57,7 +50,7 @@ def get_results(db: Session):
                     "voter_list": [{"name": n, "rank": rank} for n, rank in voter_entries],
                     "voters": ", ".join(f"{n} ({rank})" for n, rank in voter_entries),
                 })
-            rows = _apply_dense_rank(rows, nom.nominees_count)
+            rows = _annotate_rows(rows, nom.nominees_count)
             results.append({"nom": nom, "rows": rows})
         else:
             rows_raw = (
@@ -77,7 +70,7 @@ def get_results(db: Session):
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes)
                 )
                 rows.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
-            rows = _apply_dense_rank(rows, nom.nominees_count)
+            rows = _annotate_rows(rows, nom.nominees_count)
             results.append({"nom": nom, "rows": rows})
     return results
 
@@ -102,7 +95,7 @@ def export_results(db: Session = Depends(get_db)):
             ws.append(["Участник", "Голоса", "Проголосовали",
                        "Номинант" if item["nom"].nominees_count else ""])
         for row in item["rows"]:
-            extra = ["✅ Номинант" if row.get("is_nominee") else ""] if item["nom"].nominees_count else []
+            extra = ["✅ Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
             ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
