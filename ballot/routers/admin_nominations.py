@@ -20,10 +20,19 @@ def _parse_int(v: Optional[str]) -> Optional[int]:
     return None
 
 
+def _get_years(db: Session) -> list[int]:
+    rows = db.query(Film.year).distinct().order_by(Film.year.desc()).all()
+    return [r[0] for r in rows]
+
+
 @router.get("/nominations", response_class=HTMLResponse)
 def list_nominations(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    return templates.TemplateResponse(request, "admin/nominations.html", {"nominations": nominations})
+    years = _get_years(db)
+    return templates.TemplateResponse(request, "admin/nominations.html", {
+        "nominations": nominations,
+        "years": years,
+    })
 
 
 @router.post("/nominations")
@@ -33,7 +42,7 @@ def create_nomination(
     pick_min: Optional[str] = Form(None),
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
-    year_filter: Optional[str] = Form(None),
+    year_filter: str = Form(...),
     db: Session = Depends(get_db),
 ):
     pmin = _parse_int(pick_min) if type == NominationType.PICK else None
@@ -60,7 +69,7 @@ def edit_nomination(
     pick_min: Optional[str] = Form(None),
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
-    year_filter: Optional[str] = Form(None),
+    year_filter: str = Form(...),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
@@ -115,9 +124,10 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
         film_q = film_q.filter(Film.year == nom.year_filter)
     films = film_q.all()
     persons = db.query(Person).order_by(Person.name).all()
+    years = _get_years(db)
     return templates.TemplateResponse(
         request, "admin/nomination_detail.html",
-        {"nom": nom, "films": films, "persons": persons},
+        {"nom": nom, "films": films, "persons": persons, "years": years},
     )
 
 
