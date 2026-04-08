@@ -9,6 +9,7 @@
         <th class="pb-2 pr-4">Ник</th>
         <th class="pb-2 pr-4">Статус</th>
         <th class="pb-2">Голос</th>
+        <th class="pb-2 pl-4">Действия</th>
       </tr>
     </thead>
     <tbody>
@@ -56,6 +57,19 @@
             </div>
             {% endfor %}
           </div>
+          {% else %}
+          <span class="text-xs text-gray-300">—</span>
+          {% endif %}
+        </td>
+        <td class="py-2 pl-4 align-top whitespace-nowrap">
+          {% if voter.voted_at %}
+          <a href="/admin/voters/{{ voter.id }}/edit-vote"
+             class="text-xs text-indigo-500 hover:underline mr-3">✏️ Редактировать</a>
+          <form method="post" action="/admin/voters/{{ voter.id }}/delete-vote"
+                class="inline"
+                onsubmit="return confirm('Удалить весь голос {{ voter.name }}?')">
+            <button type="submit" class="text-xs text-red-400 hover:underline">🗑 Удалить голос</button>
+          </form>
           {% else %}
           <span class="text-xs text-gray-300">—</span>
           {% endif %}
