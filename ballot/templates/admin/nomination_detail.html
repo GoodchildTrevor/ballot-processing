@@ -65,11 +65,14 @@
       </div>
 
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Фильтр по году <span class="text-gray-300">(необяз.)</span></label>
-        <input type="number" name="year_filter" min="1900" max="2100"
-               value="{{ nom.year_filter or '' }}"
-               placeholder="напр. 2007"
-               class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+        <label class="block text-xs text-gray-500 mb-1">Год <span class="text-gray-300">(необяз.)</span></label>
+        <select name="year_filter"
+                class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
+          <option value="">— нет —</option>
+          {% for y in years %}
+          <option value="{{ y }}" {% if nom.year_filter == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div class="flex gap-2 pt-1">
@@ -87,6 +90,12 @@
 <div class="bg-white shadow rounded-xl p-6 mb-8">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм в лонг-лист</h2>
 
+  {% if error == 'duplicate' %}
+  <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
+    Фильм уже есть в лонг-листе с такой же персоной.
+  </div>
+  {% endif %}
+
   {% if not films %}
   <p class="text-sm text-amber-600">
     Нет доступных фильмов
@@ -98,7 +107,12 @@
   <script>
   const NOM_FILMS = [
     {% for film in films %}
-    { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
+    {
+      id: {{ film.id }},
+      title: {{ film.title | tojson }},
+      year: {{ film.year }},
+      added: {{ 'true' if film.id in added_film_ids else 'false' }}
+    }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
   const NOM_HAS_YEAR_FILTER = {{ 'true' if nom.year_filter else 'false' }};
@@ -165,11 +179,19 @@
           <ul class="max-h-60 overflow-y-auto">
             <template x-for="f in visibleFilms()" :key="f.id">
               <li>
-                <button type="button" @click="filmSel = f; filmOpen = false; filmQ = ''"
-                        :class="filmSel && filmSel.id === f.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-700'"
+                <button type="button" @click="!f.added && (filmSel = f, filmOpen = false, filmQ = '')"
+                        :disabled="f.added"
+                        :class="{
+                          'bg-indigo-50 text-indigo-700 font-medium': filmSel && filmSel.id === f.id,
+                          'opacity-40 cursor-not-allowed text-gray-400': f.added,
+                          'hover:bg-gray-50 text-gray-700': !f.added && !(filmSel && filmSel.id === f.id)
+                        }"
                         class="w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2">
                   <span x-text="f.title"></span>
-                  <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.year"></span>
+                  <span class="flex items-center gap-2 flex-shrink-0">
+                    <span class="text-xs text-gray-400" x-text="f.year"></span>
+                    <span x-show="f.added" class="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">уже есть</span>
+                  </span>
                 </button>
               </li>
             </template>
@@ -230,8 +252,8 @@
       {% endif %}
 
       <button type="submit"
-              :disabled="!filmSel"
-              :class="filmSel ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
+              :disabled="!filmSel || filmSel.added"
+              :class="(filmSel && !filmSel.added) ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
               class="px-4 py-2 rounded-lg text-sm transition">Добавить</button>
     </div>
   </form>
@@ -398,7 +420,6 @@
 
         {# Actions cell #}
         <td class="py-2 text-right whitespace-nowrap">
-          {# Save form (shown while editing) #}
           <form x-show="editing" x-cloak method="post" action="/admin/nominees/{{ nominee.id }}/edit"
                 @submit.prevent
                 x-ref="editForm">
@@ -410,7 +431,6 @@
             <button type="button" @click="editing=false;init()"
                     class="text-xs text-gray-400 hover:underline">Отмена</button>
           </form>
-          {# Row buttons (shown while not editing) #}
           <div x-show="!editing" class="flex items-center justify-end gap-2">
             <button type="button" @click="editing=true"
                     class="text-xs text-indigo-500 hover:underline">Изменить</button>
@@ -427,7 +447,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-gray-400 text-sm">Лонг-лист пусто.</p>
+  <p class="text-gray-400 text-sm">Лонг-лист пусто.</p>
   {% endif %}
 </div>
 {% endblock %}
