@@ -1,7 +1,10 @@
 import os
 import secrets
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlalchemy.orm import Session
+from ballot.database import get_db
+from ballot.models import Voter
 
 security = HTTPBasic()
 
@@ -19,3 +22,22 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
+
+def require_voter(request: Request, db: Session = Depends(get_db)):
+    """FastAPI dependency: reads voter_name cookie, loads Voter from DB,
+    stores it in request.state.voter. Redirects to / if missing or unknown."""
+    name = request.cookies.get("voter_name")
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/"},
+        )
+    voter = db.query(Voter).filter(Voter.name == name).first()
+    if not voter:
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/"},
+        )
+    request.state.voter = voter
+    return voter
