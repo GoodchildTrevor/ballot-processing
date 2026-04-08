@@ -27,7 +27,7 @@
   <form method="post" action="/vote/{{ voter.id }}" id="ballotForm">
   <div class="max-w-2xl mx-auto px-4 pt-12 pb-28">
 
-    {# ═══════════ SLIDE -1 — TOC ═══════════ #}
+    {# ═════════ SLIDE -1 — TOC ═════════ #}
     <div class="slide" id="slide--1">
       <div class="mb-8">
         <h1 class="text-4xl font-extrabold text-gray-900 leading-tight mb-2">Бюллетень</h1>
@@ -66,7 +66,7 @@
       </button>
     </div>
 
-    {# ═══════════ SLIDES 0..N-1 — Nominations ═══════════ #}
+    {# ═════════ SLIDES 0..N-1 — Nominations ═════════ #}
     {% for nom in nominations %}
     {% set idx = loop.index0 %}
     <div class="slide" id="slide-{{ idx }}">
@@ -88,8 +88,9 @@
 
       {# ── RANK ── #}
       {% if nom.type.value == 'RANK' %}
-      <p class="text-xs text-gray-400 mb-4">Поставьте каждому фильму место от 1 до 10 (1 — лучший)</p>
-      <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }})">
+      {% set n_nominees = nom.nominees | length %}
+      <p class="text-xs text-gray-400 mb-4">Поставьте каждому фильму место от 1 до {{ n_nominees }} (1 — лучший). Каждое место — только одному фильму.</p>
+      <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ n_nominees }})">
         {% for nominee in nom.nominees %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
@@ -97,18 +98,19 @@
             <span class="text-gray-400 text-xs">({{ nominee.film.year }})</span>
           </span>
           <select name="rank_{{ nom.id }}_{{ nominee.film_id }}"
-                  @change="onChange()"
+                  @change="onChange($event, {{ loop.index0 }})"
                   class="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-400 focus:outline-none">
             <option value="">—</option>
-            {% for i in range(1, 11) %}
+            {% for i in range(1, n_nominees + 1) %}
             <option value="{{ i }}">{{ i }}</option>
             {% endfor %}
           </select>
         </div>
         {% endfor %}
-        <div class="px-4 py-2 text-xs"
-             :class="allFilled() ? 'text-green-600' : 'text-amber-500'">
-          <span x-text="allFilled() ? '✅ Все заполнено' : 'Заполните все значения'"></span>
+        <div class="px-4 py-2 text-xs">
+          <span x-show="hasDuplicates()" class="text-red-500 font-medium">⚠️ Два фильма на одном месте</span>
+          <span x-show="!hasDuplicates() && allFilled()" class="text-green-600">✅ Все заполнено</span>
+          <span x-show="!hasDuplicates() && !allFilled()" class="text-amber-500">Заполните все значения</span>
         </div>
       </div>
       {% endif %}
@@ -150,7 +152,6 @@
           {% endif %}
           {% endfor %}
         </div>
-        {# partial-selection warning: shown only when 0 < count < pmin #}
         <div x-show="count > 0 && count < pmin" x-cloak
              class="mt-2 text-xs text-red-500 font-medium">
           ⚠️ <span x-text="'Выбрано ' + count + ' — нужно минимум ' + pmin + ' или отменить выбор'"></span>
@@ -161,7 +162,7 @@
     </div>{# end slide #}
     {% endfor %}
 
-    {# ═══════════ SLIDE N — Final submit ═══════════ #}
+    {# ═════════ SLIDE N — Final submit ═════════ #}
     <div class="slide" id="slide-{{ nominations | length }}">
       <div class="flex items-center gap-3 mb-6">
         <button type="button" @click="goTo(-1)"
@@ -235,18 +236,39 @@
   const TOTAL_NOMS = {{ nominations | length }};
   const nomDone = {};
 
-  function rankBlock(idx) {
+  function rankBlock(idx, maxRank) {
     return {
-      total: 0, filled: 0,
+      maxRank,
+      values: [],   // values[i] = current string value of select i
       init() {
-        this.total = this.$el.querySelectorAll('select').length;
-        // RANK: all-or-nothing (0 filled = skip ok, partial = blocked)
-        nomDone[idx] = () => this.filled === 0 || this.allFilled();
+        const selects = this.$el.querySelectorAll('select');
+        this.values = Array.from(selects).map(() => '');
+        nomDone[idx] = () => this.allFilled() && !this.hasDuplicates();
       },
-      onChange() {
-        this.filled = [...this.$el.querySelectorAll('select')].filter(s => s.value !== '').length;
+      onChange(event, i) {
+        this.values[i] = event.target.value;
+        this._refreshOptions();
       },
-      allFilled() { return this.total > 0 && this.filled >= this.total; }
+      _refreshOptions() {
+        // build set of ranks currently used by OTHER selects
+        const selects = Array.from(this.$el.querySelectorAll('select'));
+        selects.forEach((sel, i) => {
+          const myVal = this.values[i];
+          Array.from(sel.options).forEach(opt => {
+            if (!opt.value) return;  // keep the blank '—' option
+            const usedElsewhere = this.values.some((v, j) => j !== i && v === opt.value);
+            opt.disabled = usedElsewhere;
+            // dim used options but don't remove them so UX is clear
+          });
+        });
+      },
+      allFilled() {
+        return this.values.length > 0 && this.values.every(v => v !== '');
+      },
+      hasDuplicates() {
+        const filled = this.values.filter(v => v !== '');
+        return new Set(filled).size < filled.length;
+      },
     }
   }
 
@@ -254,7 +276,6 @@
     return {
       pmin, pmax, count: 0, checked: {},
       init() {
-        // PICK: 0 = skip (ok), 1..pmin-1 = partial (blocked), pmin..pmax = ok
         nomDone[idx] = () => this.isValid();
       },
       onChange() {

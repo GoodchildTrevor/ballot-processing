@@ -58,21 +58,36 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
     errors = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
-            filled = sum(
-                1 for n in nom.nominees
-                if form.get(f"rank_{nom.id}_{n.film_id}")
-            )
-            # 0 = skip (ok), partial = blocked
-            if 0 < filled < len(nom.nominees):
+            vals = [
+                form.get(f"rank_{nom.id}_{n.film_id}")
+                for n in nom.nominees
+            ]
+            filled = [v for v in vals if v]
+            n_nominees = len(nom.nominees)
+
+            # partial fill
+            if 0 < len(filled) < n_nominees:
                 errors.append(
                     f"Номинация «{nom.name}»: заполните все значения рейтинга или не выбирайте ничего."
                 )
+            # duplicate ranks
+            elif filled and len(set(filled)) < len(filled):
+                errors.append(
+                    f"Номинация «{nom.name}»: два фильма на одном месте — каждому фильму своё место."
+                )
+            # rank values out of range
+            elif filled:
+                bad = [v for v in filled if not (1 <= int(v) <= n_nominees)]
+                if bad:
+                    errors.append(
+                        f"Номинация «{nom.name}»: место должно быть от 1 до {n_nominees}."
+                    )
+
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
             pmin = nom.pick_min or 1
             pmax = nom.pick_max or 1
             n = len(chosen)
-            # 0 = skip (ok), 1..pmin-1 = partial (blocked), pmin..pmax = ok, >pmax = blocked
             if 0 < n < pmin:
                 errors.append(
                     f"Номинация «{nom.name}»: выбрано {n}, нужно минимум {pmin} или отмените выбор."
