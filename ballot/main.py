@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
-from ballot.database import engine, Base
+from ballot.database import engine, Base, run_migrations
 import ballot.models  # noqa: F401
 from ballot.routers import vote, admin_films, admin_nominations, admin_voters, admin_results, admin_persons
 
-Base.metadata.create_all(bind=engine)
+run_migrations()                    # ALTER TABLE for new columns on existing DB
+Base.metadata.create_all(bind=engine)  # CREATE TABLE for brand-new tables
 
 app = FastAPI(title="Ballot Processing")
 
