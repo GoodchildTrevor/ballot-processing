@@ -18,7 +18,6 @@
          :style="'width:' + progressPct() + '%'"></div>
   </div>
 
-  {# Autosave status indicator #}
   <div class="fixed top-2 right-3 z-50 text-xs flex items-center gap-1 transition-opacity duration-300"
        :class="saveStatus === 'idle' ? 'opacity-0' : 'opacity-100'">
     <span x-show="saveStatus === 'saving'" class="text-gray-400">⏳ Сохраняю...</span>
@@ -100,14 +99,19 @@
       {% if nom.type.value == 'RANK' %}
       <p class="text-xs text-gray-400 mb-4">
         Расставьте места от 1 до {{ rank_max }} лучшим фильмам
-        (1 — лучший). Один фильм может остаться без места.
+        (1 — лучший). Можно пропустить номинацию целиком.
       </p>
       <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
         {% for nominee in nom.nominees %}
         {% set draft_key = 'rank_' ~ nom.id ~ '_' ~ nominee.film_id %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
-            {{ nominee.film.title }}
+            {% if nominee.film.url %}
+              <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer"
+                 class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+            {% else %}
+              {{ nominee.film.title }}
+            {% endif %}
             <span class="text-gray-400 text-xs">({{ nominee.film.year }})</span>
           </span>
           <select name="rank_{{ nom.id }}_{{ nominee.film_id }}"
@@ -126,8 +130,9 @@
         <div class="px-4 py-2 text-xs">
           <span x-show="hasDuplicates()" class="text-red-500 font-medium">⚠️ Два фильма на одном месте</span>
           <span x-show="!hasDuplicates() && allFilled()" class="text-green-600">✅ Все {{ rank_max }} мест заполнены</span>
-          <span x-show="!hasDuplicates() && !allFilled()" class="text-amber-500"
+          <span x-show="!hasDuplicates() && !allFilled() && filledCount() > 0" class="text-amber-500"
                 x-text="'Заполнено ' + filledCount() + ' из ' + maxRank + ' мест'"></span>
+          <span x-show="!hasDuplicates() && filledCount() === 0" class="text-gray-400">пропущено</span>
         </div>
       </div>
       {% endif %}
@@ -154,8 +159,28 @@
                    {% if draft.get(pick_key) == nominee.id|string %}checked{% endif %}
                    class="accent-indigo-600 w-4 h-4" />
             <span class="text-sm text-gray-800">
-              {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
-              {% else %}{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>{% endif %}
+              {% if nominee.person %}
+                {% if nominee.person.url %}
+                  <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
+                {% else %}
+                  {{ nominee.person.name }}
+                {% endif %}
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+              {% elif nominee.song %}
+                {% if nominee.song_url %}
+                  <a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>
+                {% else %}
+                  {{ nominee.song }}
+                {% endif %}
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+              {% else %}
+                {% if nominee.film.url %}
+                  <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+                {% else %}
+                  {{ nominee.film.title }}
+                {% endif %}
+                 <span class="text-gray-400">({{ nominee.film.year }})</span>
+              {% endif %}
             </span>
           </label>
           {% else %}
@@ -166,8 +191,28 @@
                    {% if draft.get(pick_key) and nominee.id|string in draft.get(pick_key, []) %}checked{% endif %}
                    class="accent-indigo-600 w-4 h-4" />
             <span class="text-sm text-gray-800">
-              {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
-              {% else %}{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>{% endif %}
+              {% if nominee.person %}
+                {% if nominee.person.url %}
+                  <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
+                {% else %}
+                  {{ nominee.person.name }}
+                {% endif %}
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+              {% elif nominee.song %}
+                {% if nominee.song_url %}
+                  <a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>
+                {% else %}
+                  {{ nominee.song }}
+                {% endif %}
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+              {% else %}
+                {% if nominee.film.url %}
+                  <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+                {% else %}
+                  {{ nominee.film.title }}
+                {% endif %}
+                 <span class="text-gray-400">({{ nominee.film.year }})</span>
+              {% endif %}
             </span>
           </label>
           {% endif %}
@@ -198,23 +243,17 @@
         <div class="flex items-center justify-between bg-white rounded-lg px-4 py-3 shadow-sm">
           <span class="text-sm font-medium text-gray-700">{{ nom.name }}</span>
           <div class="flex items-center gap-2">
-            <span x-show="isDone({{ loop.index0 }})" class="text-green-500" x-cloak>✅</span>
-            <span x-show="!isDone({{ loop.index0 }})" class="text-amber-400 text-xs" x-cloak>⚠️ незаполнено</span>
+            <span x-show="isFilledSome({{ loop.index0 }})" class="text-green-500" x-cloak>✅</span>
+            <span x-show="!isFilledSome({{ loop.index0 }})" class="text-gray-300 text-xs" x-cloak>— пропущено</span>
             <button type="button" @click="goTo({{ loop.index0 }})"
                     class="text-xs text-indigo-500 hover:underline">Изменить</button>
           </div>
         </div>
         {% endfor %}
       </div>
-      <div x-show="!allDone()" x-cloak
-           class="mb-4 text-sm text-red-500 font-medium text-center">
-        ⚠️ Есть номинации с неполным выбором
-      </div>
       <button type="submit"
-              :disabled="!allDone()"
               class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base
-                     hover:enabled:bg-indigo-700 transition
-                     disabled:opacity-40 disabled:cursor-not-allowed">
+                     hover:bg-indigo-700 transition">
         ✅ Отправить голос
       </button>
     </div>
@@ -237,7 +276,7 @@
                   class="transition-all duration-200"></button>
         </template>
       </div>
-      <button type="button" @click="nextOrWarn()"
+      <button type="button" @click="next()"
               :disabled="current === totalSlides"
               class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
                      disabled:opacity-30 disabled:cursor-not-allowed
@@ -250,7 +289,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
   const TOTAL_NOMS = {{ nominations | length }};
-  const nomDone    = {};
+  const nomFilled  = {};  // tracks whether anything was selected (for summary checkmark)
   let   saveTimer  = null;
 
   function collectFormData() {
@@ -296,7 +335,8 @@
         const selects = this.$el.querySelectorAll('select');
         this.values = Array.from(selects).map(s => s.value || '');
         this._refreshOptions();
-        nomDone[idx] = () => this.allFilled() && !this.hasDuplicates();
+        // rank is always "done" — skipping is allowed
+        nomFilled[idx] = () => this.filledCount() > 0 && !this.hasDuplicates();
       },
       onChange(event, i) {
         this.values[i] = event.target.value;
@@ -332,7 +372,7 @@
           });
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
-        nomDone[idx] = () => this.isValid();
+        nomFilled[idx] = () => this.count > 0;
       },
       onChange() {
         if (this.pmax === 1) {
@@ -364,7 +404,7 @@
       init() {
         this.showSlide(this.current);
         window.addEventListener('keydown', e => {
-          if (e.key === 'ArrowRight') this.nextOrWarn();
+          if (e.key === 'ArrowRight') this.next();
           if (e.key === 'ArrowLeft')  this.prev();
         });
         window.addEventListener('draft-saving', () => { this.saveStatus = 'saving'; });
@@ -383,21 +423,14 @@
       },
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
-      nextOrWarn() {
-        const idx = this.current;
-        if (idx >= 0 && idx < this.totalSlides && !this.isDone(idx)) {
-          const el = document.getElementById('slide-' + idx);
-          if (el) { el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 500); }
-          return;
-        }
+      // next() — no blocking, always advances
+      next() {
         if (this.current < this.totalSlides) this.goTo(this.current + 1);
       },
-      progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      isDone(idx)   { return nomDone[idx] ? nomDone[idx]() : false; },
-      allDone() {
-        for (let i = 0; i < this.totalSlides; i++) { if (!this.isDone(i)) return false; }
-        return true;
-      }
+      progressPct()    { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
+      // isFilledSome — for summary checkmark only, not a blocker
+      isFilledSome(idx) { return nomFilled[idx] ? nomFilled[idx]() : false; },
+      isDone(idx)       { return this.isFilledSome(idx); },
     }
   }
   </script>
