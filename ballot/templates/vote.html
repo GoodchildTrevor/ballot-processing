@@ -13,13 +13,10 @@
 </head>
 <body class="bg-gray-50 min-h-screen" x-data="ballot()" x-init="init()">
 
-  {# ── Progress bar ── #}
   <div class="fixed top-0 left-0 right-0 h-1 bg-gray-200 z-50">
     <div class="h-1 bg-indigo-500 transition-all duration-300"
          :style="'width:' + progressPct() + '%'"></div>
   </div>
-
-  {# ── Thin top bar ── #}
   <div class="fixed top-1 left-0 right-0 z-40 px-4 pt-2 pb-1">
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
   </div>
@@ -27,7 +24,7 @@
   <form method="post" action="/vote/{{ voter.id }}" id="ballotForm">
   <div class="max-w-2xl mx-auto px-4 pt-12 pb-28">
 
-    {# ═════════ SLIDE -1 — TOC ═════════ #}
+    {# TOC slide #}
     <div class="slide" id="slide--1">
       <div class="mb-8">
         <h1 class="text-4xl font-extrabold text-gray-900 leading-tight mb-2">Бюллетень</h1>
@@ -41,15 +38,12 @@
             <div class="text-base font-semibold text-gray-800 group-hover:text-indigo-700">{{ nom.name }}</div>
             <div class="text-xs text-gray-400 mt-0.5">
               {% if nom.type.value == 'RANK' %}
-                🏆 Рейтинг от 1 до 10
+                {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
+                🏆 Рейтинг Топ {{ rank_max }}
               {% else %}
                 {% set pmin = nom.pick_min if nom.pick_min else 1 %}
                 {% set pmax = nom.pick_max if nom.pick_max else 1 %}
-                ✔️ Выбор
-                {% if pmin == pmax and pmin == 1 %}1 кандидата
-                {% elif pmin == pmax %}{{ pmax }}
-                {% else %}{{ pmin }}–{{ pmax }}
-                {% endif %}
+                ✔️ Выбор {% if pmin == pmax and pmin == 1 %}1{% elif pmin == pmax %}{{ pmax }}{% else %}{{ pmin }}–{{ pmax }}{% endif %}
               {% endif %}
             </div>
           </div>
@@ -66,12 +60,14 @@
       </button>
     </div>
 
-    {# ═════════ SLIDES 0..N-1 — Nominations ═════════ #}
+    {# Nomination slides #}
     {% for nom in nominations %}
     {% set idx = loop.index0 %}
+    {% if nom.type.value == 'RANK' %}
+      {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
+    {% endif %}
     <div class="slide" id="slide-{{ idx }}">
 
-      {# breadcrumb #}
       <div class="flex items-center gap-3 mb-3">
         <button type="button" @click="goTo(-1)"
                 class="text-sm font-medium text-indigo-500 hover:text-indigo-700 hover:underline transition">
@@ -86,11 +82,13 @@
       </div>
       <h2 class="text-xl font-bold text-indigo-700 mb-4">{{ nom.name }}</h2>
 
-      {# ── RANK ── #}
+      {# RANK #}
       {% if nom.type.value == 'RANK' %}
-      {% set n_nominees = nom.nominees | length %}
-      <p class="text-xs text-gray-400 mb-4">Поставьте каждому фильму место от 1 до {{ n_nominees }} (1 — лучший). Каждое место — только одному фильму.</p>
-      <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ n_nominees }})">
+      <p class="text-xs text-gray-400 mb-4">
+        Поставьте каждому фильму место от 1 до {{ rank_max }}
+        (1 — лучший). Каждое место — только одному фильму.
+      </p>
+      <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
         {% for nominee in nom.nominees %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
@@ -101,7 +99,7 @@
                   @change="onChange($event, {{ loop.index0 }})"
                   class="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-400 focus:outline-none">
             <option value="">—</option>
-            {% for i in range(1, n_nominees + 1) %}
+            {% for i in range(1, rank_max + 1) %}
             <option value="{{ i }}">{{ i }}</option>
             {% endfor %}
           </select>
@@ -115,7 +113,7 @@
       </div>
       {% endif %}
 
-      {# ── PICK ── #}
+      {# PICK #}
       {% if nom.type.value == 'PICK' %}
       {% set pmin = nom.pick_min if nom.pick_min else 1 %}
       {% set pmax = nom.pick_max if nom.pick_max else 1 %}
@@ -159,10 +157,10 @@
       </div>
       {% endif %}
 
-    </div>{# end slide #}
+    </div>
     {% endfor %}
 
-    {# ═════════ SLIDE N — Final submit ═════════ #}
+    {# Final submit slide #}
     <div class="slide" id="slide-{{ nominations | length }}">
       <div class="flex items-center gap-3 mb-6">
         <button type="button" @click="goTo(-1)"
@@ -201,23 +199,18 @@
   </div>
   </form>
 
-  {# ── Bottom nav ── #}
   <div class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-40">
     <div class="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
       <button type="button" @click="prev()"
               :disabled="current === -1"
               class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
-                     disabled:opacity-30 disabled:cursor-not-allowed
-                     hover:enabled:bg-gray-100">
+                     disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:bg-gray-100">
         ← Назад
       </button>
       <div class="flex gap-1 items-center">
         <template x-for="i in totalSlides + 2" :key="i">
-          <button type="button"
-                  @click="goTo(i - 2)"
-                  :class="(i - 2 === current)
-                    ? 'w-5 h-2 rounded-full bg-indigo-500'
-                    : 'w-2 h-2 rounded-full bg-gray-300 hover:bg-indigo-300'"
+          <button type="button" @click="goTo(i - 2)"
+                  :class="(i - 2 === current) ? 'w-5 h-2 rounded-full bg-indigo-500' : 'w-2 h-2 rounded-full bg-gray-300 hover:bg-indigo-300'"
                   class="transition-all duration-200"></button>
         </template>
       </div>
@@ -239,7 +232,7 @@
   function rankBlock(idx, maxRank) {
     return {
       maxRank,
-      values: [],   // values[i] = current string value of select i
+      values: [],
       init() {
         const selects = this.$el.querySelectorAll('select');
         this.values = Array.from(selects).map(() => '');
@@ -250,15 +243,11 @@
         this._refreshOptions();
       },
       _refreshOptions() {
-        // build set of ranks currently used by OTHER selects
         const selects = Array.from(this.$el.querySelectorAll('select'));
         selects.forEach((sel, i) => {
-          const myVal = this.values[i];
           Array.from(sel.options).forEach(opt => {
-            if (!opt.value) return;  // keep the blank '—' option
-            const usedElsewhere = this.values.some((v, j) => j !== i && v === opt.value);
-            opt.disabled = usedElsewhere;
-            // dim used options but don't remove them so UX is clear
+            if (!opt.value) return;
+            opt.disabled = this.values.some((v, j) => j !== i && v === opt.value);
           });
         });
       },
@@ -275,9 +264,7 @@
   function pickBlock(idx, pmin, pmax) {
     return {
       pmin, pmax, count: 0, checked: {},
-      init() {
-        nomDone[idx] = () => this.isValid();
-      },
+      init() { nomDone[idx] = () => this.isValid(); },
       onChange() {
         if (this.pmax === 1) {
           this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
@@ -285,9 +272,7 @@
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
       },
-      isValid() {
-        return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax);
-      },
+      isValid() { return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax); },
       statusClass() {
         if (this.count === 0) return 'text-gray-400 font-semibold';
         if (this.count < this.pmin) return 'text-red-500 font-semibold';
@@ -305,7 +290,6 @@
     return {
       current: -1,
       totalSlides: TOTAL_NOMS,
-
       init() {
         this.showSlide(this.current);
         window.addEventListener('keydown', e => {
@@ -313,17 +297,14 @@
           if (e.key === 'ArrowLeft')  this.prev();
         });
       },
-
       showSlide(idx) {
         document.querySelectorAll('.slide').forEach(el => el.classList.remove('active'));
         const el = document.getElementById('slide-' + idx);
         if (el) el.classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       },
-
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
-
       nextOrWarn() {
         const idx = this.current;
         if (idx >= 0 && idx < this.totalSlides && !this.isDone(idx)) {
@@ -333,17 +314,10 @@
         }
         if (this.current < this.totalSlides) this.goTo(this.current + 1);
       },
-
-      progressPct() {
-        return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100);
-      },
-
+      progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
       isDone(idx) { return nomDone[idx] ? nomDone[idx]() : false; },
-
       allDone() {
-        for (let i = 0; i < this.totalSlides; i++) {
-          if (!this.isDone(i)) return false;
-        }
+        for (let i = 0; i < this.totalSlides; i++) { if (!this.isDone(i)) return false; }
         return true;
       }
     }

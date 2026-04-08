@@ -15,10 +15,19 @@
       <label class="block text-xs text-gray-500 mb-1">Тип</label>
       <select name="type" x-model="type"
               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-        <option value="RANK">RANK (рейтинг 1–10)</option>
+        <option value="RANK">RANK (рейтинг)</option>
         <option value="PICK">PICK (выбрать N)</option>
       </select>
     </div>
+
+    {# RANK: how many places to fill #}
+    <div x-show="type === 'RANK'" x-cloak>
+      <label class="block text-xs text-gray-500 mb-1">Мест в рейтинге</label>
+      <input type="number" name="nominees_count" min="1" placeholder="10"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
+    </div>
+
+    {# PICK: min/max #}
     <div x-show="type === 'PICK'" x-cloak class="flex gap-2">
       <div>
         <label class="block text-xs text-gray-500 mb-1">Мин выбор</label>
@@ -39,11 +48,7 @@
         </select>
       </div>
     </div>
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">Номинантов <span class="text-gray-300">(необяз.)</span></label>
-      <input type="number" name="nominees_count" min="1" placeholder="нет"
-             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
-    </div>
+
     <div>
       <label class="block text-xs text-gray-500 mb-1">Год номинации</label>
       <select name="year_filter" required
@@ -82,8 +87,7 @@
           <th class="pb-2 pr-2 w-16">Порядок</th>
           <th class="pb-2 pr-4">Название</th>
           <th class="pb-2 pr-4">Тип</th>
-          <th class="pb-2 pr-4">Выбор</th>
-          <th class="pb-2 pr-4">Номинантов</th>
+          <th class="pb-2 pr-4">Параметры</th>
           <th class="pb-2 pr-4">Год</th>
           <th class="pb-2 pr-4">Лонг-лист</th>
           <th class="pb-2"></th>
@@ -115,7 +119,7 @@
           </td>
 
           {# Name / inline edit form #}
-          <td class="py-2 pr-4" x-bind:colspan="editing ? 6 : 1">
+          <td class="py-2 pr-4" x-bind:colspan="editing ? 5 : 1">
             <template x-if="!editing">
               <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
             </template>
@@ -135,6 +139,17 @@
                     <option value="PICK">PICK</option>
                   </select>
                 </div>
+
+                {# RANK edit: places #}
+                <template x-if="nomType === 'RANK'">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Мест</label>
+                    <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}" placeholder="10"
+                           class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+                  </div>
+                </template>
+
+                {# PICK edit: min/max #}
                 <template x-if="nomType === 'PICK'">
                   <div class="flex gap-2">
                     <div>
@@ -149,11 +164,7 @@
                     </div>
                   </div>
                 </template>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Номинантов</label>
-                  <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}" placeholder="нет"
-                         class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
-                </div>
+
                 <div>
                   <label class="block text-xs text-gray-400 mb-0.5">Год</label>
                   <select name="year_filter" required
@@ -181,19 +192,16 @@
             </span>
           </td>
 
-          {# Pick range #}
+          {# Params #}
           <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">
-            {% if nom.type.value == 'PICK' %}
-              {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
-            {% else %}—{% endif %}
-          </td>
-
-          {# Nominees count #}
-          <td class="py-2 pr-4 text-xs" x-show="!editing">
-            {% if nom.nominees_count %}
-            <span class="px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-semibold">{{ nom.nominees_count }}</span>
+            {% if nom.type.value == 'RANK' %}
+              {% if nom.nominees_count %}
+                Топ <span class="font-semibold text-yellow-700">{{ nom.nominees_count }}</span>
+              {% else %}
+                <span class="text-gray-300">—</span>
+              {% endif %}
             {% else %}
-            <span class="text-gray-300">—</span>
+              {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
             {% endif %}
           </td>
 

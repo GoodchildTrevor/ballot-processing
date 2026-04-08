@@ -58,29 +58,24 @@ async def submit_vote(voter_id: int, request: Request, db: Session = Depends(get
     errors = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
-            vals = [
-                form.get(f"rank_{nom.id}_{n.film_id}")
-                for n in nom.nominees
-            ]
+            # rank_max: configured places, fallback to longlist length
+            rank_max = nom.nominees_count or len(nom.nominees)
+            vals = [form.get(f"rank_{nom.id}_{n.film_id}") for n in nom.nominees]
             filled = [v for v in vals if v]
-            n_nominees = len(nom.nominees)
 
-            # partial fill
-            if 0 < len(filled) < n_nominees:
+            if 0 < len(filled) < len(nom.nominees):
                 errors.append(
                     f"Номинация «{nom.name}»: заполните все значения рейтинга или не выбирайте ничего."
                 )
-            # duplicate ranks
             elif filled and len(set(filled)) < len(filled):
                 errors.append(
                     f"Номинация «{nom.name}»: два фильма на одном месте — каждому фильму своё место."
                 )
-            # rank values out of range
             elif filled:
-                bad = [v for v in filled if not (1 <= int(v) <= n_nominees)]
+                bad = [v for v in filled if not (1 <= int(v) <= rank_max)]
                 if bad:
                     errors.append(
-                        f"Номинация «{nom.name}»: место должно быть от 1 до {n_nominees}."
+                        f"Номинация «{nom.name}»: место должно быть от 1 до {rank_max}."
                     )
 
         elif nom.type == NominationType.PICK:
