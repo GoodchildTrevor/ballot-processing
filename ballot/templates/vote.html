@@ -39,11 +39,11 @@
             <div class="text-xs text-gray-400 mt-0.5">
               {% if nom.type.value == 'RANK' %}
                 {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
-                🏆 Рейтинг Топ {{ rank_max }}
+                🏆 Рейтинг Топ {{ rank_max }}
               {% else %}
                 {% set pmin = nom.pick_min if nom.pick_min else 1 %}
                 {% set pmax = nom.pick_max if nom.pick_max else 1 %}
-                ✔️ Выбор {% if pmin == pmax and pmin == 1 %}1{% elif pmin == pmax %}{{ pmax }}{% else %}{{ pmin }}–{{ pmax }}{% endif %}
+                ✔️ Выбор {% if pmin == pmax and pmin == 1 %}1{% elif pmin == pmax %}{{ pmax }}{% else %}{{ pmin }}–{{ pmax }}{% endif %}
               {% endif %}
             </div>
           </div>
@@ -85,8 +85,8 @@
       {# RANK #}
       {% if nom.type.value == 'RANK' %}
       <p class="text-xs text-gray-400 mb-4">
-        Поставьте каждому фильму место от 1 до {{ rank_max }}
-        (1 — лучший). Каждое место — только одному фильму.
+        Расставьте места от 1 до {{ rank_max }} лучшим фильмам
+        (1 — лучший). Один фильм может остаться без места.
       </p>
       <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
         {% for nominee in nom.nominees %}
@@ -107,8 +107,9 @@
         {% endfor %}
         <div class="px-4 py-2 text-xs">
           <span x-show="hasDuplicates()" class="text-red-500 font-medium">⚠️ Два фильма на одном месте</span>
-          <span x-show="!hasDuplicates() && allFilled()" class="text-green-600">✅ Все заполнено</span>
-          <span x-show="!hasDuplicates() && !allFilled()" class="text-amber-500">Заполните все значения</span>
+          <span x-show="!hasDuplicates() && allFilled()" class="text-green-600">✅ Все {{ rank_max }} мест заполнены</span>
+          <span x-show="!hasDuplicates() && !allFilled()" class="text-amber-500"
+                x-text="'Заполнено ' + filledCount() + ' из ' + maxRank + ' мест'"></span>
         </div>
       </div>
       {% endif %}
@@ -236,6 +237,7 @@
       init() {
         const selects = this.$el.querySelectorAll('select');
         this.values = Array.from(selects).map(() => '');
+        // Done when exactly maxRank unique ranks are assigned, no duplicates
         nomDone[idx] = () => this.allFilled() && !this.hasDuplicates();
       },
       onChange(event, i) {
@@ -251,8 +253,12 @@
           });
         });
       },
+      filledCount() {
+        return this.values.filter(v => v !== '').length;
+      },
+      // Ready when exactly maxRank rows have a value (one film may be left blank)
       allFilled() {
-        return this.values.length > 0 && this.values.every(v => v !== '');
+        return this.filledCount() === this.maxRank;
       },
       hasDuplicates() {
         const filled = this.values.filter(v => v !== '');
