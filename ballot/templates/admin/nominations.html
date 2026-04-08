@@ -57,12 +57,15 @@
         <th class="pb-2 pr-4">Тип</th>
         <th class="pb-2 pr-4">Выбор</th>
         <th class="pb-2 pr-4">Год</th>
-        <th class="pb-2">Лонг-лист</th>
+        <th class="pb-2 pr-4">Лонг-лист</th>
+        <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
       {% for nom in nominations %}
-      <tr class="border-b last:border-0 hover:bg-gray-50">
+      <tr class="border-b last:border-0 align-top" x-data="{ editing: false, nomType: '{{ nom.type.value }}' }">
+
+        {# ─ Move buttons ─ #}
         <td class="py-2 pr-2">
           <div class="flex flex-col gap-0.5">
             {% if not loop.first %}
@@ -79,22 +82,90 @@
             {% endif %}
           </div>
         </td>
-        <td class="py-2 pr-4">
-          <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
+
+        {# ─ Name / inline edit form ─ #}
+        <td class="py-2 pr-4" colspan x-bind:colspan="editing ? 4 : 1">
+          <template x-if="!editing">
+            <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
+          </template>
+          <template x-if="editing">
+            <form method="post" action="/admin/nominations/{{ nom.id }}/edit"
+                  class="flex flex-wrap gap-2 items-end py-1">
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Название</label>
+                <input type="text" name="name" value="{{ nom.name }}" required
+                       class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-44 focus:ring-indigo-400 focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Тип</label>
+                <select name="type" x-model="nomType"
+                        class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none">
+                  <option value="RANK">RANK</option>
+                  <option value="PICK">PICK</option>
+                </select>
+              </div>
+              <template x-if="nomType === 'PICK'">
+                <div class="flex gap-2">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Мин</label>
+                    <input type="number" name="pick_min" min="1" value="{{ nom.pick_min or '' }}"
+                           class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Макс</label>
+                    <input type="number" name="pick_max" min="1" value="{{ nom.pick_max or '' }}"
+                           class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+                  </div>
+                </div>
+              </template>
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Год</label>
+                <input type="number" name="year_filter" min="1900" max="2100"
+                       value="{{ nom.year_filter or '' }}" placeholder="нет"
+                       class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+              </div>
+              <div class="flex gap-2 items-end">
+                <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs transition">Сохранить</button>
+                <button type="button" @click="editing = false"
+                        class="text-xs text-gray-400 hover:underline px-1">Отмена</button>
+              </div>
+            </form>
+          </template>
         </td>
-        <td class="py-2 pr-4">
+
+        {# ─ Type badge (hidden while editing) ─ #}
+        <td class="py-2 pr-4" x-show="!editing">
           <span class="px-2 py-0.5 rounded text-xs font-semibold
             {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
             {{ nom.type.value }}
           </span>
         </td>
-        <td class="py-2 pr-4 text-gray-500 text-xs">
+
+        {# ─ Pick range (hidden while editing) ─ #}
+        <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">
           {% if nom.type.value == 'PICK' %}
             {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
           {% else %}—{% endif %}
         </td>
-        <td class="py-2 pr-4 text-gray-500 text-xs">{{ nom.year_filter or '—' }}</td>
-        <td class="py-2 tabular-nums">{{ nom.nominees | length }}</td>
+
+        {# ─ Year (hidden while editing) ─ #}
+        <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
+
+        {# ─ Longlist count (hidden while editing) ─ #}
+        <td class="py-2 pr-4 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
+
+        {# ─ Actions ─ #}
+        <td class="py-2 text-right whitespace-nowrap">
+          <button type="button" @click="editing = !editing"
+                  class="text-xs text-indigo-500 hover:underline mr-2"
+                  x-text="editing ? '✕' : 'Редактировать'"></button>
+          <form method="post" action="/admin/nominations/{{ nom.id }}/delete" class="inline"
+                @submit.prevent="confirm('Удалить «{{ nom.name }}»?') && $el.submit()">
+            <button class="text-xs text-red-500 hover:underline">Удалить</button>
+          </form>
+        </td>
+
       </tr>
       {% endfor %}
     </tbody>
