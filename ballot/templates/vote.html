@@ -5,26 +5,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Бюллетень — {{ voter.name }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>[x-cloak]{display:none!important}</style>
+  <style>
+    [x-cloak] { display: none !important; }
+    .slide { display: none; }
+    .slide.active { display: block; }
+  </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-  <div class="max-w-2xl mx-auto px-4 py-10">
-    <h1 class="text-2xl font-bold text-indigo-700 mb-1">🎬 Бюллетень</h1>
-    <p class="text-gray-500 mb-8">Привет, <strong>{{ voter.name }}</strong>! Заполните все поля и нажмите «Отправить голос».</p>
+<body class="bg-gray-50 min-h-screen" x-data="ballot()" x-init="init()">
 
-    <form method="post" action="/vote/{{ voter.id }}">
+  {# ── Progress bar ── #}
+  <div class="fixed top-0 left-0 right-0 h-1 bg-gray-200 z-50">
+    <div class="h-1 bg-indigo-500 transition-all duration-300"
+         :style="'width:' + progressPct() + '%'"></div>
+  </div>
 
-      {% if rank_noms %}
-      <h2 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Рейтинговые номинации</h2>
-      {% for nom in rank_noms %}
-      <div class="bg-white rounded-xl shadow-sm p-6 mb-5">
-        <h3 class="font-bold text-indigo-700 mb-4">{{ nom.name }}</h3>
-        <p class="text-xs text-gray-400 mb-3">Поставьте каждому фильму место от 1 до 10 (1 — лучший)</p>
+  {# ── Header ── #}
+  <div class="fixed top-1 left-0 right-0 z-40 flex items-center justify-between px-4 pt-2 pb-1">
+    <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
+    <button @click="goTo(-1)"
+            class="text-xs text-indigo-500 hover:underline">← Оглавление</button>
+  </div>
+
+  <form method="post" action="/vote/{{ voter.id }}" id="ballotForm">
+  <div class="max-w-2xl mx-auto px-4 pt-14 pb-28">
+
+    {# ═══════════════════════════════════════════
+       SLIDE -1 — TOC
+    ═══════════════════════════════════════════ #}
+    <div class="slide" id="slide--1">
+      <h1 class="text-2xl font-bold text-indigo-700 mb-2">🎥 Бюллетень</h1>
+      <p class="text-gray-500 mb-6">{{ voter.name }}, выберите номинацию чтобы перейти к ней.</p>
+      <div class="space-y-3">
+        {% for nom in nominations %}
+        <button type="button" @click="goTo({{ loop.index0 }})"
+                class="w-full flex items-center justify-between bg-white rounded-xl shadow-sm px-5 py-4 hover:shadow-md hover:bg-indigo-50 transition text-left group">
+          <div>
+            <div class="font-semibold text-gray-800 group-hover:text-indigo-700">{{ nom.name }}</div>
+            <div class="text-xs text-gray-400 mt-0.5">
+              {% if nom.type.value == 'RANK' %}
+                🏆 Рейтинг от 1 до 10
+              {% else %}
+                {% set pmin = nom.pick_min if nom.pick_min else 1 %}
+                {% set pmax = nom.pick_max if nom.pick_max else 1 %}
+                ✔️ Выбор
+                {% if pmin == pmax and pmin == 1 %}1 кандидата
+                {% elif pmin == pmax %}{{ pmax }}
+                {% else %}{{ pmin }}–{{ pmax }}
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span x-show="isDone({{ loop.index0 }})" class="text-green-500 text-lg" x-cloak>✅</span>
+            <span class="text-gray-300 group-hover:text-indigo-400">›</span>
+          </div>
+        </button>
+        {% endfor %}
+      </div>
+      <button type="button" @click="goTo(0)"
+              class="mt-8 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition">
+        Начать →
+      </button>
+    </div>
+
+    {# ═══════════════════════════════════════════
+       SLIDES 0..N-1 — Nominations
+    ═══════════════════════════════════════════ #}
+    {% for nom in nominations %}
+    {% set idx = loop.index0 %}
+    <div class="slide" id="slide-{{ idx }}">
+
+      {# ── Slide header ── #}
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-xs font-semibold px-2 py-0.5 rounded
+          {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+          {{ nom.type.value }}
+        </span>
+        <span class="text-xs text-gray-400">{{ idx + 1 }} / {{ nominations | length }}</span>
+      </div>
+      <h2 class="text-xl font-bold text-indigo-700 mb-4">{{ nom.name }}</h2>
+
+      {# ── RANK ── #}
+      {% if nom.type.value == 'RANK' %}
+      <p class="text-xs text-gray-400 mb-4">Поставьте каждому фильму место от 1 до 10 (1 — лучший)</p>
+      <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }})">
         {% for nominee in nom.nominees %}
-        <div class="flex items-center justify-between py-2 border-b last:border-0">
-          <span class="text-sm text-gray-800">{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span></span>
+        <div class="flex items-center justify-between px-4 py-3">
+          <span class="text-sm text-gray-800">
+            {{ nominee.film.title }}
+            <span class="text-gray-400 text-xs">({{ nominee.film.year }})</span>
+          </span>
           <select name="rank_{{ nom.id }}_{{ nominee.film_id }}"
-                  class="ml-4 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                  @change="onChange()"
+                  class="ml-3 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-400 focus:outline-none">
             <option value="">—</option>
             {% for i in range(1, 11) %}
             <option value="{{ i }}">{{ i }}</option>
@@ -32,43 +105,39 @@
           </select>
         </div>
         {% endfor %}
+        <div class="px-4 py-2 text-xs"
+             :class="allFilled() ? 'text-green-600' : 'text-amber-500'">
+          <span x-text="allFilled() ? '✅ Все заполнено' : 'Заполните все значения'"></span>
+        </div>
       </div>
-      {% endfor %}
       {% endif %}
 
-      {% if pick_noms %}
-      <h2 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Выбор победителя</h2>
-      {% for nom in pick_noms %}
+      {# ── PICK ── #}
+      {% if nom.type.value == 'PICK' %}
       {% set pmin = nom.pick_min if nom.pick_min else 1 %}
       {% set pmax = nom.pick_max if nom.pick_max else 1 %}
-      <div class="bg-white rounded-xl shadow-sm p-6 mb-5"
-           x-data="pickBlock({{ pmin }}, {{ pmax }})">
-        <h3 class="font-bold text-indigo-700 mb-1">{{ nom.name }}</h3>
+      <div x-data="pickBlock({{ idx }}, {{ pmin }}, {{ pmax }})">
         <p class="text-xs text-gray-400 mb-4">
-          {% if pmin == pmax and pmin == 1 %}
-            Выберите одного кандидата
-          {% elif pmin == pmax %}
-            Выберите ровно {{ pmax }}
-          {% else %}
-            Выберите от {{ pmin }} до {{ pmax }} кандидатов
-          {% endif %}
+          {% if pmin == pmax and pmin == 1 %}Выберите одного кандидата
+          {% elif pmin == pmax %}Выберите ровно {{ pmax }}
+          {% else %}Выберите от {{ pmin }} до {{ pmax }} кандидатов{% endif %}
           &mdash;
-          <span :class="{ 'text-green-500 font-semibold': isValid(), 'text-amber-500 font-semibold': !isValid() }"
+          <span :class="isValid() ? 'text-green-500 font-semibold' : 'text-amber-500 font-semibold'"
                 x-text="count + ' выбрано'"></span>
         </p>
-        <div class="space-y-3">
+        <div class="bg-white rounded-xl shadow-sm divide-y">
           {% for nominee in nom.nominees %}
           {% if pmax == 1 %}
-          <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-indigo-50 transition">
+          <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition">
             <input type="radio" name="pick_{{ nom.id }}" value="{{ nominee.id }}"
-                   class="accent-indigo-600 w-4 h-4" />
+                   @change="onChange()" class="accent-indigo-600 w-4 h-4" />
             <span class="text-sm text-gray-800">
               {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
               {% else %}{{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>{% endif %}
             </span>
           </label>
           {% else %}
-          <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-indigo-50 transition"
+          <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition"
                  :class="{ 'opacity-40 pointer-events-none': !checked['{{ nominee.id }}'] && count >= pmax }">
             <input type="checkbox" name="pick_{{ nom.id }}" value="{{ nominee.id }}"
                    x-model="checked['{{ nominee.id }}']" @change="onChange()"
@@ -82,31 +151,164 @@
           {% endfor %}
         </div>
       </div>
-      {% endfor %}
       {% endif %}
 
+    </div>{# end slide #}
+    {% endfor %}
+
+    {# ═══════════════════════════════════════════
+       SLIDE N — Final submit
+    ═══════════════════════════════════════════ #}
+    <div class="slide" id="slide-{{ nominations | length }}">
+      <h2 class="text-2xl font-bold text-indigo-700 mb-3">📝 Готово?</h2>
+      <p class="text-gray-500 mb-6">Проверьте свои выборы перед отправкой.</p>
+      <div class="space-y-2 mb-8">
+        {% for nom in nominations %}
+        <div class="flex items-center justify-between bg-white rounded-lg px-4 py-3 shadow-sm">
+          <span class="text-sm font-medium text-gray-700">{{ nom.name }}</span>
+          <div class="flex items-center gap-2">
+            <span x-show="isDone({{ loop.index0 }})" class="text-green-500" x-cloak>✅</span>
+            <span x-show="!isDone({{ loop.index0 }})" class="text-amber-400 text-xs" x-cloak>⚠️ не заполнено</span>
+            <button type="button" @click="goTo({{ loop.index0 }})"
+                    class="text-xs text-indigo-500 hover:underline">Изменить</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
       <button type="submit"
-              class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base hover:bg-indigo-700 transition mt-4">
+              class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base hover:bg-indigo-700 transition">
         ✅ Отправить голос
       </button>
-    </form>
+    </div>
+
+  </div>{# max-w #}
+  </form>
+
+  {# ── Bottom nav ── #}
+  <div class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-40">
+    <div class="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <button type="button" @click="prev()"
+              :disabled="current === -1"
+              class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
+                     disabled:opacity-30 disabled:cursor-not-allowed
+                     hover:enabled:bg-gray-100">
+        ← Назад
+      </button>
+
+      <div class="flex gap-1 items-center">
+        <template x-for="i in totalSlides + 2" :key="i">
+          <button type="button"
+                  @click="goTo(i - 2)"
+                  :class="(i - 2 === current)
+                    ? 'w-5 h-2 rounded-full bg-indigo-500'
+                    : 'w-2 h-2 rounded-full bg-gray-300 hover:bg-indigo-300'"
+                  class="transition-all duration-200"></button>
+        </template>
+      </div>
+
+      <button type="button" @click="next()"
+              :disabled="current === totalSlides"
+              class="flex items-center gap-1 px-4 py-2 rounded-lg border text-sm font-medium transition
+                     disabled:opacity-30 disabled:cursor-not-allowed
+                     hover:enabled:bg-gray-100 hover:enabled:border-indigo-400 hover:enabled:text-indigo-600">
+        Далее →
+      </button>
+    </div>
   </div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
-    function pickBlock(pmin, pmax) {
-      return {
-        pmin, pmax,
-        count: 0,
-        checked: {},
-        onChange() {
-          this.count = Object.values(this.checked).filter(Boolean).length;
-        },
-        isValid() {
-          return this.count >= this.pmin && this.count <= this.pmax;
+  const TOTAL_NOMS = {{ nominations | length }};
+
+  // ── Per-nomination done-state registry ──
+  // Each nomination registers itself here when its Alpine component inits.
+  const nomDone = {};
+
+  function rankBlock(idx) {
+    return {
+      total: 0,
+      filled: 0,
+      init() {
+        // count selects inside this block
+        this.total = this.$el.querySelectorAll('select').length;
+        nomDone[idx] = () => this.allFilled();
+      },
+      onChange() {
+        this.filled = [...this.$el.querySelectorAll('select')].filter(s => s.value !== '').length;
+      },
+      allFilled() { return this.total > 0 && this.filled >= this.total; }
+    }
+  }
+
+  function pickBlock(idx, pmin, pmax) {
+    return {
+      pmin, pmax,
+      count: 0,
+      checked: {},
+      init() {
+        nomDone[idx] = () => this.isValid();
+      },
+      onChange() {
+        this.count = Object.values(this.checked).filter(Boolean).length;
+        // radio case: count checked radios
+        if (this.pmax === 1) {
+          this.count = this.$el.querySelectorAll('input[type=radio]:checked').length;
         }
+      },
+      isValid() {
+        return this.count >= this.pmin && this.count <= this.pmax;
       }
     }
+  }
+
+  function ballot() {
+    return {
+      current: -1,      // -1 = TOC, 0..N-1 = nominations, N = submit
+      totalSlides: TOTAL_NOMS,
+
+      init() {
+        this.showSlide(this.current);
+        // keyboard arrows
+        window.addEventListener('keydown', e => {
+          if (e.key === 'ArrowRight') this.next();
+          if (e.key === 'ArrowLeft')  this.prev();
+        });
+      },
+
+      showSlide(idx) {
+        document.querySelectorAll('.slide').forEach(el => el.classList.remove('active'));
+        const el = document.getElementById('slide-' + idx);
+        if (el) el.classList.add('active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+
+      goTo(idx) {
+        this.current = idx;
+        this.showSlide(idx);
+      },
+
+      next() {
+        if (this.current < this.totalSlides) {
+          this.goTo(this.current + 1);
+        }
+      },
+
+      prev() {
+        if (this.current > -1) {
+          this.goTo(this.current - 1);
+        }
+      },
+
+      progressPct() {
+        // TOC = 0%, last slide = 100%
+        return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100);
+      },
+
+      isDone(idx) {
+        return nomDone[idx] ? nomDone[idx]() : false;
+      }
+    }
+  }
   </script>
 </body>
 </html>
