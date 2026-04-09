@@ -93,6 +93,7 @@
   {% else %}
 
   <script>
+  const NOM_TYPE = "{{ nom.type.value }}";
   const NOM_FILMS = [
     {% for film in films %}
     {
@@ -164,18 +165,22 @@
           <ul class="max-h-60 overflow-y-auto">
             <template x-for="f in visibleFilms()" :key="f.id">
               <li>
-                <button type="button" @click="!f.added && (filmSel = f, filmOpen = false, filmQ = '')"
-                        :disabled="f.added"
+                <button type="button"
+                        @click="canSelect(f) && (filmSel = f, filmOpen = false, filmQ = '')"
+                        :disabled="!canSelect(f)"
                         :class="{
                           'bg-indigo-50 text-indigo-700 font-medium': filmSel && filmSel.id === f.id,
-                          'opacity-40 cursor-not-allowed text-gray-400': f.added,
-                          'hover:bg-gray-50 text-gray-700': !f.added && !(filmSel && filmSel.id === f.id)
+                          'opacity-40 cursor-not-allowed text-gray-400': !canSelect(f),
+                          'hover:bg-gray-50 text-gray-700': canSelect(f) && !(filmSel && filmSel.id === f.id)
                         }"
                         class="w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2">
                   <span x-text="f.title"></span>
                   <span class="flex items-center gap-2 flex-shrink-0">
                     <span class="text-xs text-gray-400" x-text="f.year"></span>
-                    <span x-show="f.added" class="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">уже есть</span>
+                    <span x-show="f.added && NOM_TYPE === 'RANK'"
+                          class="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">уже есть</span>
+                    <span x-show="f.added && NOM_TYPE === 'PICK'"
+                          class="text-xs bg-blue-50 text-blue-500 rounded-full px-2 py-0.5">добавлен</span>
                   </span>
                 </button>
               </li>
@@ -248,8 +253,8 @@
       {% endif %}
 
       <button type="submit"
-              :disabled="!filmSel || filmSel.added"
-              :class="(filmSel && !filmSel.added) ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
+              :disabled="!filmSel || (NOM_TYPE === 'RANK' && filmSel.added)"
+              :class="(filmSel && !(NOM_TYPE === 'RANK' && filmSel.added)) ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 cursor-not-allowed text-gray-400'"
               class="px-4 py-2 rounded-lg text-sm transition">Добавить</button>
     </div>
   </form>
@@ -272,6 +277,10 @@
       songVal: '',
       songUrlVal: '',
       {% endif %}
+      // RANK: нельзя добавить тот же фильм дважды; PICK: можно (разные персоны)
+      canSelect(f) {
+        return !(NOM_TYPE === 'RANK' && f.added);
+      },
       visibleFilms() {
         let rows = (!NOM_HAS_YEAR_FILTER && this.yearTab !== null)
           ? this.films.filter(f => f.year === this.yearTab)
