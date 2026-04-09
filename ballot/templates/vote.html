@@ -46,10 +46,10 @@
       }{% if not loop.last %},{% endif %}
       {% endfor %}
     ];
-    // Incremented on every user interaction — makes ballot() re-evaluate isDone reactively
-    window.__changeSeq = Alpine && Alpine.reactive ? Alpine.reactive({ n: 0 }) : { n: 0 };
+    window.__seq = 0;
     window.__notifyChange = function() {
-      window.__changeSeq.n++;
+      window.__seq++;
+      if (window.__alpineSeq) window.__alpineSeq.n = window.__seq;
     };
   </script>
 
@@ -367,36 +367,30 @@
   const TOTAL_NOMS = {{ nominations | length }};
   let saveTimer = null;
 
-  // ------------------------------------------------------------------
-  // Global reactive counter — incremented on every form interaction.
-  // ballot() and preview components read it so Alpine re-evaluates them.
-  // Must be set up AFTER Alpine is available, so we use a deferred init.
-  // ------------------------------------------------------------------
-  window.__seq = 0; // plain counter, initialised before Alpine
-  window.__notifyChange = function() {
-    window.__seq++;
-    // If Alpine reactive wrapper exists, update it too
-    if (window.__alpineSeq) window.__alpineSeq.n = window.__seq;
-  };
-
   document.addEventListener('alpine:init', () => {
     window.__alpineSeq = Alpine.reactive({ n: 0 });
   });
 
   // ------------------------------------------------------------------
-  // isDone — reads live DOM, depends on __alpineSeq.n for reactivity
+  // Helper: get selects belonging EXACTLY to nomId (not nomId=1 vs nomId=10)
+  // name format: rank_{nomId}_{filmId}
+  // ------------------------------------------------------------------
+  function _rankSelects(form, nomId) {
+    const prefix = 'rank_' + nomId + '_';
+    return Array.from(form.querySelectorAll('select')).filter(s => s.name.startsWith(prefix));
+  }
+
+  // ------------------------------------------------------------------
+  // isDone
   // ------------------------------------------------------------------
   function _isDoneFromDOM(idx) {
-    // Touch reactive counter so Alpine tracks this dependency
     if (window.__alpineSeq) { void window.__alpineSeq.n; }
     const meta = (window.__nomMeta || [])[idx];
     if (!meta) return false;
     const form = document.getElementById('ballotForm');
     if (!form) return false;
     if (meta.type === 'RANK') {
-      return Array.from(
-        form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]')
-      ).some(s => s.value !== '');
+      return _rankSelects(form, meta.nomId).some(s => s.value !== '');
     } else {
       return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
     }
@@ -456,9 +450,9 @@
       }
 
       if (meta.type === 'RANK') {
-        const selects = Array.from(form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]'));
+        // Use exact prefix match via _rankSelects to avoid nomId=1 matching nomId=10
+        const selects = _rankSelects(form, meta.nomId);
         const filled = selects.map(s => s.value).filter(v => v !== '');
-        // Duplicates
         if (new Set(filled).size < filled.length) {
           errors.push('«' + name + '»: два фильма на одном месте. Исправьте перед отправкой.');
         }
@@ -551,7 +545,7 @@
     };
   }
 
-  // rankPreview: uses x-effect="refresh()" to re-read DOM when __alpineSeq changes
+  // rankPreview — also uses _rankSelects for exact match
   function rankPreview(idx) {
     return {
       nomId: null,
@@ -561,13 +555,13 @@
         this.refresh();
       },
       refresh() {
-        if (window.__alpineSeq) { void window.__alpineSeq.n; } // track dependency
+        if (window.__alpineSeq) { void window.__alpineSeq.n; }
         if (!this.nomId) { this.rows = []; return; }
         const labels = (window.__rankLabels || {})[this.nomId] || {};
         const form = document.getElementById('ballotForm');
         const rows = [];
-        form.querySelectorAll('select').forEach(sel => {
-          if (sel.name && sel.name.startsWith('rank_' + this.nomId + '_') && sel.value) {
+        _rankSelects(form, this.nomId).forEach(sel => {
+          if (sel.value) {
             rows.push({ rank: parseInt(sel.value), label: labels[sel.name] || sel.name });
           }
         });
@@ -577,7 +571,6 @@
     };
   }
 
-  // pickPreview: same pattern
   function pickPreview(idx, pmax) {
     return {
       nomId: null,
