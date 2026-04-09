@@ -14,10 +14,20 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _annotate_rows(rows: list, count: int | None) -> list:
-    """Add 1-based position and is_nominee (by position, not dense rank)."""
+    """Add dense_rank and is_nominee using DENSE_RANK logic."""
+    if not rows:
+        return rows
+
+    # DENSE_RANK: одинаковый score → одинаковый ранг
+    rank = 1
+    prev_score = None
     for i, row in enumerate(rows):
-        row["position"] = i + 1
-        row["is_nominee"] = bool(count and (i + 1) <= count)
+        if prev_score is None or row["score"] != prev_score:
+            rank = i + 1
+        row["position"] = rank
+        row["is_nominee"] = bool(count and rank <= count)
+        prev_score = row["score"]
+
     return rows
 
 
