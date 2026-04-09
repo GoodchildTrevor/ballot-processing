@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Voter, Vote, Ranking, Nomination, NominationType
+from ballot.models import Voter, Vote, Ranking, Nomination, NominationType, Film
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -15,8 +15,9 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
     voters = (
         db.query(Voter)
         .options(
-            joinedload(Voter.votes).joinedload(Vote.nominee),
-            joinedload(Voter.rankings).joinedload(Ranking.voter),
+            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload('film'),
+            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload('person'),
+            joinedload(Voter.rankings).joinedload(Ranking.film),
         )
         .order_by(Voter.name)
         .all()
