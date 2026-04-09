@@ -454,12 +454,12 @@
         const filled = selects.map(s => s.value).filter(v => v !== '');
       
         if (new Set(filled).size < filled.length) {
-          errors.push('«' + name + '»: два фильма на одном месте...');
+          errors.push('«' + name + '»: два фильма на одном месте. Исправьте перед отправкой.');
         }
       
-        const total = selects.length;
-        if (filled.length > 0 && filled.length < total) {
-          errors.push('«' + name + '»: заполнено ' + filled.length + ' из ' + total
+        const required = meta.nomineesCount ?? meta.nomineeCount;
+        if (filled.length > 0 && filled.length < required) {
+          errors.push('«' + name + '»: заполнено ' + filled.length + ' из ' + required
             + ' мест. Заполните все или сбросьте полностью.');
         }
       }
