@@ -5,7 +5,6 @@
   <h1 class="text-2xl font-bold">Результаты</h1>
   <a href="/admin/results/export" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">📥 Скачать .xlsx</a>
 </div>
-
 {% for item in results %}
 <div class="bg-white shadow rounded-xl p-6 mb-6">
   <div class="flex items-center gap-3 mb-4">
@@ -31,9 +30,9 @@
     </thead>
     <tbody>
       {% for row in item.rows %}
-      {% set hl = item.nom.nominees_count and loop.index <= item.nom.nominees_count %}
+      {% set hl = row.is_nominee %}
       <tr class="border-b last:border-0 {{ 'bg-green-50 hover:bg-green-100' if hl else 'hover:bg-gray-50' }}">
-        <td class="py-2 pr-3 font-bold tabular-nums {{ 'text-green-600' if hl else 'text-indigo-600' }}">{{ loop.index }}</td>
+        <td class="py-2 pr-3 font-bold tabular-nums {{ 'text-green-600' if hl else 'text-indigo-600' }}">{{ row.position }}</td>
         <td class="py-2 pr-4 {{ 'font-semibold text-green-800' if hl else '' }}">{{ row.label }}</td>
         <td class="py-2 pr-4 font-semibold tabular-nums {{ 'text-green-700' if hl else '' }}">{{ row.score }}</td>
         <td class="py-2 text-xs">
