@@ -61,7 +61,11 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span x-show="isDone({{ loop.index0 }})" class="text-green-500 text-lg" x-cloak>✅</span>
+            {# voted badge #}
+            <span x-show="isDone({{ loop.index0 }})" x-cloak
+                  class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Заполнено</span>
+            <span x-show="!isDone({{ loop.index0 }})" x-cloak
+                  class="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">— Пусто</span>
             <span class="text-gray-300 group-hover:text-indigo-400 text-lg">›</span>
           </div>
         </button>
@@ -78,6 +82,9 @@
     {% set idx = loop.index0 %}
     {% if nom.type.value == 'RANK' %}
       {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
+      {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
+    {% else %}
+      {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
     {% endif %}
     <div class="slide" id="slide-{{ idx }}">
 
@@ -102,7 +109,7 @@
         (1 — лучший). Можно пропустить номинацию целиком.
       </p>
       <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
-        {% for nominee in nom.nominees %}
+        {% for nominee in sorted_nominees %}
         {% set draft_key = 'rank_' ~ nom.id ~ '_' ~ nominee.film_id %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
@@ -150,7 +157,7 @@
           <span :class="statusClass()" x-text="statusText()"></span>
         </p>
         <div class="bg-white rounded-xl shadow-sm divide-y">
-          {% for nominee in nom.nominees %}
+          {% for nominee in sorted_nominees %}
           {% set pick_key = 'pick_' ~ nom.id %}
           {% if pmax == 1 %}
           <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition">
@@ -165,21 +172,21 @@
                 {% else %}
                   {{ nominee.person.name }}
                 {% endif %}
-                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% elif nominee.song %}
                 {% if nominee.song_url %}
                   <a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>
                 {% else %}
                   {{ nominee.song }}
                 {% endif %}
-                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% else %}
                 {% if nominee.film.url %}
                   <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
                 {% else %}
                   {{ nominee.film.title }}
                 {% endif %}
-                 <span class="text-gray-400">({{ nominee.film.year }})</span>
+                 <span class="text-gray-400">({{ nominee.film.year }})</span>
               {% endif %}
             </span>
           </label>
@@ -197,21 +204,21 @@
                 {% else %}
                   {{ nominee.person.name }}
                 {% endif %}
-                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% elif nominee.song %}
                 {% if nominee.song_url %}
                   <a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>
                 {% else %}
                   {{ nominee.song }}
                 {% endif %}
-                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
+                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% else %}
                 {% if nominee.film.url %}
                   <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
                 {% else %}
                   {{ nominee.film.title }}
                 {% endif %}
-                 <span class="text-gray-400">({{ nominee.film.year }})</span>
+                 <span class="text-gray-400">({{ nominee.film.year }})</span>
               {% endif %}
             </span>
           </label>
@@ -228,7 +235,7 @@
     </div>
     {% endfor %}
 
-    {# Final submit slide #}
+    {# Review slide — full ballot preview before submit #}
     <div class="slide" id="slide-{{ nominations | length }}">
       <div class="flex items-center gap-3 mb-6">
         <button type="button" @click="goTo(-1)"
@@ -236,24 +243,103 @@
           ← Оглавление
         </button>
       </div>
-      <h2 class="text-2xl font-bold text-indigo-700 mb-3">📝 Готово?</h2>
-      <p class="text-gray-500 mb-6">Проверьте свои выборы перед отправкой.</p>
-      <div class="space-y-2 mb-8">
-        {% for nom in nominations %}
-        <div class="flex items-center justify-between bg-white rounded-lg px-4 py-3 shadow-sm">
-          <span class="text-sm font-medium text-gray-700">{{ nom.name }}</span>
+      <h2 class="text-2xl font-bold text-indigo-700 mb-1">📋 Проверьте бюллетень</h2>
+      <p class="text-gray-500 mb-6 text-sm">Убедитесь, что всё верно, прежде чем отправить.</p>
+
+      {% for nom in nominations %}
+      {% set idx = loop.index0 %}
+      {% if nom.type.value == 'RANK' %}
+        {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
+        {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
+      {% else %}
+        {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
+      {% endif %}
+
+      <div class="mb-5 bg-white rounded-xl shadow-sm overflow-hidden">
+        {# header #}
+        <div class="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
           <div class="flex items-center gap-2">
-            <span x-show="isFilledSome({{ loop.index0 }})" class="text-green-500" x-cloak>✅</span>
-            <span x-show="!isFilledSome({{ loop.index0 }})" class="text-gray-300 text-xs" x-cloak>— пропущено</span>
-            <button type="button" @click="goTo({{ loop.index0 }})"
-                    class="text-xs text-indigo-500 hover:underline">Изменить</button>
+            <span class="text-sm font-semibold text-gray-800">{{ nom.name }}</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded
+              {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+              {{ nom.type.value }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span x-show="isDone({{ idx }})" x-cloak class="text-xs text-green-600 font-semibold">✓ Заполнено</span>
+            <span x-show="!isDone({{ idx }})" x-cloak class="text-xs text-gray-400">— пропущено</span>
+            <button type="button" @click="goTo({{ idx }})"
+                    class="text-xs text-indigo-500 hover:underline ml-1">Изменить</button>
           </div>
         </div>
-        {% endfor %}
+
+        {# RANK preview #}
+        {% if nom.type.value == 'RANK' %}
+        <div class="divide-y" x-data="rankPreview({{ idx }})">
+          <template x-if="hasData()">
+            <div>
+              <template x-for="row in sorted()" :key="row.rank">
+                <div class="flex items-center gap-3 px-4 py-2 text-sm">
+                  <span class="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex-shrink-0"
+                        x-text="row.rank"></span>
+                  <span class="text-gray-800" x-text="row.label"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template x-if="!hasData()">
+            <div class="px-4 py-3 text-sm text-gray-400 italic">Ничего не выбрано</div>
+          </template>
+        </div>
+        {# store mapping for JS: film_id → title #}
+        <script>
+          window.__rankLabels = window.__rankLabels || {};
+          window.__rankLabels[{{ nom.id }}] = {
+            {% for nominee in sorted_nominees %}
+            "rank_{{ nom.id }}_{{ nominee.film_id }}": "{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}",
+            {% endfor %}
+          };
+          window.__rankNomId = window.__rankNomId || {};
+          window.__rankNomId[{{ idx }}] = {{ nom.id }};
+        </script>
+        {% endif %}
+
+        {# PICK preview #}
+        {% if nom.type.value == 'PICK' %}
+        {% set pmax = nom.pick_max if nom.pick_max else 1 %}
+        <div x-data="pickPreview({{ idx }}, {{ pmax }})">
+          <template x-if="hasData()">
+            <div class="divide-y">
+              <template x-for="label in labels()" :key="label">
+                <div class="flex items-center gap-2 px-4 py-2 text-sm">
+                  <span class="text-indigo-500">✔</span>
+                  <span class="text-gray-800" x-text="label"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template x-if="!hasData()">
+            <div class="px-4 py-3 text-sm text-gray-400 italic">Ничего не выбрано</div>
+          </template>
+        </div>
+        {# store mapping for JS: nominee_id → label #}
+        <script>
+          window.__pickLabels = window.__pickLabels || {};
+          window.__pickLabels[{{ idx }}] = {
+            {% for nominee in sorted_nominees %}
+            "{{ nominee.id }}": "{% if nominee.person %}{{ nominee.person.name }} ({{ nominee.film.title }}){% elif nominee.song %}{{ nominee.song }} ({{ nominee.film.title }}){% else %}{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}{% endif %}",
+            {% endfor %}
+          };
+          window.__pickNomId = window.__pickNomId || {};
+          window.__pickNomId[{{ idx }}] = {{ nom.id }};
+        </script>
+        {% endif %}
       </div>
+      {% endfor %}
+
       <button type="submit"
               class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-base
-                     hover:bg-indigo-700 transition">
+                     hover:bg-indigo-700 transition mt-2">
         ✅ Отправить голос
       </button>
     </div>
@@ -289,7 +375,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
   const TOTAL_NOMS = {{ nominations | length }};
-  const nomFilled  = {};  // tracks whether anything was selected (for summary checkmark)
+  const nomFilled  = {};
   let   saveTimer  = null;
 
   function collectFormData() {
@@ -335,7 +421,6 @@
         const selects = this.$el.querySelectorAll('select');
         this.values = Array.from(selects).map(s => s.value || '');
         this._refreshOptions();
-        // rank is always "done" — skipping is allowed
         nomFilled[idx] = () => this.filledCount() > 0 && !this.hasDuplicates();
       },
       onChange(event, i) {
@@ -395,6 +480,50 @@
     }
   }
 
+  // Review slide helpers — read current form state live
+  function rankPreview(idx) {
+    return {
+      nomId: null,
+      init() { this.nomId = (window.__rankNomId || {})[idx]; },
+      _rows() {
+        if (!this.nomId) return [];
+        const labels = (window.__rankLabels || {})[this.nomId] || {};
+        const form = document.getElementById('ballotForm');
+        const rows = [];
+        form.querySelectorAll('select').forEach(sel => {
+          if (sel.name && sel.name.startsWith('rank_' + this.nomId + '_') && sel.value) {
+            rows.push({ rank: parseInt(sel.value), label: labels[sel.name] || sel.name });
+          }
+        });
+        return rows;
+      },
+      sorted() { return this._rows().sort((a, b) => a.rank - b.rank); },
+      hasData() { return this._rows().length > 0; },
+    }
+  }
+
+  function pickPreview(idx, pmax) {
+    return {
+      nomId: null,
+      init() { this.nomId = (window.__pickNomId || {})[idx]; },
+      _ids() {
+        if (!this.nomId) return [];
+        const form = document.getElementById('ballotForm');
+        const name = 'pick_' + this.nomId;
+        if (pmax === 1) {
+          const r = form.querySelector('input[name="' + name + '"]:checked');
+          return r ? [r.value] : [];
+        }
+        return Array.from(form.querySelectorAll('input[name="' + name + '"]:checked')).map(cb => cb.value);
+      },
+      labels() {
+        const map = (window.__pickLabels || {})[idx] || {};
+        return this._ids().map(id => map[id] || id);
+      },
+      hasData() { return this._ids().length > 0; },
+    }
+  }
+
   function ballot() {
     return {
       current: -1,
@@ -423,12 +552,8 @@
       },
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
-      // next() — no blocking, always advances
-      next() {
-        if (this.current < this.totalSlides) this.goTo(this.current + 1);
-      },
+      next()     { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
       progressPct()    { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      // isFilledSome — for summary checkmark only, not a blocker
       isFilledSome(idx) { return nomFilled[idx] ? nomFilled[idx]() : false; },
       isDone(idx)       { return this.isFilledSome(idx); },
     }
