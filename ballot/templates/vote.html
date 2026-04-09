@@ -96,14 +96,11 @@
       </button>
     </div>
 
-    {# Nomination slides #}
+    {# Nomination slides — nominees already sorted by router #}
     {% for nom in nominations %}
     {% set idx = loop.index0 %}
     {% if nom.type.value == 'RANK' %}
       {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
-      {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
-    {% else %}
-      {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
     {% endif %}
     <div class="slide" id="slide-{{ idx }}">
 
@@ -128,7 +125,7 @@
         (1 — лучший). Можно пропустить номинацию целиком.
       </p>
       <div class="bg-white rounded-xl shadow-sm divide-y" x-data="rankBlock({{ idx }}, {{ rank_max }})">
-        {% for nominee in sorted_nominees %}
+        {% for nominee in nom.nominees %}
         {% set draft_key = 'rank_' ~ nom.id ~ '_' ~ nominee.film_id %}
         <div class="flex items-center justify-between px-4 py-3">
           <span class="text-sm text-gray-800">
@@ -176,7 +173,7 @@
           <span :class="statusClass()" x-text="statusText()"></span>
         </p>
         <div class="bg-white rounded-xl shadow-sm divide-y">
-          {% for nominee in sorted_nominees %}
+          {% for nominee in nom.nominees %}
           {% set pick_key = 'pick_' ~ nom.id %}
           {% if pmax == 1 %}
           <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 transition">
@@ -269,9 +266,6 @@
       {% set idx = loop.index0 %}
       {% if nom.type.value == 'RANK' %}
         {% set rank_max = nom.nominees_count if nom.nominees_count else (nom.nominees | length) %}
-        {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
-      {% else %}
-        {% set sorted_nominees = nom.nominees | sort(attribute='film.title') %}
       {% endif %}
 
       <div class="mb-5 bg-white rounded-xl shadow-sm overflow-hidden">
@@ -311,7 +305,7 @@
         <script>
           window.__rankLabels = window.__rankLabels || {};
           window.__rankLabels[{{ nom.id }}] = {
-            {% for nominee in sorted_nominees %}
+            {% for nominee in nom.nominees %}
             "rank_{{ nom.id }}_{{ nominee.film_id }}": "{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}",
             {% endfor %}
           };
@@ -340,7 +334,7 @@
         <script>
           window.__pickLabels = window.__pickLabels || {};
           window.__pickLabels[{{ idx }}] = {
-            {% for nominee in sorted_nominees %}
+            {% for nominee in nom.nominees %}
             "{{ nominee.id }}": "{% if nominee.person %}{{ nominee.person.name }} ({{ nominee.film.title }}){% elif nominee.song %}{{ nominee.song }} ({{ nominee.film.title }}){% else %}{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}{% endif %}",
             {% endfor %}
           };
