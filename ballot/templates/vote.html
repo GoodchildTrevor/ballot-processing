@@ -29,6 +29,26 @@
     <span class="text-xs text-gray-400">🎥 {{ voter.name }}</span>
   </div>
 
+  {#
+     Store nomination metadata for JS:
+     window.__nomMeta[idx] = { type: 'RANK'|'PICK', nomId: number, pmax: number }
+  #}
+  <script>
+    window.__nomMeta = [
+      {% for nom in nominations %}
+      {
+        type: "{{ nom.type.value }}",
+        nomId: {{ nom.id }},
+        {% if nom.type.value == 'PICK' %}
+        pmax: {{ nom.pick_max if nom.pick_max else 1 }}
+        {% else %}
+        pmax: 1
+        {% endif %}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+  </script>
+
   <form method="post" action="/vote" id="ballotForm">
   <div class="max-w-2xl mx-auto px-4 pt-12 pb-28">
 
@@ -61,7 +81,6 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            {# voted badge #}
             <span x-show="isDone({{ loop.index0 }})" x-cloak
                   class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Заполнено</span>
             <span x-show="!isDone({{ loop.index0 }})" x-cloak
@@ -235,7 +254,7 @@
     </div>
     {% endfor %}
 
-    {# Review slide — full ballot preview before submit #}
+    {# Review slide #}
     <div class="slide" id="slide-{{ nominations | length }}">
       <div class="flex items-center gap-3 mb-6">
         <button type="button" @click="goTo(-1)"
@@ -256,7 +275,6 @@
       {% endif %}
 
       <div class="mb-5 bg-white rounded-xl shadow-sm overflow-hidden">
-        {# header #}
         <div class="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
           <div class="flex items-center gap-2">
             <span class="text-sm font-semibold text-gray-800">{{ nom.name }}</span>
@@ -273,7 +291,6 @@
           </div>
         </div>
 
-        {# RANK preview #}
         {% if nom.type.value == 'RANK' %}
         <div class="divide-y" x-data="rankPreview({{ idx }})">
           <template x-if="hasData()">
@@ -291,7 +308,6 @@
             <div class="px-4 py-3 text-sm text-gray-400 italic">Ничего не выбрано</div>
           </template>
         </div>
-        {# store mapping for JS: film_id → title #}
         <script>
           window.__rankLabels = window.__rankLabels || {};
           window.__rankLabels[{{ nom.id }}] = {
@@ -304,7 +320,6 @@
         </script>
         {% endif %}
 
-        {# PICK preview #}
         {% if nom.type.value == 'PICK' %}
         {% set pmax = nom.pick_max if nom.pick_max else 1 %}
         <div x-data="pickPreview({{ idx }}, {{ pmax }})">
@@ -322,7 +337,6 @@
             <div class="px-4 py-3 text-sm text-gray-400 italic">Ничего не выбрано</div>
           </template>
         </div>
-        {# store mapping for JS: nominee_id → label #}
         <script>
           window.__pickLabels = window.__pickLabels || {};
           window.__pickLabels[{{ idx }}] = {
@@ -375,8 +389,25 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
   const TOTAL_NOMS = {{ nominations | length }};
-  const nomFilled  = {};
   let   saveTimer  = null;
+
+  // Read form state directly from DOM — no dependency on Alpine component lifecycle
+  function _isDoneFromDOM(idx) {
+    const meta = (window.__nomMeta || [])[idx];
+    if (!meta) return false;
+    const form = document.getElementById('ballotForm');
+    if (!form) return false;
+    if (meta.type === 'RANK') {
+      return form.querySelector('select[name^="rank_' + meta.nomId + '_"][value]:not([value=""])') !== null
+        || Array.from(form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]')).some(s => s.value !== '');
+    } else {
+      if (meta.pmax === 1) {
+        return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
+      } else {
+        return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
+      }
+    }
+  }
 
   function collectFormData() {
     const data = {};
@@ -421,7 +452,6 @@
         const selects = this.$el.querySelectorAll('select');
         this.values = Array.from(selects).map(s => s.value || '');
         this._refreshOptions();
-        nomFilled[idx] = () => this.filledCount() > 0 && !this.hasDuplicates();
       },
       onChange(event, i) {
         this.values[i] = event.target.value;
@@ -457,7 +487,6 @@
           });
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
-        nomFilled[idx] = () => this.count > 0;
       },
       onChange() {
         if (this.pmax === 1) {
@@ -480,7 +509,6 @@
     }
   }
 
-  // Review slide helpers — read current form state live
   function rankPreview(idx) {
     return {
       nomId: null,
@@ -553,9 +581,9 @@
       goTo(idx)  { this.current = idx; this.showSlide(idx); },
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
       next()     { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
-      progressPct()    { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      isFilledSome(idx) { return nomFilled[idx] ? nomFilled[idx]() : false; },
-      isDone(idx)       { return this.isFilledSome(idx); },
+      progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
+      // Single source of truth: read DOM directly, always up-to-date
+      isDone(idx) { return _isDoneFromDOM(idx); },
     }
   }
   </script>
