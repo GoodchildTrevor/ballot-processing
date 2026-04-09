@@ -20,6 +20,7 @@ class Film(Base):
     year = Column(Integer, nullable=False)
     url = Column(String, nullable=True)
     nominees = relationship("Nominee", back_populates="film")
+    rankings = relationship("Ranking", back_populates="film")
 
 
 class Person(Base):
@@ -87,3 +88,4 @@ class Ranking(Base):
     film_id = Column(Integer, ForeignKey("films.id"), nullable=False)
     rank = Column(Integer, nullable=False)
     voter = relationship("Voter", back_populates="rankings")
+    film = relationship("Film", back_populates="rankings")
