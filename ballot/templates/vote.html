@@ -450,11 +450,17 @@
       }
 
       if (meta.type === 'RANK') {
-        // Use exact prefix match via _rankSelects to avoid nomId=1 matching nomId=10
         const selects = _rankSelects(form, meta.nomId);
         const filled = selects.map(s => s.value).filter(v => v !== '');
+      
         if (new Set(filled).size < filled.length) {
-          errors.push('«' + name + '»: два фильма на одном месте. Исправьте перед отправкой.');
+          errors.push('«' + name + '»: два фильма на одном месте...');
+        }
+      
+        const total = selects.length;
+        if (filled.length > 0 && filled.length < total) {
+          errors.push('«' + name + '»: заполнено ' + filled.length + ' из ' + total
+            + ' мест. Заполните все или сбросьте полностью.');
         }
       }
     });
