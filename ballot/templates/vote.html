@@ -35,6 +35,7 @@
       {
         type: "{{ nom.type.value }}",
         nomId: {{ nom.id }},
+        idx: {{ loop.index0 }},
         {% if nom.type.value == 'PICK' %}
         pmin: {{ nom.pick_min if nom.pick_min else 1 }},
         pmax: {{ nom.pick_max if nom.pick_max else 1 }}
@@ -45,8 +46,11 @@
       }{% if not loop.last %},{% endif %}
       {% endfor %}
     ];
-    // Shared pick state: { [nomId]: { count, pmin } }
-    window.__pickState = {};
+    // Incremented on every user interaction — makes ballot() re-evaluate isDone reactively
+    window.__changeSeq = Alpine && Alpine.reactive ? Alpine.reactive({ n: 0 }) : { n: 0 };
+    window.__notifyChange = function() {
+      window.__changeSeq.n++;
+    };
   </script>
 
   <form method="post" action="/vote" id="ballotForm">
@@ -238,7 +242,6 @@
       <h2 class="text-2xl font-bold text-indigo-700 mb-1">📋 Проверьте бюллетень</h2>
       <p class="text-gray-500 mb-6 text-sm">Убедитесь, что всё верно, прежде чем отправить.</p>
 
-      {# Validation errors block #}
       <div id="validationErrors" class="hidden mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 space-y-1"></div>
 
       {% for nom in nominations %}
@@ -265,10 +268,10 @@
         </div>
 
         {% if nom.type.value == 'RANK' %}
-        <div class="divide-y" x-data="rankPreview({{ idx }})">
+        <div class="divide-y" x-data="rankPreview({{ idx }})" x-effect="refresh()">
           <template x-if="hasData()">
             <div>
-              <template x-for="row in sorted()" :key="row.rank">
+              <template x-for="row in rows" :key="row.rank">
                 <div class="flex items-center gap-3 px-4 py-2 text-sm">
                   <span class="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex-shrink-0"
                         x-text="row.rank"></span>
@@ -295,10 +298,10 @@
 
         {% if nom.type.value == 'PICK' %}
         {% set pmax = nom.pick_max if nom.pick_max else 1 %}
-        <div x-data="pickPreview({{ idx }}, {{ pmax }})">
+        <div x-data="pickPreview({{ idx }}, {{ pmax }})" x-effect="refresh()">
           <template x-if="hasData()">
             <div class="divide-y">
-              <template x-for="label in labels()" :key="label">
+              <template x-for="label in labelList" :key="label">
                 <div class="flex items-center gap-2 px-4 py-2 text-sm">
                   <span class="text-indigo-500">✔</span>
                   <span class="text-gray-800" x-text="label"></span>
@@ -364,7 +367,28 @@
   const TOTAL_NOMS = {{ nominations | length }};
   let saveTimer = null;
 
+  // ------------------------------------------------------------------
+  // Global reactive counter — incremented on every form interaction.
+  // ballot() and preview components read it so Alpine re-evaluates them.
+  // Must be set up AFTER Alpine is available, so we use a deferred init.
+  // ------------------------------------------------------------------
+  window.__seq = 0; // plain counter, initialised before Alpine
+  window.__notifyChange = function() {
+    window.__seq++;
+    // If Alpine reactive wrapper exists, update it too
+    if (window.__alpineSeq) window.__alpineSeq.n = window.__seq;
+  };
+
+  document.addEventListener('alpine:init', () => {
+    window.__alpineSeq = Alpine.reactive({ n: 0 });
+  });
+
+  // ------------------------------------------------------------------
+  // isDone — reads live DOM, depends on __alpineSeq.n for reactivity
+  // ------------------------------------------------------------------
   function _isDoneFromDOM(idx) {
+    // Touch reactive counter so Alpine tracks this dependency
+    if (window.__alpineSeq) { void window.__alpineSeq.n; }
     const meta = (window.__nomMeta || [])[idx];
     if (!meta) return false;
     const form = document.getElementById('ballotForm');
@@ -413,22 +437,31 @@
     }, 1500);
   }
 
-  // Validate all PICK nominations before submit
+  // ------------------------------------------------------------------
+  // Submit validation
+  // ------------------------------------------------------------------
   function validateBeforeSubmit() {
     const errors = [];
     const form = document.getElementById('ballotForm');
+
     (window.__nomMeta || []).forEach(meta => {
-      if (meta.type !== 'PICK') return;
-      const checked = form.querySelectorAll('input[name="pick_' + meta.nomId + '"]:checked').length;
-      // 0 is allowed (skip), but 1..pmin-1 is invalid
-      if (checked > 0 && checked < meta.pmin) {
-        // Find nomination name from DOM
-        const nomId = meta.nomId;
-        const label = document.querySelector(
-          '#slide-' + (window.__nomMeta.indexOf(meta)) + ' h2'
-        );
-        const name = label ? label.textContent.trim() : 'Номинация';
-        errors.push('«' + name + '»: выбрано ' + checked + ' из минимум ' + meta.pmin + '. Отмените выбор или добавьте ещё.');
+      const slideEl = document.getElementById('slide-' + meta.idx);
+      const name = slideEl ? slideEl.querySelector('h2')?.textContent.trim() : 'Номинация';
+
+      if (meta.type === 'PICK') {
+        const checked = form.querySelectorAll('input[name="pick_' + meta.nomId + '"]:checked').length;
+        if (checked > 0 && checked < meta.pmin) {
+          errors.push('«' + name + '»: выбрано ' + checked + ' из минимум ' + meta.pmin + '. Отмените выбор или добавьте ещё.');
+        }
+      }
+
+      if (meta.type === 'RANK') {
+        const selects = Array.from(form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]'));
+        const filled = selects.map(s => s.value).filter(v => v !== '');
+        // Duplicates
+        if (new Set(filled).size < filled.length) {
+          errors.push('«' + name + '»: два фильма на одном месте. Исправьте перед отправкой.');
+        }
       }
     });
     return errors;
@@ -440,7 +473,7 @@
     if (errors.length > 0) {
       e.preventDefault();
       box.innerHTML = '<p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>' +
-        errors.map(e => '<p>• ' + e + '</p>').join('');
+        errors.map(err => '<p>• ' + err + '</p>').join('');
       box.classList.remove('hidden');
       box.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
@@ -448,6 +481,9 @@
     }
   });
 
+  // ------------------------------------------------------------------
+  // Alpine components
+  // ------------------------------------------------------------------
   function rankBlock(idx, maxRank) {
     return {
       maxRank,
@@ -460,6 +496,7 @@
       onChange(event, i) {
         this.values[i] = event.target.value;
         this._refreshOptions();
+        window.__notifyChange();
       },
       _refreshOptions() {
         const selects = Array.from(this.$el.querySelectorAll('select'));
@@ -470,13 +507,13 @@
           });
         });
       },
-      filledCount() { return this.values.filter(v => v !== '').length; },
-      allFilled()   { return this.filledCount() === this.maxRank; },
+      filledCount()   { return this.values.filter(v => v !== '').length; },
+      allFilled()     { return this.filledCount() === this.maxRank; },
       hasDuplicates() {
         const filled = this.values.filter(v => v !== '');
         return new Set(filled).size < filled.length;
       },
-    }
+    };
   }
 
   function pickBlock(idx, nomId, pmin, pmax) {
@@ -491,8 +528,6 @@
           });
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
-        // Register in shared state
-        window.__pickState[nomId] = { count: this.count, pmin };
       },
       onChange() {
         if (this.pmax === 1) {
@@ -500,28 +535,34 @@
         } else {
           this.count = Object.values(this.checked).filter(Boolean).length;
         }
-        window.__pickState[nomId] = { count: this.count, pmin };
+        window.__notifyChange();
       },
-      isValid()    { return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax); },
+      isValid()     { return this.count === 0 || (this.count >= this.pmin && this.count <= this.pmax); },
       statusClass() {
-        if (this.count === 0) return 'text-gray-400 font-semibold';
-        if (this.count < this.pmin) return 'text-red-500 font-semibold';
+        if (this.count === 0)           return 'text-gray-400 font-semibold';
+        if (this.count < this.pmin)     return 'text-red-500 font-semibold';
         return 'text-green-500 font-semibold';
       },
       statusText() {
-        if (this.count === 0) return 'не выбрано (пропуск)';
+        if (this.count === 0)       return 'не выбрано (пропуск)';
         if (this.count < this.pmin) return this.count + ' — недостаточно';
         return this.count + ' выбрано';
-      }
-    }
+      },
+    };
   }
 
+  // rankPreview: uses x-effect="refresh()" to re-read DOM when __alpineSeq changes
   function rankPreview(idx) {
     return {
       nomId: null,
-      init() { this.nomId = (window.__rankNomId || {})[idx]; },
-      _rows() {
-        if (!this.nomId) return [];
+      rows: [],
+      init() {
+        this.nomId = (window.__rankNomId || {})[idx];
+        this.refresh();
+      },
+      refresh() {
+        if (window.__alpineSeq) { void window.__alpineSeq.n; } // track dependency
+        if (!this.nomId) { this.rows = []; return; }
         const labels = (window.__rankLabels || {})[this.nomId] || {};
         const form = document.getElementById('ballotForm');
         const rows = [];
@@ -530,33 +571,38 @@
             rows.push({ rank: parseInt(sel.value), label: labels[sel.name] || sel.name });
           }
         });
-        return rows;
+        this.rows = rows.sort((a, b) => a.rank - b.rank);
       },
-      sorted() { return this._rows().sort((a, b) => a.rank - b.rank); },
-      hasData() { return this._rows().length > 0; },
-    }
+      hasData() { return this.rows.length > 0; },
+    };
   }
 
+  // pickPreview: same pattern
   function pickPreview(idx, pmax) {
     return {
       nomId: null,
-      init() { this.nomId = (window.__pickNomId || {})[idx]; },
-      _ids() {
-        if (!this.nomId) return [];
+      labelList: [],
+      init() {
+        this.nomId = (window.__pickNomId || {})[idx];
+        this.refresh();
+      },
+      refresh() {
+        if (window.__alpineSeq) { void window.__alpineSeq.n; }
+        if (!this.nomId) { this.labelList = []; return; }
         const form = document.getElementById('ballotForm');
         const name = 'pick_' + this.nomId;
+        let ids;
         if (pmax === 1) {
           const r = form.querySelector('input[name="' + name + '"]:checked');
-          return r ? [r.value] : [];
+          ids = r ? [r.value] : [];
+        } else {
+          ids = Array.from(form.querySelectorAll('input[name="' + name + '"]:checked')).map(cb => cb.value);
         }
-        return Array.from(form.querySelectorAll('input[name="' + name + '"]:checked')).map(cb => cb.value);
-      },
-      labels() {
         const map = (window.__pickLabels || {})[idx] || {};
-        return this._ids().map(id => map[id] || id);
+        this.labelList = ids.map(id => map[id] || id);
       },
-      hasData() { return this._ids().length > 0; },
-    }
+      hasData() { return this.labelList.length > 0; },
+    };
   }
 
   function ballot() {
@@ -585,12 +631,12 @@
         if (el) el.classList.add('active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       },
-      goTo(idx)  { this.current = idx; this.showSlide(idx); },
-      prev()     { if (this.current > -1) this.goTo(this.current - 1); },
-      next()     { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
-      progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      isDone(idx) { return _isDoneFromDOM(idx); },
-    }
+      goTo(idx)      { this.current = idx; this.showSlide(idx); },
+      prev()         { if (this.current > -1) this.goTo(this.current - 1); },
+      next()         { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
+      progressPct()  { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
+      isDone(idx)    { return _isDoneFromDOM(idx); },
+    };
   }
   </script>
   <style>
