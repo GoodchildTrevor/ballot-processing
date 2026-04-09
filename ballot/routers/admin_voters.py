@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
 from ballot.models import Voter, Vote, Ranking, Nomination, NominationType, Nominee, Film, Person
 from ballot.auth import require_admin
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
@@ -58,10 +59,24 @@ def delete_voter_vote(voter_id: int, db: Session = Depends(get_db)):
 
 @router.get("/voters/{voter_id}/edit-vote", response_class=HTMLResponse)
 def edit_vote_form(voter_id: int, request: Request, db: Session = Depends(get_db)):
-    voter = db.get(Voter, voter_id)
+    voter = (
+        db.query(Voter)
+        .options(
+            joinedload(Voter.votes).joinedload(Vote.nominee),
+            joinedload(Voter.rankings),
+        )
+        .filter(Voter.id == voter_id)
+        .first()
+    )
     if not voter:
         return HTMLResponse("Участник не найден.", status_code=404)
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    nominations = (
+        db.query(Nomination)
+        .options(joinedload(Nomination.nominees).joinedload(Nominee.film),
+                 joinedload(Nomination.nominees).joinedload(Nominee.person))
+        .order_by(Nomination.sort_order, Nomination.id)
+        .all()
+    )
     rank_noms = [n for n in nominations if n.type == NominationType.RANK]
     pick_noms = [n for n in nominations if n.type == NominationType.PICK]
 
@@ -94,28 +109,37 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
     db.flush()
 
     form = await request.form()
-    nominations = db.query(Nomination).all()
-
-    from ballot.models import Ranking as RankingModel, Vote as VoteModel
-    from datetime import datetime, timezone
+    # Eager-load nominees so nom.nominees is populated for RANK processing
+    nominations = (
+        db.query(Nomination)
+        .options(joinedload(Nomination.nominees))
+        .all()
+    )
 
     for nom in nominations:
         if nom.type == NominationType.RANK:
             for nominee in nom.nominees:
                 val = form.get(f"rank_{nom.id}_{nominee.film_id}")
                 if val:
-                    db.add(RankingModel(
-                        voter_id=voter.id,
-                        nomination_id=nom.id,
-                        film_id=nominee.film_id,
-                        rank=int(val),
-                    ))
+                    try:
+                        db.add(Ranking(
+                            voter_id=voter.id,
+                            nomination_id=nom.id,
+                            film_id=nominee.film_id,
+                            rank=int(val),
+                        ))
+                    except ValueError:
+                        pass
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
-            pmax = nom.pick_max or 1
-            chosen = chosen[:pmax]
+            # No artificial slice — trust the form (same as vote.py)
             for nominee_id in chosen:
-                db.add(VoteModel(voter_id=voter.id, nominee_id=int(nominee_id)))
+                try:
+                    nid = int(nominee_id)
+                    if db.get(Nominee, nid):
+                        db.add(Vote(voter_id=voter.id, nominee_id=nid))
+                except ValueError:
+                    pass
 
     if voter.voted_at is None:
         voter.voted_at = datetime.now(timezone.utc)
