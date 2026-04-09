@@ -11,10 +11,26 @@ router = APIRouter(dependencies=[Depends(require_voter)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
+def _nominee_sort_key(nominee) -> str:
+    """Alphabetical sort key: person name > song title > film title."""
+    if nominee.person:
+        return (nominee.person.name or "").lower()
+    if nominee.song:
+        return (nominee.song or "").lower()
+    return (nominee.film.title if nominee.film else "").lower()
+
+
+def _sort_nominations(nominations):
+    for nom in nominations:
+        nom.nominees = sorted(nom.nominees, key=_nominee_sort_key)
+    return nominations
+
+
 @router.get("/vote", response_class=HTMLResponse)
 def vote_page(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    _sort_nominations(nominations)
     draft = voter.draft or {}
     draft_restored = bool(draft)
     return templates.TemplateResponse(request, "vote.html", {
