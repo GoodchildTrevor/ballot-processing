@@ -36,6 +36,8 @@
         type: "{{ nom.type.value }}",
         nomId: {{ nom.id }},
         idx: {{ loop.index0 }},
+        nomineeCount: {{ nom.nominees | length }},
+        nomineesCount: {{ nom.nominees_count if nom.nominees_count else 'null' }},
         {% if nom.type.value == 'PICK' %}
         pmin: {{ nom.pick_min if nom.pick_min else 1 }},
         pmax: {{ nom.pick_max if nom.pick_max else 1 }}
@@ -93,6 +95,16 @@
           </div>
         </button>
         {% endfor %}
+
+        {# Review link in TOC #}
+        <button type="button" @click="goTo({{ nominations | length }})"
+                class="w-full flex items-center justify-between bg-white rounded-xl shadow-sm px-5 py-4 hover:shadow-md hover:bg-indigo-50 transition text-left group border-t-2 border-indigo-100 mt-2">
+          <div>
+            <div class="text-base font-semibold text-gray-800 group-hover:text-indigo-700">📋 Проверьте бюллетень</div>
+            <div class="text-xs text-gray-400 mt-0.5">Просмотр и отправка голоса</div>
+          </div>
+          <span class="text-gray-300 group-hover:text-indigo-400 text-lg">›</span>
+        </button>
       </div>
       <button type="button" @click="goTo(0)"
               class="mt-8 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition">
@@ -371,18 +383,11 @@
     window.__alpineSeq = Alpine.reactive({ n: 0 });
   });
 
-  // ------------------------------------------------------------------
-  // Helper: get selects belonging EXACTLY to nomId (not nomId=1 vs nomId=10)
-  // name format: rank_{nomId}_{filmId}
-  // ------------------------------------------------------------------
   function _rankSelects(form, nomId) {
     const prefix = 'rank_' + nomId + '_';
     return Array.from(form.querySelectorAll('select')).filter(s => s.name.startsWith(prefix));
   }
 
-  // ------------------------------------------------------------------
-  // isDone
-  // ------------------------------------------------------------------
   function _isDoneFromDOM(idx) {
     if (window.__alpineSeq) { void window.__alpineSeq.n; }
     const meta = (window.__nomMeta || [])[idx];
@@ -431,9 +436,6 @@
     }, 1500);
   }
 
-  // ------------------------------------------------------------------
-  // Submit validation
-  // ------------------------------------------------------------------
   function validateBeforeSubmit() {
     const errors = [];
     const form = document.getElementById('ballotForm');
@@ -452,11 +454,11 @@
       if (meta.type === 'RANK') {
         const selects = _rankSelects(form, meta.nomId);
         const filled = selects.map(s => s.value).filter(v => v !== '');
-      
+
         if (new Set(filled).size < filled.length) {
           errors.push('«' + name + '»: два фильма на одном месте. Исправьте перед отправкой.');
         }
-      
+
         const required = meta.nomineesCount ?? meta.nomineeCount;
         if (filled.length > 0 && filled.length < required) {
           errors.push('«' + name + '»: заполнено ' + filled.length + ' из ' + required
@@ -481,9 +483,6 @@
     }
   });
 
-  // ------------------------------------------------------------------
-  // Alpine components
-  // ------------------------------------------------------------------
   function rankBlock(idx, maxRank) {
     return {
       maxRank,
@@ -551,7 +550,6 @@
     };
   }
 
-  // rankPreview — also uses _rankSelects for exact match
   function rankPreview(idx) {
     return {
       nomId: null,
