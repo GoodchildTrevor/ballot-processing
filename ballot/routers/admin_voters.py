@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Voter, Vote, Ranking, Nomination, NominationType, Film
+from ballot.models import Voter, Vote, Ranking, Nomination, NominationType, Nominee, Film, Person
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -15,8 +15,8 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
     voters = (
         db.query(Voter)
         .options(
-            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload('film'),
-            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload('person'),
+            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload(Nominee.film),
+            joinedload(Voter.votes).joinedload(Vote.nominee).joinedload(Nominee.person),
             joinedload(Voter.rankings).joinedload(Ranking.film),
         )
         .order_by(Voter.name)
@@ -65,12 +65,10 @@ def edit_vote_form(voter_id: int, request: Request, db: Session = Depends(get_db
     rank_noms = [n for n in nominations if n.type == NominationType.RANK]
     pick_noms = [n for n in nominations if n.type == NominationType.PICK]
 
-    # Current rankings: {nomination_id: {film_id: rank}}
     current_rankings = {}
     for r in voter.rankings:
         current_rankings.setdefault(r.nomination_id, {})[r.film_id] = r.rank
 
-    # Current picks: {nomination_id: [nominee_id, ...]}
     current_picks = {}
     for v in voter.votes:
         if v.nominee:
@@ -91,7 +89,6 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
     if not voter:
         return RedirectResponse(url="/admin/voters", status_code=303)
 
-    # Wipe old votes
     db.query(Vote).filter(Vote.voter_id == voter_id).delete()
     db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
     db.flush()
