@@ -385,21 +385,19 @@
   const TOTAL_NOMS = {{ nominations | length }};
   let   saveTimer  = null;
 
-  // Read form state directly from DOM — no dependency on Alpine component lifecycle
+  // Read form state directly from DOM
   function _isDoneFromDOM(idx) {
     const meta = (window.__nomMeta || [])[idx];
     if (!meta) return false;
     const form = document.getElementById('ballotForm');
     if (!form) return false;
     if (meta.type === 'RANK') {
-      return form.querySelector('select[name^="rank_' + meta.nomId + '_"][value]:not([value=""])') !== null
-        || Array.from(form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]')).some(s => s.value !== '');
+      // Must use .value property, not HTML attribute
+      return Array.from(
+        form.querySelectorAll('select[name^="rank_' + meta.nomId + '_"]')
+      ).some(s => s.value !== '');
     } else {
-      if (meta.pmax === 1) {
-        return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
-      } else {
-        return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
-      }
+      return form.querySelector('input[name="pick_' + meta.nomId + '"]:checked') !== null;
     }
   }
 
@@ -576,7 +574,6 @@
       prev()     { if (this.current > -1) this.goTo(this.current - 1); },
       next()     { if (this.current < this.totalSlides) this.goTo(this.current + 1); },
       progressPct() { return Math.round(((this.current + 1) / (this.totalSlides + 1)) * 100); },
-      // Single source of truth: read DOM directly, always up-to-date
       isDone(idx) { return _isDoneFromDOM(idx); },
     }
   }
