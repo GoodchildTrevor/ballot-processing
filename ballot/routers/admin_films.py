@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -31,6 +32,38 @@ def create_film(
     db.add(Film(title=title.strip(), year=year, url=url.strip() if url and url.strip() else None))
     db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
+
+
+@router.post("/films/bulk")
+def bulk_create_films(
+    year: int = Form(...),
+    lines: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    created, skipped = 0, 0
+    for line in lines.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        url = None
+        if "|" in line:
+            parts = line.split("|", 1)
+            line = parts[0].strip()
+            url = parts[1].strip() or None
+        title = line.strip()
+        if not title:
+            continue
+        exists = db.query(Film).filter(Film.title == title, Film.year == year).first()
+        if exists:
+            skipped += 1
+            continue
+        db.add(Film(title=title, year=year, url=url))
+        created += 1
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/films?bulk_created={created}&bulk_skipped={skipped}",
+        status_code=303,
+    )
 
 
 @router.post("/films/{film_id}/edit")
