@@ -88,17 +88,8 @@
 
 {# ── Add to longlist ── #}
 <div class="bg-white shadow rounded-xl p-6 mb-4">
-  <div class="flex items-center justify-between mb-4">
+  <div class="mb-4">
     <h2 class="text-base font-semibold text-gray-700">Добавить фильм в лонг-лист</h2>
-    {% if nom.nominees_count %}
-    <span class="text-xs text-gray-400">{{ nom.nominees | length }}
-      <span class="text-gray-300">/</span>
-      {{ nom.nominees_count }}
-      {% if nom.nominees | length >= nom.nominees_count %}
-      <span class="ml-1 text-green-600 font-medium">✓ заполнен</span>
-      {% endif %}
-    </span>
-    {% endif %}
   </div>
 
   {% if error == 'duplicate' %}
