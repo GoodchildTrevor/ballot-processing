@@ -5,11 +5,16 @@
   <div class="text-6xl mb-6">🎉</div>
   <h1 class="text-3xl font-extrabold text-gray-900 mb-3">Спасибо!</h1>
   <p class="text-gray-500 mb-8">Ваш голос зафиксирован.</p>
-  {% if has_votes %}
-  <a href="/my-ballot/export"
+
+  {% if has_votes and round_id %}
+  <a href="/my-ballot/{{ round_id }}/export"
      class="inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-    ↓ Скачать свой бюллетень (.xlsx)
+    ↓ Скачать мой бюллетень (.xlsx)
   </a>
   {% endif %}
+
+  <div class="mt-6">
+    <a href="/vote" class="text-indigo-500 text-sm hover:underline">← Вернуться к голосованию</a>
+  </div>
 </div>
 {% endblock %}

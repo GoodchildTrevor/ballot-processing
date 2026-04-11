@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Превью раунда — {{ rnd.label }}{% endblock %}
+{% block content %}
+
+<div class="flex items-start justify-between mb-6 flex-wrap gap-3">
+  <div>
+    <a href="/admin/rounds" class="text-sm text-indigo-600 hover:underline">← Раунды</a>
+    <h1 class="text-2xl font-extrabold text-gray-900 mt-1">
+      {% if rnd.round_type.value == 'FINAL' %}
+        <span class="text-amber-600">ФИНАЛ</span>
+      {% else %}
+        <span class="text-blue-600">ЛОНГ-ЛИСТ</span>
+      {% endif %}
+      — {{ rnd.label }}
+    </h1>
+    <p class="text-sm text-gray-400 mt-0.5">Год: {{ rnd.year }}
+      {% if rnd.deadline %} · Дедлайн: {{ rnd.deadline.strftime('%d.%m.%Y %H:%M') }}{% endif %}
+    </p>
+  </div>
+
+  <div class="flex gap-3 flex-wrap">
+    {# Set/update deadline + activate #}
+    <form x-data="{}" method="post" action="/admin/rounds/{{ rnd.id }}/edit"
+          class="flex gap-2 items-center">
+      <input name="label" type="hidden" value="{{ rnd.label }}" />
+      <input name="deadline" type="datetime-local"
+             value="{% if rnd.deadline %}{{ rnd.deadline.strftime('%Y-%m-%dT%H:%M') }}{% endif %}"
+             class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      <button class="bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-gray-700 transition">💾 Дедлайн</button>
+    </form>
+
+    {% if not rnd.is_active %}
+    <form method="post" action="/admin/rounds/{{ rnd.id }}/activate"
+          onsubmit="return confirm('Активировать раунд {{ rnd.label }}? После активации участники смогут голосовать.')">
+      <button {% if not rnd.deadline %}disabled class="opacity-40 cursor-not-allowed"{% endif %}
+              class="bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">▶ Активировать</button>
+    </form>
+    {% else %}
+    <span class="text-sm font-semibold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">● Активен</span>
+    <form method="post" action="/admin/rounds/{{ rnd.id }}/deactivate">
+      <button class="bg-yellow-100 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-sm hover:bg-yellow-200 transition">⏸ Деактивировать</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Nominations list ── #}
+{% if nominations %}
+  {% for nom in nominations %}
+  <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+    <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center gap-3">
+      <span class="font-semibold text-gray-900">{{ nom.name }}</span>
+      <span class="text-xs px-2 py-0.5 rounded-full {% if nom.type.value == 'PICK' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">{{ nom.type.value }}</span>
+      {% if nom.has_runner_up %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">runner-up ✓</span>
+      {% endif %}
+      <span class="text-xs text-gray-400 ml-auto">{{ nom.nominees | length }} номинант(ов)</span>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+        <tr>
+          <th class="px-4 py-2 text-left">Фильм</th>
+          <th class="px-4 py-2 text-left">Персона / элемент</th>
+          <th class="px-4 py-2 text-center">В финал</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for nominee in nom.nominees %}
+        <tr class="{% if not nominee.is_shortlisted %}opacity-40{% endif %}">
+          <td class="px-4 py-2.5">
+            <span class="font-medium text-gray-800">{{ nominee.film.title }}</span>
+            <span class="text-gray-400 text-xs ml-1">({{ nominee.film.year }})</span>
+          </td>
+          <td class="px-4 py-2.5 text-gray-600">
+            {% if nominee.person %}{{ nominee.person.name }}{% endif %}
+            {% if nominee.item %}<span class="italic">{{ nominee.item }}</span>{% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-center">
+            {% if nominee.is_shortlisted %}
+              <span class="text-green-600 font-bold">✓</span>
+            {% else %}
+              <span class="text-gray-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-right">
+            <form method="post"
+                  action="/admin/rounds/{{ rnd.id }}/nominees/{{ nominee.id }}/toggle-shortlist">
+              <button class="text-xs px-2.5 py-1 rounded border
+                {% if nominee.is_shortlisted %}
+                  border-red-200 text-red-600 hover:bg-red-50
+                {% else %}
+                  border-green-200 text-green-700 hover:bg-green-50
+                {% endif %} transition">
+                {% if nominee.is_shortlisted %}Убрать{% else %}Добавить{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="text-center py-20 text-gray-400">
+    <p>В этом раунде нет номинаций. Добавьте их через <a href="/admin/nominations" class="text-indigo-500 underline">раздел Номинации</a>.</p>
+  </div>
+{% endif %}
+
+{% endblock %}
