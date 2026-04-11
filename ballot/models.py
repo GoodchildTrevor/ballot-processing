@@ -104,15 +104,14 @@ class Nomination(Base):
     pick_min      = Column(Integer, nullable=True)
     pick_max      = Column(Integer, nullable=True)
     nominees_count = Column(Integer, nullable=True)
-    year_filter   = Column(Integer, nullable=True)   # kept: filters film picker in admin
+    year_filter   = Column(Integer, nullable=True)
     sort_order    = Column(Integer, nullable=False, default=0)
-    # Round FK (nullable for legacy rows that predate the Round system)
     round_id      = Column(Integer, ForeignKey("rounds.id"), nullable=True)
-    # FINAL-only: enable runner-up slot on PICK nominations
     has_runner_up = Column(Boolean, default=False, nullable=False)
 
     round    = relationship("Round",    back_populates="nominations")
     nominees = relationship("Nominee",  back_populates="nomination")
+    winner   = relationship("Winner",   back_populates="nomination", uselist=False)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +124,7 @@ class NomineePerson(Base):
     id         = Column(Integer, primary_key=True)
     nominee_id = Column(Integer, ForeignKey("nominees.id"), nullable=False)
     person_id  = Column(Integer, ForeignKey("persons.id"),  nullable=False)
-    role       = Column(String, nullable=True)   # e.g. 'director', 'writer'
+    role       = Column(String, nullable=True)
     nominee    = relationship("Nominee",  back_populates="persons")
     person     = relationship("Person",   back_populates="nominee_persons")
     __table_args__ = (
@@ -145,7 +144,6 @@ class Nominee(Base):
     person_id     = Column(Integer, ForeignKey("persons.id"),     nullable=True)
     item          = Column(String, nullable=True)
     item_url      = Column(String, nullable=True)
-    # True once admin marks this nominee as promoted to the next round
     is_shortlisted = Column(Boolean, default=False, nullable=False)
 
     nomination = relationship("Nomination",    back_populates="nominees")
@@ -177,7 +175,6 @@ class Vote(Base):
     id           = Column(Integer, primary_key=True)
     voter_id     = Column(Integer, ForeignKey("voters.id"),   nullable=False)
     nominee_id   = Column(Integer, ForeignKey("nominees.id"), nullable=False)
-    # True for the runner-up vote in FINAL PICK nominations
     is_runner_up = Column(Boolean, default=False, nullable=False)
 
     voter   = relationship("Voter",   back_populates="votes")
@@ -198,3 +195,30 @@ class Ranking(Base):
 
     voter  = relationship("Voter",  back_populates="rankings")
     film   = relationship("Film",   back_populates="rankings")
+
+
+# ---------------------------------------------------------------------------
+# Winner
+# ---------------------------------------------------------------------------
+
+class Winner(Base):
+    """Stores the admin-designated winner for a nomination.
+
+    One row per nomination (UNIQUE on nomination_id).  nominee_id is nullable
+    so a winner record can be created in a 'pending' state (no nominee chosen
+    yet) and later assigned.  is_public controls whether the public results
+    page reveals the winner before the official announcement.
+    """
+    __tablename__ = "winners"
+    id            = Column(Integer, primary_key=True)
+    nomination_id = Column(Integer, ForeignKey("nominations.id"), nullable=False)
+    nominee_id    = Column(Integer, ForeignKey("nominees.id"),    nullable=True)
+    announced_at  = Column(DateTime, nullable=True)
+    is_public     = Column(Boolean,  default=False, nullable=False)
+
+    nomination = relationship("Nomination", back_populates="winner")
+    nominee    = relationship("Nominee")
+
+    __table_args__ = (
+        UniqueConstraint("nomination_id", name="uq_winner_nomination"),
+    )

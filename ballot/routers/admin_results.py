@@ -1,11 +1,14 @@
 import io
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Film, Vote, Ranking, Voter
+from ballot.models import (
+    Nomination, NominationType, Nominee, Film, Vote, Ranking, Voter, Winner
+)
 from ballot.auth import require_admin
 import openpyxl
 
@@ -41,12 +44,19 @@ def _nominee_label(nominee) -> str:
 
 
 def get_results(db: Session):
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    nominations = (
+        db.query(Nomination)
+        .options(
+            joinedload(Nomination.winner).joinedload(Winner.nominee)
+        )
+        .order_by(Nomination.sort_order, Nomination.id)
+        .all()
+    )
     results = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
             rows_raw = (
-                db.query(Film.title, func.sum(11 - Ranking.rank).label("score"))
+                db.query(Film.title, Film.id, func.sum(11 - Ranking.rank).label("score"))
                 .join(Ranking, Ranking.film_id == Film.id)
                 .filter(Ranking.nomination_id == nom.id)
                 .group_by(Film.id)
@@ -86,7 +96,13 @@ def get_results(db: Session):
                 voter_names = ", ".join(
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes)
                 )
-                rows.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
+                rows.append({
+                    "label": label,
+                    "score": votes,
+                    "voters": voter_names,
+                    "voter_list": [],
+                    "nominee_id": nominee.id,
+                })
             rows = _annotate_rows(rows, nom.nominees_count)
             results.append({"nom": nom, "rows": rows})
     return results
@@ -105,14 +121,23 @@ def export_results(db: Session = Depends(get_db)):
     wb.remove(wb.active)
     for item in results:
         ws = wb.create_sheet(title=item["nom"].name[:31])
+        winner_label = ""
+        if item["nom"].winner and item["nom"].winner.nominee:
+            w = item["nom"].winner
+            winner_label = _nominee_label(w.nominee)
+
         if item["nom"].type == NominationType.RANK:
             ws.append(["Участник", "Очки", "Проголосовали (место)",
-                       "Номинант" if item["nom"].nominees_count else ""])
+                       "Номинант" if item["nom"].nominees_count else "",
+                       "Победитель"])
         else:
             ws.append(["Участник", "Голоса", "Проголосовали",
-                       "Номинант" if item["nom"].nominees_count else ""])
+                       "Номинант" if item["nom"].nominees_count else "",
+                       "Победитель"])
         for row in item["rows"]:
-            extra = ["\u2705 Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
+            extra = ["\u2705 Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else [""]
+            is_winner = winner_label and row["label"] == winner_label
+            extra.append("\U0001f3c6 Победитель" if is_winner else "")
             ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
@@ -122,3 +147,58 @@ def export_results(db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=results.xlsx"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Winner management
+# ---------------------------------------------------------------------------
+
+@router.post("/nominations/{nomination_id}/winner")
+def set_winner(
+    nomination_id: int,
+    nominee_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Create or update the winner for a nomination."""
+    nom = db.get(Nomination, nomination_id)
+    if not nom:
+        return RedirectResponse(url="/admin/results", status_code=303)
+
+    # Verify nominee belongs to this nomination
+    nominee = db.get(Nominee, nominee_id) if nominee_id else None
+    if nominee and nominee.nomination_id != nomination_id:
+        return RedirectResponse(url="/admin/results", status_code=303)
+
+    winner = db.query(Winner).filter_by(nomination_id=nomination_id).first()
+    if winner:
+        winner.nominee_id = nominee_id
+        winner.announced_at = datetime.now(timezone.utc)
+    else:
+        db.add(Winner(
+            nomination_id=nomination_id,
+            nominee_id=nominee_id,
+            announced_at=datetime.now(timezone.utc),
+            is_public=False,
+        ))
+    db.commit()
+    return RedirectResponse(url="/admin/results", status_code=303)
+
+
+@router.post("/nominations/{nomination_id}/winner/clear")
+def clear_winner(nomination_id: int, db: Session = Depends(get_db)):
+    """Remove the winner designation for a nomination."""
+    winner = db.query(Winner).filter_by(nomination_id=nomination_id).first()
+    if winner:
+        db.delete(winner)
+        db.commit()
+    return RedirectResponse(url="/admin/results", status_code=303)
+
+
+@router.post("/nominations/{nomination_id}/winner/toggle-public")
+def toggle_winner_public(nomination_id: int, db: Session = Depends(get_db)):
+    """Toggle is_public for the winner of a nomination."""
+    winner = db.query(Winner).filter_by(nomination_id=nomination_id).first()
+    if winner:
+        winner.is_public = not winner.is_public
+        db.commit()
+    return RedirectResponse(url="/admin/results", status_code=303)
