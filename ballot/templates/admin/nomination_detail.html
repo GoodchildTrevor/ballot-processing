@@ -134,6 +134,7 @@
     {
       id: {{ person.id }},
       name: {{ person.name | tojson }},
+      url: {{ person.url | tojson if person.url else 'null' }},
       nomIds: [
         {% for nominee in person.nominees %}{{ nominee.nomination_id }}{% if not loop.last %},{% endif %}{% endfor %}
       ],
@@ -150,8 +151,9 @@
   <form method="post" action="/admin/nominations/{{ nom.id }}/nominees"
         x-data="formPicker()" class="space-y-3">
 
-    <input type="hidden" name="film_id"   :value="filmSel ? filmSel.id : ''" />
-    <input type="hidden" name="person_id" :value="personSel ? personSel.id : ''" />
+    <input type="hidden" name="film_id"      :value="filmSel ? filmSel.id : ''" />
+    <input type="hidden" name="person_id"    :value="personSel ? personSel.id : ''" />
+    <input type="hidden" name="person_url"   :value="personUrlVal" />
 
     {% if not nom.year_filter %}
     <div>
@@ -234,13 +236,13 @@
               </div>
               <ul class="max-h-64 overflow-y-auto">
                 <li>
-                  <button type="button" @click="personSel = null; personOpen = false"
+                  <button type="button" @click="personSel = null; personOpen = false; personUrlVal = ''"
                           :class="!personSel ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-500'"
                           class="w-full text-left px-3 py-2 text-sm italic">— нет —</button>
                 </li>
                 <template x-for="p in visiblePersons()" :key="p.id">
                   <li>
-                    <button type="button" @click="personSel = p; personOpen = false; personQ = ''"
+                    <button type="button" @click="personSel = p; personOpen = false; personQ = ''; personUrlVal = p.url || ''"
                             :class="personSel && personSel.id === p.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-50 text-gray-700'"
                             class="w-full text-left px-3 py-2 text-sm">
                       <div class="flex items-center justify-between gap-2">
@@ -256,9 +258,17 @@
               </ul>
             </div>
           </div>
-          <button x-show="personSel" type="button" @click="personSel = null"
+          <button x-show="personSel" type="button" @click="personSel = null; personUrlVal = ''"
                   title="Сбросить" class="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">&times;</button>
         </div>
+      </div>
+
+      {# Person URL — shown when person is selected #}
+      <div x-show="personSel !== null">
+        <label class="block text-xs text-gray-500 mb-1">Ссылка на персону <span class="text-gray-300">(необяз.)</span></label>
+        <input type="url" x-model="personUrlVal"
+               placeholder="https://..."
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
       </div>
 
       {# Item + item_url fields #}
@@ -298,6 +308,7 @@
       {% if nom.type.value == 'PICK' %}
       persons,
       personQ: '', personOpen: false, personSel: null,
+      personUrlVal: '',
       itemVal: '',
       itemUrlVal: '',
       {% endif %}
@@ -328,7 +339,6 @@
 {# ── Bulk add nominees ── #}
 {% if films %}
 {% set bulk_had_result = bulk_created is not none %}
-{% set bulk_had_errors = bulk_not_found and bulk_not_found | length > 0 %}
 <div class="bg-white shadow rounded-xl p-6 mb-8"
      x-data="{ open: {{ 'true' if bulk_had_result else 'false' }} }">
   <button type="button" @click="open = !open"
@@ -362,10 +372,10 @@
     {% endif %}
 
     <p class="text-xs text-gray-400 leading-relaxed">
-      Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Элемент | Ссылка на элемент</code><br>
-      Персона, элемент и ссылка — опциональны. Пропуск через пустой разделитель <code class="bg-gray-100 px-1 rounded">||</code>.<br>
+      Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Элемент | Ссылка на элемент | Ссылка на персону</code><br>
+      Персона, элемент и ссылки — опциональны. Пропуск через пустой разделитель <code class="bg-gray-100 px-1 rounded">||</code>.<br>
       Фильм ищется по точному названию{% if nom.year_filter %} (год {{ nom.year_filter }}){% endif %} — если не найден, создаётся автоматически.<br>
-      Персона ищется по имени — если не найдена, <strong>создаётся автоматически</strong>.<br>
+      Персона ищется по имени — если не найдена, создаётся автоматически (ссылка из 5-го поля).<br>
       <span class="text-gray-300">Примеры ниже ↓</span>
     </p>
 
@@ -374,7 +384,7 @@
                 placeholder="Криминальное чтиво
 Форрест Гамп | Том Хэнкс
 Эд Вуд || Лучший костюм | https://example.com/link
-Экзотика | Атом Эгоян"
+Экзотика | Атом Эгоян ||| https://egoyan.com"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-indigo-400 focus:outline-none resize-y"
                 style="min-height: 160px"></textarea>
       <div class="flex gap-2 mt-2">
@@ -393,7 +403,7 @@
   {% if nom.type.value == 'PICK' %}
   const ALL_PERSONS = [
     {% for person in persons %}
-    { id: {{ person.id }}, name: {{ person.name | tojson }} }{% if not loop.last %},{% endif %}
+    { id: {{ person.id }}, name: {{ person.name | tojson }}, url: {{ person.url | tojson if person.url else 'null' }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
   {% endif %}
@@ -403,11 +413,11 @@
     {% endfor %}
   ];
 
-  {# Store nominee data in a JS map keyed by nominee id — avoids embedding strings in HTML attributes #}
   const NOMINEE_DATA = {
     {% for nominee in nom.nominees %}
     {{ nominee.id }}: {
       personId: {{ nominee.person_id or 'null' }},
+      personUrl: {{ nominee.person.url | tojson if nominee.person and nominee.person.url else 'null' }},
       filmId: {{ nominee.film_id }},
       item: {{ nominee.item | tojson if nominee.item else 'null' }},
       itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }}
@@ -421,6 +431,7 @@
       editing: false,
       personSel: null,
       personQ: '', personOpen: false,
+      personUrlVal: d.personUrl || '',
       filmSel: null,
       filmQ: '', filmOpen: false,
       itemVal: d.item || '',
@@ -428,8 +439,15 @@
       init() {
         {% if nom.type.value == 'PICK' %}
         this.personSel = ALL_PERSONS.find(p => p.id === d.personId) || null;
+        this.personUrlVal = d.personUrl || '';
         {% endif %}
         this.filmSel = ALL_FILMS.find(f => f.id === d.filmId) || null;
+      },
+      selectPerson(p) {
+        this.personSel = p;
+        this.personUrlVal = p ? (p.url || '') : '';
+        this.personOpen = false;
+        this.personQ = '';
       },
       visiblePersons() {
         const q = this.personQ.toLowerCase().trim();
@@ -514,29 +532,35 @@
             {% else %}—{% endif %}
           </span>
           {% if nom.type.value == 'PICK' %}
-          <div x-show="editing" x-cloak class="relative flex items-center gap-1" style="min-width:180px">
-            <button type="button" @click="personOpen = !personOpen"
-                    class="flex-1 text-left border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white flex items-center justify-between gap-1">
-              <span :class="personSel ? 'text-gray-800' : 'text-gray-400'"
-                    x-text="personSel ? personSel.name : '— нет —'"></span>
-              <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
-            </button>
-            <div x-show="personOpen" x-cloak @click.outside="personOpen=false"
-                 class="absolute z-50 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-              <div class="p-2 border-b"><input x-model="personQ" type="text" placeholder="Имя..."
-                     class="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none" /></div>
-              <ul class="max-h-48 overflow-y-auto">
-                <li><button type="button" @click="personSel=null;personOpen=false"
-                        class="w-full text-left px-3 py-2 text-xs italic text-gray-500 hover:bg-gray-50">— нет —</button></li>
-                <template x-for="p in visiblePersons()" :key="p.id">
-                  <li><button type="button" @click="personSel=p;personOpen=false;personQ=''"
-                          :class="personSel && personSel.id===p.id?'bg-indigo-50 text-indigo-700 font-medium':'hover:bg-gray-50'"
-                          class="w-full text-left px-3 py-2 text-xs" x-text="p.name"></button></li>
-                </template>
-              </ul>
+          <div x-show="editing" x-cloak class="space-y-1" style="min-width:180px">
+            <div class="relative flex items-center gap-1">
+              <button type="button" @click="personOpen = !personOpen"
+                      class="flex-1 text-left border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white flex items-center justify-between gap-1">
+                <span :class="personSel ? 'text-gray-800' : 'text-gray-400'"
+                      x-text="personSel ? personSel.name : '— нет —'"></span>
+                <svg class="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 8L1 3h10z"/></svg>
+              </button>
+              <div x-show="personOpen" x-cloak @click.outside="personOpen=false"
+                   class="absolute z-50 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                <div class="p-2 border-b"><input x-model="personQ" type="text" placeholder="Имя..."
+                       class="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none" /></div>
+                <ul class="max-h-48 overflow-y-auto">
+                  <li><button type="button" @click="selectPerson(null)"
+                          class="w-full text-left px-3 py-2 text-xs italic text-gray-500 hover:bg-gray-50">— нет —</button></li>
+                  <template x-for="p in visiblePersons()" :key="p.id">
+                    <li><button type="button" @click="selectPerson(p)"
+                            :class="personSel && personSel.id===p.id?'bg-indigo-50 text-indigo-700 font-medium':'hover:bg-gray-50'"
+                            class="w-full text-left px-3 py-2 text-xs" x-text="p.name"></button></li>
+                  </template>
+                </ul>
+              </div>
+              <button x-show="personSel" type="button" @click="selectPerson(null)"
+                      class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
             </div>
-            <button x-show="personSel" type="button" @click="personSel=null"
-                    class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+            {# Person URL inline edit #}
+            <input x-show="personSel !== null" type="url" x-model="personUrlVal"
+                   placeholder="https://... (ссылка на персону)"
+                   class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:ring-indigo-400 focus:outline-none" />
           </div>
           {% else %}
           <span x-show="editing" x-cloak class="text-xs text-gray-400 italic">N/A (RANK)</span>
@@ -574,6 +598,7 @@
                 @submit.prevent x-ref="editForm">
             <input type="hidden" name="film_id"    :value="filmSel ? filmSel.id : '{{ nominee.film_id }}'" />
             <input type="hidden" name="person_id"  :value="personSel ? personSel.id : ''" />
+            <input type="hidden" name="person_url" :value="personUrlVal" />
             <input type="hidden" name="item"       :value="itemVal" />
             <input type="hidden" name="item_url"   :value="itemUrlVal" />
             <button type="button" @click="$refs.editForm.submit()"

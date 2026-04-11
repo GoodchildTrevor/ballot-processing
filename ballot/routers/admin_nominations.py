@@ -29,10 +29,16 @@ def _get_years(db: Session) -> list[int]:
 
 
 def _clamp_pick_max(pmax: Optional[int], nc: Optional[int]) -> Optional[int]:
-    """Ensure pick_max never exceeds nominees_count."""
     if pmax is not None and nc is not None:
         return min(pmax, nc)
     return pmax
+
+
+def _apply_person_url(person: Person, url: Optional[str]) -> None:
+    """Update person.url if a non-empty url is provided."""
+    clean = url.strip() if url and url.strip() else None
+    if clean:
+        person.url = clean
 
 
 @router.get("/nominations", response_class=HTMLResponse)
@@ -206,6 +212,7 @@ def add_nominee_via_nomination(
     nom_id: int,
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
+    person_url: Optional[str] = Form(None),
     item: Optional[str] = Form(None),
     item_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -216,6 +223,12 @@ def add_nominee_via_nomination(
     pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
     item_val = item.strip() if item and item.strip() else None
     item_url_val = item_url.strip() if item_url and item_url.strip() else None
+
+    # Update person URL if provided
+    if pid and nom.type == NominationType.PICK:
+        person = db.get(Person, pid)
+        if person:
+            _apply_person_url(person, person_url)
 
     existing = db.query(Nominee).filter(
         Nominee.nomination_id == nom_id,
@@ -248,30 +261,23 @@ def bulk_add_nominees(
 ):
     """
     Bulk-add nominees to a nomination.
-    Each line: Film title | Person name (opt) | Item (opt) | Item URL (opt)
+    Line format: Film | Person | Item | Item URL | Person URL
+    All fields except Film are optional. Skip with empty delimiter: ||.
 
-    Film matching:
-      1. Exact title match (case-insensitive) against films filtered by nomination year_filter.
-      2. If not found — automatically create a new Film with:
-           title = parsed title from the line
-           year  = nomination year_filter (required; if nomination has no year, line is skipped with a note)
-
-    Person matching (PICK nominations only):
-      1. Exact name match (case-insensitive).
-      2. If not found — automatically create a new Person with name = parsed name.
+    Film: looked up by exact title (case-insensitive); auto-created if not found (requires year_filter).
+    Person: looked up by exact name (case-insensitive); auto-created if not found.
+    Person URL (5th field): applied to the person record on create or update.
     """
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
 
-    # Pre-load films for fast lookup
     film_q = db.query(Film)
     if nom.year_filter:
         film_q = film_q.filter(Film.year == nom.year_filter)
     all_films = film_q.all()
     film_index: dict[str, Film] = {f.title.lower(): f for f in all_films}
 
-    # Pre-load persons for fast lookup
     all_persons = db.query(Person).all()
     person_index: dict[str, Person] = {p.name.lower(): p for p in all_persons}
 
@@ -287,15 +293,17 @@ def bulk_add_nominees(
             continue
 
         parts = [p.strip() for p in raw_line.split("|")]
-        film_title   = parts[0] if len(parts) > 0 else ""
-        person_name  = parts[1] if len(parts) > 1 else ""
-        item_val     = parts[2] if len(parts) > 2 else ""
-        item_url_val = parts[3] if len(parts) > 3 else ""
+        film_title    = parts[0] if len(parts) > 0 else ""
+        person_name   = parts[1] if len(parts) > 1 else ""
+        item_val      = parts[2] if len(parts) > 2 else ""
+        item_url_val  = parts[3] if len(parts) > 3 else ""
+        person_url_val = parts[4] if len(parts) > 4 else ""
 
-        film_title   = film_title.strip()
-        person_name  = person_name.strip()
-        item_val     = item_val.strip() or None
-        item_url_val = item_url_val.strip() or None
+        film_title     = film_title.strip()
+        person_name    = person_name.strip()
+        item_val       = item_val.strip() or None
+        item_url_val   = item_url_val.strip() or None
+        person_url_val = person_url_val.strip() or None
 
         if not film_title:
             continue
@@ -317,11 +325,14 @@ def bulk_add_nominees(
         if person_name and nom.type == NominationType.PICK:
             person = person_index.get(person_name.lower())
             if person is None:
-                person = Person(name=person_name)
+                person = Person(name=person_name, url=person_url_val)
                 db.add(person)
                 db.flush()
                 person_index[person_name.lower()] = person
                 persons_created.append(person_name)
+            else:
+                # Update URL if provided and person doesn't have one yet
+                _apply_person_url(person, person_url_val)
             pid = person.id
 
         # --- Duplicate check ---
@@ -361,6 +372,7 @@ def edit_nominee(
     nominee_id: int,
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
+    person_url: Optional[str] = Form(None),
     item: Optional[str] = Form(None),
     item_url: Optional[str] = Form(None),
     back: Optional[str] = Form(None),
@@ -370,7 +382,13 @@ def edit_nominee(
     if not nominee:
         return RedirectResponse(url="/admin/nominations", status_code=303)
     nominee.film_id = film_id
-    nominee.person_id = _parse_int(person_id)
+    pid = _parse_int(person_id)
+    nominee.person_id = pid
+    # Update person URL if person selected and URL provided
+    if pid:
+        person = db.get(Person, pid)
+        if person:
+            _apply_person_url(person, person_url)
     nominee.item = item.strip() if item and item.strip() else None
     nominee.item_url = item_url.strip() if item_url and item_url.strip() else None
     db.commit()
