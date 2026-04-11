@@ -12,7 +12,8 @@
 
 <div class="bg-white shadow rounded-xl p-6 mb-8" x-data="{ type: 'RANK' }">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Создать номинацию</h2>
-  <form method="post" action="/admin/nominations" class="flex flex-wrap gap-3 items-end">
+  <form method="post" action="/admin/nominations" class="flex flex-wrap gap-3 items-end"
+        id="create-nom-form">
     <div>
       <label class="block text-xs text-gray-500 mb-1">Название</label>
       <input type="text" name="name" required
@@ -33,7 +34,13 @@
              class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
     </div>
 
-    <div x-show="type === 'PICK'" x-cloak class="flex gap-2">
+    <div x-show="type === 'PICK'" x-cloak class="flex gap-2 items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Кол-во номинантов</label>
+        <input type="number" name="nominees_count" id="create-nc" min="1" placeholder="15"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none"
+               oninput="syncPickMax('create-pick-max','create-nc')" />
+      </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Мин выбор</label>
         <input type="number" name="pick_min" min="1" placeholder="1"
@@ -41,8 +48,9 @@
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Макс выбор</label>
-        <input type="number" name="pick_max" min="1" placeholder="10"
-               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-20 focus:ring-indigo-400 focus:outline-none" />
+        <input type="number" name="pick_max" id="create-pick-max" min="1" placeholder="10"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-20 focus:ring-indigo-400 focus:outline-none"
+               oninput="clampToMax(this)" />
       </div>
     </div>
 
@@ -143,7 +151,14 @@
                   </div>
                 </template>
                 <template x-if="nomType === 'PICK'">
-                  <div class="flex gap-2">
+                  <div class="flex gap-2 items-end">
+                    <div>
+                      <label class="block text-xs text-gray-400 mb-0.5">Номинантов</label>
+                      <input type="number" name="nominees_count" id="edit-nc-{{ nom.id }}" min="1"
+                             value="{{ nom.nominees_count or '' }}" placeholder="15"
+                             class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none"
+                             :oninput="`syncPickMax('edit-pm-{{ nom.id }}','edit-nc-{{ nom.id }}')`" />
+                    </div>
                     <div>
                       <label class="block text-xs text-gray-400 mb-0.5">Мин</label>
                       <input type="number" name="pick_min" min="1" value="{{ nom.pick_min or '' }}"
@@ -151,8 +166,11 @@
                     </div>
                     <div>
                       <label class="block text-xs text-gray-400 mb-0.5">Макс</label>
-                      <input type="number" name="pick_max" min="1" value="{{ nom.pick_max or '' }}"
-                             class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+                      <input type="number" name="pick_max" id="edit-pm-{{ nom.id }}" min="1"
+                             value="{{ nom.pick_max or '' }}"
+                             max="{{ nom.nominees_count or '' }}"
+                             class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none"
+                             :oninput="`clampToMax(document.getElementById('edit-pm-{{ nom.id }}'))`" />
                     </div>
                   </div>
                 </template>
@@ -186,7 +204,10 @@
             {% if nom.type.value == 'RANK' %}
               {% if nom.nominees_count %}Топ {{ nom.nominees_count }}{% else %}<span class="text-gray-300">—</span>{% endif %}
             {% else %}
-              {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}
+              {{ nom.pick_min or 1 }}–{{ nom.pick_max or '?' }}
+              {% if nom.nominees_count %}
+                <span class="text-gray-400">/ {{ nom.nominees_count }}</span>
+              {% endif %}
             {% endif %}
           </td>
 
@@ -211,6 +232,29 @@
 </div>
 
 <script>
+// Clamps pick_max input to its max attribute (nominees_count)
+function clampToMax(el) {
+  if (!el) return;
+  const max = parseInt(el.getAttribute('max'));
+  if (!isNaN(max) && parseInt(el.value) > max) {
+    el.value = max;
+  }
+}
+
+// When nominees_count changes, update max on pick_max and clamp if needed
+function syncPickMax(pickMaxId, ncId) {
+  const nc = document.getElementById(ncId);
+  const pm = document.getElementById(pickMaxId);
+  if (!nc || !pm) return;
+  const ncVal = parseInt(nc.value);
+  if (!isNaN(ncVal) && ncVal > 0) {
+    pm.setAttribute('max', ncVal);
+    if (parseInt(pm.value) > ncVal) pm.value = ncVal;
+  } else {
+    pm.removeAttribute('max');
+  }
+}
+
 const NOM_SS_KEY = 'nominations_year_v1';
 function nominationsFilter() {
   let saved = null;

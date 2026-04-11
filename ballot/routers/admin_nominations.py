@@ -27,6 +27,13 @@ def _get_years(db: Session) -> list[int]:
     return [r[0] for r in rows]
 
 
+def _clamp_pick_max(pmax: Optional[int], nc: Optional[int]) -> Optional[int]:
+    """Ensure pick_max never exceeds nominees_count."""
+    if pmax is not None and nc is not None:
+        return min(pmax, nc)
+    return pmax
+
+
 @router.get("/nominations", response_class=HTMLResponse)
 def list_nominations(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
@@ -50,9 +57,13 @@ def create_nomination(
     round_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    pmin = _parse_int(pick_min) if type == NominationType.PICK else None
-    pmax = _parse_int(pick_max) if type == NominationType.PICK else None
     nc = _parse_int(nominees_count)
+    if type == NominationType.PICK:
+        pmin = _parse_int(pick_min)
+        pmax = _clamp_pick_max(_parse_int(pick_max), nc)
+    else:
+        pmin = None
+        pmax = None
     yf = _parse_int(year_filter)
     rid = _parse_int(round_id)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
@@ -84,13 +95,18 @@ def edit_nomination(
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
+    nc = _parse_int(nominees_count)
     nom.name = name.strip()
     nom.type = type
-    nom.pick_min = _parse_int(pick_min) if type == NominationType.PICK else None
-    nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
-    nom.nominees_count = _parse_int(nominees_count)
+    nom.nominees_count = nc
     nom.year_filter = _parse_int(year_filter)
     nom.round_id = _parse_int(round_id)
+    if type == NominationType.PICK:
+        nom.pick_min = _parse_int(pick_min)
+        nom.pick_max = _clamp_pick_max(_parse_int(pick_max), nc)
+    else:
+        nom.pick_min = None
+        nom.pick_max = None
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
