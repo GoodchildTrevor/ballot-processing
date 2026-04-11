@@ -16,7 +16,7 @@
         <span class="text-xs text-gray-500">выбрать {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}</span>
         {% endif %}
         {% if nom.nominees_count %}
-        <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">номинантов: {{ nom.nominees_count }}</span>
+        <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">во 2-й тур: {{ nom.nominees_count }}</span>
         {% endif %}
         {% if nom.year_filter %}
         <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">год: {{ nom.year_filter }}</span>
@@ -59,12 +59,12 @@
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">
-          Число номинантов <span class="text-gray-300">(необяз.)</span>
+          Проходят во 2-й тур <span class="text-gray-300">(необяз.)</span>
         </label>
         <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}"
                placeholder="—"
                class="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
-        <p class="text-xs text-gray-400 mt-1">Ограничивает pick_max сверху; используется для отображения прогресса лонг-листа.</p>
+        <p class="text-xs text-gray-400 mt-1">Сколько номинантов выходит во второй тур. При равенстве голосов на пороговом месте проходят все с одинаковым результатом.</p>
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Год <span class="text-gray-300">(необяз.)</span></label>
