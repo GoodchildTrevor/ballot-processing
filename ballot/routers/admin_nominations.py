@@ -196,6 +196,7 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
             "bulk_skipped": request.query_params.get("bulk_skipped"),
             "bulk_not_found": request.query_params.get("bulk_not_found"),
             "bulk_films_created": request.query_params.get("bulk_films_created"),
+            "bulk_persons_created": request.query_params.get("bulk_persons_created"),
         },
     )
 
@@ -255,27 +256,30 @@ def bulk_add_nominees(
            title = parsed title from the line
            year  = nomination year_filter (required; if nomination has no year, line is skipped with a note)
 
-    Person is matched by name (case-insensitive); if not found, nominee is added without person.
+    Person matching (PICK nominations only):
+      1. Exact name match (case-insensitive).
+      2. If not found — automatically create a new Person with name = parsed name.
     """
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
 
-    # Pre-load films for fast lookup (all years if no filter, else only that year)
+    # Pre-load films for fast lookup
     film_q = db.query(Film)
     if nom.year_filter:
         film_q = film_q.filter(Film.year == nom.year_filter)
     all_films = film_q.all()
-    # Build index; keep it mutable so newly created films are immediately findable
     film_index: dict[str, Film] = {f.title.lower(): f for f in all_films}
 
+    # Pre-load persons for fast lookup
     all_persons = db.query(Person).all()
     person_index: dict[str, Person] = {p.name.lower(): p for p in all_persons}
 
-    created = 0          # nominees added
-    skipped = 0          # duplicate nominees
-    films_created: list[str] = []   # titles of auto-created films
-    no_year_lines: list[str] = []   # lines skipped because no year available
+    created = 0
+    skipped = 0
+    films_created: list[str] = []
+    persons_created: list[str] = []
+    no_year_lines: list[str] = []
 
     for raw_line in lines.strip().splitlines():
         raw_line = raw_line.strip()
@@ -283,9 +287,9 @@ def bulk_add_nominees(
             continue
 
         parts = [p.strip() for p in raw_line.split("|")]
-        film_title  = parts[0] if len(parts) > 0 else ""
-        person_name = parts[1] if len(parts) > 1 else ""
-        item_val    = parts[2] if len(parts) > 2 else ""
+        film_title   = parts[0] if len(parts) > 0 else ""
+        person_name  = parts[1] if len(parts) > 1 else ""
+        item_val     = parts[2] if len(parts) > 2 else ""
         item_url_val = parts[3] if len(parts) > 3 else ""
 
         film_title   = film_title.strip()
@@ -300,22 +304,25 @@ def bulk_add_nominees(
         film = film_index.get(film_title.lower())
         if film is None:
             if not nom.year_filter:
-                # Cannot auto-create without a year — record and skip
                 no_year_lines.append(film_title)
                 continue
-            # Auto-create the film
             film = Film(title=film_title, year=nom.year_filter)
             db.add(film)
-            db.flush()  # get film.id before adding nominee
+            db.flush()
             film_index[film_title.lower()] = film
             films_created.append(film_title)
 
-        # --- Person lookup (soft: skip gracefully if not found) ---
+        # --- Person lookup / auto-create (PICK only) ---
         pid: Optional[int] = None
         if person_name and nom.type == NominationType.PICK:
             person = person_index.get(person_name.lower())
-            if person:
-                pid = person.id
+            if person is None:
+                person = Person(name=person_name)
+                db.add(person)
+                db.flush()
+                person_index[person_name.lower()] = person
+                persons_created.append(person_name)
+            pid = person.id
 
         # --- Duplicate check ---
         existing = db.query(Nominee).filter(
@@ -341,7 +348,9 @@ def bulk_add_nominees(
 
     params = f"bulk_created={created}&bulk_skipped={skipped}"
     if films_created:
-        params += "&bulk_films_created=" + urllib.parse.quote(", ".join(films_created))
+        params += "&bulk_films_created=" + urllib.parse.quote(str(len(films_created)))
+    if persons_created:
+        params += "&bulk_persons_created=" + urllib.parse.quote(str(len(persons_created)))
     if no_year_lines:
         params += "&bulk_not_found=" + urllib.parse.quote(", ".join(no_year_lines))
     return RedirectResponse(url=f"/admin/nominations/{nom_id}?{params}", status_code=303)

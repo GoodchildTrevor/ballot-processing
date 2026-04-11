@@ -134,15 +134,16 @@
     {
       id: {{ person.id }},
       name: {{ person.name | tojson }},
-      noms: [
-        {% for nominee in person.nominees %}
-        {{ nominee.nomination.name | tojson }}{% if not loop.last %},{% endif %}
-        {% endfor %}
+      nomIds: [
+        {% for nominee in person.nominees %}{{ nominee.nomination_id }}{% if not loop.last %},{% endif %}{% endfor %}
+      ],
+      nomLabels: [
+        {% for nominee in person.nominees %}{{ (nominee.nomination.name + (' ' + nominee.nomination.year_filter | string if nominee.nomination.year_filter else '')) | tojson }}{% if not loop.last %},{% endif %}{% endfor %}
       ]
     }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
-  const THIS_NOM_NAME = {{ nom.name | tojson }};
+  const THIS_NOM_ID = {{ nom.id }};
   {% endif %}
   </script>
 
@@ -244,10 +245,10 @@
                             class="w-full text-left px-3 py-2 text-sm">
                       <div class="flex items-center justify-between gap-2">
                         <span x-text="p.name"></span>
-                        <span x-show="p.noms.includes(THIS_NOM_NAME)"
+                        <span x-show="p.nomIds.includes(THIS_NOM_ID)"
                               class="flex-shrink-0 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">уже есть</span>
                       </div>
-                      <div x-show="p.noms.length > 0" class="text-xs text-gray-400 mt-0.5 truncate" x-text="p.noms.join(', ')"></div>
+                      <div x-show="p.nomLabels.length > 0" class="text-xs text-gray-400 mt-0.5 truncate" x-text="p.nomLabels.join(', ')"></div>
                     </button>
                   </li>
                 </template>
@@ -344,10 +345,12 @@
       <div>
         Добавлено: <strong>{{ bulk_created }}</strong>
         {% if bulk_skipped | int > 0 %} · пропущено дублей: <strong>{{ bulk_skipped }}</strong>{% endif %}
+        {% if bulk_films_created %} · создано фильмов: <strong>{{ bulk_films_created }}</strong>{% endif %}
+        {% if bulk_persons_created %} · создано персон: <strong>{{ bulk_persons_created }}</strong>{% endif %}
       </div>
       {% if bulk_not_found %}
       <div class="mt-1 text-red-600 text-xs">
-        Не найдены фильмы (проверьте точность названия):
+        Не найдены фильмы (нет года для автосоздания):
         <ul class="mt-1 list-disc list-inside space-y-0.5">
           {% for title in bulk_not_found.split(', ') %}
           <li><code class="bg-red-50 rounded px-1">{{ title }}</code></li>
@@ -361,7 +364,8 @@
     <p class="text-xs text-gray-400 leading-relaxed">
       Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Элемент | Ссылка на элемент</code><br>
       Персона, элемент и ссылка — опциональны. Пропуск через пустой разделитель <code class="bg-gray-100 px-1 rounded">||</code>.<br>
-      Фильм ищется по точному названию{% if nom.year_filter %} (год {{ nom.year_filter }}){% endif %}. Персона — по имени в базе.<br>
+      Фильм ищется по точному названию{% if nom.year_filter %} (год {{ nom.year_filter }}){% endif %} — если не найден, создаётся автоматически.<br>
+      Персона ищется по имени — если не найдена, <strong>создаётся автоматически</strong>.<br>
       <span class="text-gray-300">Примеры ниже ↓</span>
     </p>
 
