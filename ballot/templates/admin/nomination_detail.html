@@ -364,12 +364,13 @@
 
         <td class="py-2 pr-4 font-medium">
           <span x-show="!editing">
-            {% if nominee.film.url %}
-            <a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer"
-               class="text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
-            {% else %}
-            {{ nominee.film.title }}
-            {% endif %}
+            {# Film always links to its admin card; external link icon shown if film.url is set #}
+            <a href="/admin/films/{{ nominee.film.id }}"
+               class="text-indigo-600 hover:underline inline-flex items-center gap-1">{{ nominee.film.title }}
+              {% if nominee.film.url %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              {% endif %}
+            </a>
           </span>
           <div x-show="editing" x-cloak class="relative" style="min-width:200px">
             <button type="button" @click="filmOpen = !filmOpen"
@@ -402,9 +403,12 @@
         <td class="py-2 pr-4">
           <span x-show="!editing">
             {% if nominee.person %}
+              {# Person: link to external url if set, otherwise plain text #}
               {% if nominee.person.url %}
               <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer"
-                 class="text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
+                 class="text-indigo-600 hover:underline inline-flex items-center gap-1">{{ nominee.person.name }}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
               {% else %}
               {{ nominee.person.name }}
               {% endif %}
