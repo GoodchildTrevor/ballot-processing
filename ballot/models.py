@@ -28,7 +28,10 @@ class Person(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     url = Column(String, nullable=True)
+    # legacy direct link kept for backward compat
     nominees = relationship("Nominee", back_populates="person")
+    # new multi-person link
+    nominee_persons = relationship("NomineePerson", back_populates="person")
 
 
 class Nomination(Base):
@@ -41,7 +44,25 @@ class Nomination(Base):
     nominees_count = Column(Integer, nullable=True)
     year_filter = Column(Integer, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    # Deadline for this nomination's voting stage.
+    # If set, votes are rejected after this timestamp.
+    vote_deadline = Column(DateTime, nullable=True)
     nominees = relationship("Nominee", back_populates="nomination")
+
+
+class NomineePerson(Base):
+    """Many-to-many bridge: one nominee can credit multiple persons."""
+    __tablename__ = "nominee_persons"
+    id = Column(Integer, primary_key=True)
+    nominee_id = Column(Integer, ForeignKey("nominees.id"), nullable=False)
+    person_id = Column(Integer, ForeignKey("persons.id"), nullable=False)
+    # Optional label: 'director', 'writer', etc.
+    role = Column(String, nullable=True)
+    nominee = relationship("Nominee", back_populates="persons")
+    person = relationship("Person", back_populates="nominee_persons")
+    __table_args__ = (
+        UniqueConstraint("nominee_id", "person_id", name="uq_nominee_person"),
+    )
 
 
 class Nominee(Base):
@@ -49,13 +70,32 @@ class Nominee(Base):
     id = Column(Integer, primary_key=True)
     nomination_id = Column(Integer, ForeignKey("nominations.id"), nullable=False)
     film_id = Column(Integer, ForeignKey("films.id"), nullable=False)
+    # Legacy single person FK (still written for PICK nominations with one person)
     person_id = Column(Integer, ForeignKey("persons.id"), nullable=True)
-    song = Column(String, nullable=True)
-    song_url = Column(String, nullable=True)
+    # Renamed from song / song_url
+    item = Column(String, nullable=True)
+    item_url = Column(String, nullable=True)
     nomination = relationship("Nomination", back_populates="nominees")
     film = relationship("Film", back_populates="nominees")
     person = relationship("Person", back_populates="nominees")
     votes = relationship("Vote", back_populates="nominee")
+    persons = relationship("NomineePerson", back_populates="nominee",
+                           cascade="all, delete-orphan")
+
+    @property
+    def all_persons(self):
+        """Return NomineePerson list if populated, else wrap legacy person_id."""
+        if self.persons:
+            return [np.person for np in self.persons]
+        if self.person:
+            return [self.person]
+        return []
+
+    @property
+    def persons_label(self) -> str:
+        """Human-readable comma-joined person names."""
+        names = [p.name for p in self.all_persons]
+        return ", ".join(names)
 
 
 class Voter(Base):
