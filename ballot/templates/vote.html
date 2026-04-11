@@ -201,8 +201,8 @@
               {% if nominee.person %}
                 {% if nominee.person.url %}<a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.person.name }}</a>{% else %}{{ nominee.person.name }}{% endif %}
                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
-              {% elif nominee.song %}
-                {% if nominee.song_url %}<a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>{% else %}{{ nominee.song }}{% endif %}
+              {% elif nominee.item %}
+                {% if nominee.item_url %}<a href="{{ nominee.item_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.item }}</a>{% else %}{{ nominee.item }}{% endif %}
                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% else %}
                 {% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %}
@@ -221,8 +221,8 @@
               {% if nominee.person %}
                 {% if nominee.person.url %}<a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.person.name }}</a>{% else %}{{ nominee.person.name }}{% endif %}
                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
-              {% elif nominee.song %}
-                {% if nominee.song_url %}<a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.song }}</a>{% else %}{{ nominee.song }}{% endif %}
+              {% elif nominee.item %}
+                {% if nominee.item_url %}<a href="{{ nominee.item_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.item }}</a>{% else %}{{ nominee.item }}{% endif %}
                 <span class="text-gray-400">({% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %})</span>
               {% else %}
                 {% if nominee.film.url %}<a href="{{ nominee.film.url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600 hover:underline">{{ nominee.film.title }}</a>{% else %}{{ nominee.film.title }}{% endif %}
@@ -329,7 +329,7 @@
           window.__pickLabels = window.__pickLabels || {};
           window.__pickLabels[{{ idx }}] = {
             {% for nominee in nom.nominees %}
-            "{{ nominee.id }}": "{% if nominee.person %}{{ nominee.person.name }} ({{ nominee.film.title }}){% elif nominee.song %}{{ nominee.song }} ({{ nominee.film.title }}){% else %}{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}{% endif %}",
+            "{{ nominee.id }}": "{% if nominee.person %}{{ nominee.person.name }} ({{ nominee.film.title }}){% elif nominee.item %}{{ nominee.item }} ({{ nominee.film.title }}){% else %}{{ nominee.film.title }}{% if nominee.film.year %} ({{ nominee.film.year }}){% endif %}{% endif %}",
             {% endfor %}
           };
           window.__pickNomId = window.__pickNomId || {};
