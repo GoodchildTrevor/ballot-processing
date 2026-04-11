@@ -191,6 +191,9 @@ def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_d
             "years": years,
             "added_film_ids": added_film_ids,
             "error": request.query_params.get("error"),
+            "bulk_created": request.query_params.get("bulk_created"),
+            "bulk_skipped": request.query_params.get("bulk_skipped"),
+            "bulk_not_found": request.query_params.get("bulk_not_found"),
         },
     )
 
@@ -232,6 +235,96 @@ def add_nominee_via_nomination(
     ))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+
+
+@router.post("/nominations/{nom_id}/nominees/bulk")
+def bulk_add_nominees(
+    nom_id: int,
+    lines: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk-add nominees to a nomination.
+    Each line: Film title | Person name (opt) | Item (opt) | Item URL (opt)
+    Film is matched by title (case-insensitive), filtered by nomination year_filter if set.
+    Person is matched by name (case-insensitive); if not found, it is skipped (recorded in not_found).
+    """
+    nom = db.get(Nomination, nom_id)
+    if not nom:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+
+    # Pre-load films and persons for fast lookup
+    film_q = db.query(Film)
+    if nom.year_filter:
+        film_q = film_q.filter(Film.year == nom.year_filter)
+    all_films = film_q.all()
+    film_index: dict[str, Film] = {f.title.lower(): f for f in all_films}
+
+    all_persons = db.query(Person).all()
+    person_index: dict[str, Person] = {p.name.lower(): p for p in all_persons}
+
+    created = 0
+    skipped = 0   # duplicates
+    not_found: list[str] = []  # film titles not found
+
+    for raw_line in lines.strip().splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+
+        parts = [p.strip() for p in raw_line.split("|")]
+        film_title = parts[0] if len(parts) > 0 else ""
+        person_name = parts[1] if len(parts) > 1 else ""
+        item_val = parts[2] if len(parts) > 2 else ""
+        item_url_val = parts[3] if len(parts) > 3 else ""
+
+        film_title = film_title.strip()
+        person_name = person_name.strip()
+        item_val = item_val.strip() or None
+        item_url_val = item_url_val.strip() or None
+
+        if not film_title:
+            continue
+
+        film = film_index.get(film_title.lower())
+        if film is None:
+            not_found.append(film_title)
+            continue
+
+        pid: Optional[int] = None
+        if person_name and nom.type == NominationType.PICK:
+            person = person_index.get(person_name.lower())
+            if person:
+                pid = person.id
+            # If person not found by name — add anyway without person (don't skip)
+
+        # Skip duplicates
+        existing = db.query(Nominee).filter(
+            Nominee.nomination_id == nom_id,
+            Nominee.film_id == film.id,
+            Nominee.person_id == pid,
+            Nominee.item == item_val,
+        ).first()
+        if existing:
+            skipped += 1
+            continue
+
+        db.add(Nominee(
+            nomination_id=nom_id,
+            film_id=film.id,
+            person_id=pid,
+            item=item_val,
+            item_url=item_url_val,
+        ))
+        created += 1
+
+    db.commit()
+
+    import urllib.parse
+    params = f"bulk_created={created}&bulk_skipped={skipped}"
+    if not_found:
+        params += "&bulk_not_found=" + urllib.parse.quote(", ".join(not_found))
+    return RedirectResponse(url=f"/admin/nominations/{nom_id}?{params}", status_code=303)
 
 
 @router.post("/nominees/{nominee_id}/edit")
