@@ -51,6 +51,47 @@ _MIGRATIONS = [
         UNIQUE(nominee_id, person_id)
     )
     """,
+
+    # ================================================================
+    # Round system (added 2026-04)
+    # ================================================================
+
+    # rounds table
+    """
+    CREATE TABLE IF NOT EXISTS rounds (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        label      TEXT    NOT NULL,
+        round_type TEXT    NOT NULL DEFAULT 'LONGLIST',
+        year       INTEGER NOT NULL,
+        deadline   DATETIME,
+        is_active  INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+
+    # round_participations table (replaces per-voter voted_at/draft)
+    """
+    CREATE TABLE IF NOT EXISTS round_participations (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        round_id INTEGER NOT NULL REFERENCES rounds(id),
+        voter_id INTEGER NOT NULL REFERENCES voters(id),
+        voted_at DATETIME,
+        draft    JSON,
+        UNIQUE(round_id, voter_id)
+    )
+    """,
+
+    # nominations.round_id FK
+    "ALTER TABLE nominations ADD COLUMN round_id INTEGER REFERENCES rounds(id)",
+
+    # nominations.has_runner_up
+    "ALTER TABLE nominations ADD COLUMN has_runner_up INTEGER NOT NULL DEFAULT 0",
+
+    # nominees.is_shortlisted
+    "ALTER TABLE nominees ADD COLUMN is_shortlisted INTEGER NOT NULL DEFAULT 0",
+
+    # votes.is_runner_up
+    "ALTER TABLE votes ADD COLUMN is_runner_up INTEGER NOT NULL DEFAULT 0",
 ]
 
 
