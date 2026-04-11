@@ -303,7 +303,11 @@
 
 {# ── Bulk add nominees ── #}
 {% if films %}
-<div class="bg-white shadow rounded-xl p-6 mb-8" x-data="{ open: false }">
+{# Auto-open bulk panel if we just returned from a bulk operation #}
+{% set bulk_had_result = bulk_created is not none %}
+{% set bulk_had_errors = bulk_not_found and bulk_not_found | length > 0 %}
+<div class="bg-white shadow rounded-xl p-6 mb-8"
+     x-data="{ open: {{ 'true' if bulk_had_result else 'false' }} }">
   <button type="button" @click="open = !open"
           class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-indigo-600 transition w-full text-left">
     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 flex-shrink-0 transition-transform" :class="open ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -312,23 +316,37 @@
 
   <div x-show="open" x-cloak class="mt-4 space-y-3">
 
-    {% if bulk_created is not none %}
-    <div class="rounded-lg px-4 py-3 text-sm
+    {# Result banner after bulk submit #}
+    {% if bulk_had_result %}
+    <div class="rounded-lg px-4 py-3 text-sm space-y-1
       {{ 'bg-green-50 border border-green-200 text-green-700' if bulk_created | int > 0 else 'bg-gray-50 border border-gray-200 text-gray-500' }}">
-      Добавлено: <strong>{{ bulk_created }}</strong>
-      {% if bulk_skipped | int > 0 %} · пропущено дублей: <strong>{{ bulk_skipped }}</strong>{% endif %}
-      {% if bulk_not_found %} · не найдено фильмов: <strong class="text-red-600">{{ bulk_not_found }}</strong>{% endif %}
+      <div>
+        Добавлено: <strong>{{ bulk_created }}</strong>
+        {% if bulk_skipped | int > 0 %} · пропущено дублей: <strong>{{ bulk_skipped }}</strong>{% endif %}
+      </div>
+      {% if bulk_not_found %}
+      <div class="mt-1 text-red-600 text-xs">
+        Не найдены фильмы (проверьте точность названия):
+        <ul class="mt-1 list-disc list-inside space-y-0.5">
+          {% for title in bulk_not_found.split(', ') %}
+          <li><code class="bg-red-50 rounded px-1">{{ title }}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 
     <p class="text-xs text-gray-400 leading-relaxed">
       Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Элемент | Ссылка на элемент</code><br>
       Персона, элемент и ссылка — опциональны. Пропуск через пустой разделитель <code class="bg-gray-100 px-1 rounded">||</code>.<br>
-      Фильм ищется по точному названию{% if nom.year_filter %} (год {{ nom.year_filter }}){% endif %}. Персона — по имени в базе.
+      Фильм ищется по точному названию{% if nom.year_filter %} (год {{ nom.year_filter }}){% endif %}. Персона — по имени в базе.<br>
+      <span class="text-gray-300">Примеры ниже ↓</span>
     </p>
 
     <form method="post" action="/admin/nominations/{{ nom.id }}/nominees/bulk">
-      <textarea name="lines" rows="8" placeholder="Криминальное чтиво
+      <textarea name="lines" rows="8"
+                placeholder="Криминальное чтиво
 Форрест Гамп | Том Хэнкс
 Эд Вуд || Лучший костюм | https://example.com/link
 Экзотика | Атом Эгоян"
@@ -382,7 +400,7 @@
       visibleFilms() {
         const q = this.filmQ.toLowerCase().trim();
         if (!q) return ALL_FILMS;
-        return ALL_FILMS.filter(f => f.title.toLowerCase().includes(f));
+        return ALL_FILMS.filter(f => f.title.toLowerCase().includes(q));
       },
     };
   }
