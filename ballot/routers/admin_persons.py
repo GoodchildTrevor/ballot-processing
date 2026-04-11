@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Person, Nominee, Nomination, Round
+from ballot.models import Person, Nominee, Nomination, Round, RoundType
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -83,16 +83,22 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
     rounds_map: dict = defaultdict(lambda: defaultdict(list))
     no_round_nom: dict = defaultdict(list)
 
+    longlists_count = 0
+    nominations_count = 0
+
     for n in nominees:
         nom = n.nomination
         if nom and nom.round:
             rounds_map[nom.round][nom].append(n)
+            if nom.round.round_type == RoundType.LONGLIST:
+                longlists_count += 1
+            elif nom.round.round_type == RoundType.FINAL:
+                nominations_count += 1
         else:
             no_round_nom[nom].append(n)
 
     # Build ordered stats list: [{round, nominations: [{nom, nominees: [...]}]}]
     stats = []
-    # rounds sorted by sort_order
     for rnd in sorted(rounds_map.keys(), key=lambda r: (r.sort_order, r.id)):
         noms_for_round = []
         for nom, noms in sorted(rounds_map[rnd].items(), key=lambda x: (x[0].sort_order, x[0].id)):
@@ -105,12 +111,9 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
             noms_no_round.append({"nom": nom, "nominees": sorted(noms, key=lambda n: n.film.title)})
         stats.append({"round": None, "nominations": noms_no_round})
 
-    total_noms = len(nominees)
-    rounds_count = len(rounds_map)
-
     return templates.TemplateResponse(request, "admin/person_detail.html", {
         "person": person,
         "stats": stats,
-        "total_noms": total_noms,
-        "rounds_count": rounds_count,
+        "longlists_count": longlists_count,
+        "nominations_count": nominations_count,
     })
