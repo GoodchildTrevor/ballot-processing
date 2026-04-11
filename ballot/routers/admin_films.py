@@ -80,16 +80,15 @@ def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
     if not film:
         return HTMLResponse("Фильм не найден.", status_code=404)
 
-    longlists_count = sum(
-        1 for n in film.nominees
-        if n.nomination and n.nomination.round
-        and n.nomination.round.round_type == RoundType.LONGLIST
-    )
-    nominations_count = sum(
-        1 for n in film.nominees
-        if n.nomination and n.nomination.round
-        and n.nomination.round.round_type == RoundType.FINAL
-    )
+    longlists_count = 0
+    nominations_count = 0
+    for n in film.nominees:
+        rnd = n.nomination.round if n.nomination else None
+        if rnd and rnd.round_type == RoundType.FINAL:
+            nominations_count += 1
+        else:
+            # LONGLIST round or no round at all — both count as longlists
+            longlists_count += 1
 
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     persons = db.query(Person).order_by(Person.name).all()

@@ -79,7 +79,6 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
         .all()
     )
 
-    # Group by round (or "without round") then by nomination
     rounds_map: dict = defaultdict(lambda: defaultdict(list))
     no_round_nom: dict = defaultdict(list)
 
@@ -88,16 +87,19 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
 
     for n in nominees:
         nom = n.nomination
-        if nom and nom.round:
-            rounds_map[nom.round][nom].append(n)
-            if nom.round.round_type == RoundType.LONGLIST:
-                longlists_count += 1
-            elif nom.round.round_type == RoundType.FINAL:
+        rnd = nom.round if nom else None
+        if rnd:
+            rounds_map[rnd][nom].append(n)
+            if rnd.round_type == RoundType.FINAL:
                 nominations_count += 1
+            else:
+                # LONGLIST or any other type
+                longlists_count += 1
         else:
+            # No round assigned — treat as longlist
             no_round_nom[nom].append(n)
+            longlists_count += 1
 
-    # Build ordered stats list: [{round, nominations: [{nom, nominees: [...]}]}]
     stats = []
     for rnd in sorted(rounds_map.keys(), key=lambda r: (r.sort_order, r.id)):
         noms_for_round = []
