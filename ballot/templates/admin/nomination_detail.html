@@ -64,6 +64,12 @@
           {% endfor %}
         </select>
       </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Дедлайн голосования <span class="text-gray-300">(необяз.)</span></label>
+        <input type="datetime-local" name="vote_deadline"
+               value="{{ nom.vote_deadline.strftime('%Y-%m-%dT%H:%M') if nom.vote_deadline else '' }}"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+      </div>
       <div class="flex gap-2 pt-1">
         <button type="submit"
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition">Сохранить</button>
@@ -237,16 +243,16 @@
         </div>
       </div>
 
-      {# Song + song_url fields #}
+      {# Item + item_url fields #}
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Песня <span class="text-gray-300">(необяз.)</span></label>
-        <input type="text" name="song" x-model="songVal"
-               placeholder="Название песни..."
+        <label class="block text-xs text-gray-500 mb-1">Элемент <span class="text-gray-300">(необяз.)</span></label>
+        <input type="text" name="item" x-model="itemVal"
+               placeholder="Песня, премия..."
                class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Ссылка на песню <span class="text-gray-300">(необяз.)</span></label>
-        <input type="url" name="song_url" x-model="songUrlVal"
+        <label class="block text-xs text-gray-500 mb-1">Ссылка на элемент <span class="text-gray-300">(необяз.)</span></label>
+        <input type="url" name="item_url" x-model="itemUrlVal"
                placeholder="https://..."
                class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
       </div>
@@ -274,10 +280,9 @@
       {% if nom.type.value == 'PICK' %}
       persons,
       personQ: '', personOpen: false, personSel: null,
-      songVal: '',
-      songUrlVal: '',
+      itemVal: '',
+      itemUrlVal: '',
       {% endif %}
-      // RANK: нельзя добавить тот же фильм дважды; PICK: можно (разные персоны)
       canSelect(f) {
         return !(NOM_TYPE === 'RANK' && f.added);
       },
@@ -316,15 +321,15 @@
     { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
-  function rowEditor(currentPersonId, currentFilmId, currentSong, currentSongUrl) {
+  function rowEditor(currentPersonId, currentFilmId, currentItem, currentItemUrl) {
     return {
       editing: false,
       personSel: null,
       personQ: '', personOpen: false,
       filmSel: null,
       filmQ: '', filmOpen: false,
-      songVal: currentSong || '',
-      songUrlVal: currentSongUrl || '',
+      itemVal: currentItem || '',
+      itemUrlVal: currentItemUrl || '',
       init() {
         {% if nom.type.value == 'PICK' %}
         this.personSel = ALL_PERSONS.find(p => p.id === currentPersonId) || null;
@@ -354,14 +359,14 @@
         <th class="pb-2 pr-4">Фильм</th>
         <th class="pb-2 pr-4">Год</th>
         <th class="pb-2 pr-4">Персона</th>
-        <th class="pb-2 pr-4">Песня</th>
+        <th class="pb-2 pr-4">Элемент</th>
         <th class="pb-2"></th>
       </tr>
     </thead>
     <tbody>
       {% for nominee in nom.nominees %}
       <tr class="border-b last:border-0 align-top"
-          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }}, {{ nominee.song | tojson if nominee.song else 'null' }}, {{ nominee.song_url | tojson if nominee.song_url else 'null' }})">
+          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }}, {{ nominee.item | tojson if nominee.item else 'null' }}, {{ nominee.item_url | tojson if nominee.item_url else 'null' }})">
 
         <td class="py-2 pr-4 font-medium">
           <span x-show="!editing">
@@ -441,24 +446,24 @@
           {% endif %}
         </td>
 
-        {# Song cell #}
+        {# Item cell #}
         <td class="py-2 pr-4">
           <span x-show="!editing">
-            {% if nominee.song %}
-              {% if nominee.song_url %}
-              <a href="{{ nominee.song_url }}" target="_blank" rel="noopener noreferrer"
-                 class="text-indigo-600 hover:underline">{{ nominee.song }}</a>
+            {% if nominee.item %}
+              {% if nominee.item_url %}
+              <a href="{{ nominee.item_url }}" target="_blank" rel="noopener noreferrer"
+                 class="text-indigo-600 hover:underline">{{ nominee.item }}</a>
               {% else %}
-              {{ nominee.song }}
+              {{ nominee.item }}
               {% endif %}
             {% else %}—{% endif %}
           </span>
           {% if nom.type.value == 'PICK' %}
           <div x-show="editing" x-cloak class="space-y-1">
-            <input type="text" x-model="songVal"
-                   placeholder="Песня..."
+            <input type="text" x-model="itemVal"
+                   placeholder="Элемент..."
                    class="border border-gray-300 rounded-lg px-2 py-1.5 text-xs w-40 focus:ring-indigo-400 focus:outline-none" />
-            <input type="url" x-model="songUrlVal"
+            <input type="url" x-model="itemUrlVal"
                    placeholder="https://..."
                    class="border border-gray-300 rounded-lg px-2 py-1.5 text-xs w-40 focus:ring-indigo-400 focus:outline-none" />
           </div>
@@ -472,8 +477,8 @@
                 @submit.prevent x-ref="editForm">
             <input type="hidden" name="film_id"    :value="filmSel ? filmSel.id : '{{ nominee.film_id }}'" />
             <input type="hidden" name="person_id"  :value="personSel ? personSel.id : ''" />
-            <input type="hidden" name="song"       :value="songVal" />
-            <input type="hidden" name="song_url"   :value="songUrlVal" />
+            <input type="hidden" name="item"       :value="itemVal" />
+            <input type="hidden" name="item_url"   :value="itemUrlVal" />
             <button type="button" @click="$refs.editForm.submit()"
                     class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg mr-1 transition">Сохранить</button>
             <button type="button" @click="editing=false;init()"

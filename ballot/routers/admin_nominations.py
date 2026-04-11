@@ -192,14 +192,16 @@ def add_nominee_via_nomination(
     nom_id: int,
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
-    song: Optional[str] = Form(None),
+    item: Optional[str] = Form(None),
+    item_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
     pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
-    item_val = song.strip() if song and song.strip() else None
+    item_val = item.strip() if item and item.strip() else None
+    item_url_val = item_url.strip() if item_url and item_url.strip() else None
 
     existing = db.query(Nominee).filter(
         Nominee.nomination_id == nom_id,
@@ -213,6 +215,50 @@ def add_nominee_via_nomination(
             status_code=303,
         )
 
-    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, item=item_val))
+    db.add(Nominee(
+        nomination_id=nom_id,
+        film_id=film_id,
+        person_id=pid,
+        item=item_val,
+        item_url=item_url_val,
+    ))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+
+
+@router.post("/nominees/{nominee_id}/edit")
+def edit_nominee(
+    nominee_id: int,
+    film_id: int = Form(...),
+    person_id: Optional[str] = Form(None),
+    item: Optional[str] = Form(None),
+    item_url: Optional[str] = Form(None),
+    back: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    nominee = db.get(Nominee, nominee_id)
+    if not nominee:
+        return RedirectResponse(url="/admin/nominations", status_code=303)
+    nominee.film_id = film_id
+    nominee.person_id = _parse_int(person_id)
+    nominee.item = item.strip() if item and item.strip() else None
+    nominee.item_url = item_url.strip() if item_url and item_url.strip() else None
+    db.commit()
+    dest = f"/admin/nominations/{nominee.nomination_id}"
+    return RedirectResponse(url=dest, status_code=303)
+
+
+@router.post("/nominees/{nominee_id}/delete")
+def delete_nominee(
+    nominee_id: int,
+    back: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    nominee = db.get(Nominee, nominee_id)
+    if nominee:
+        nom_id = nominee.nomination_id
+        db.delete(nominee)
+        db.commit()
+        if back == "nomination":
+            return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
+    return RedirectResponse(url="/admin/nominations", status_code=303)
