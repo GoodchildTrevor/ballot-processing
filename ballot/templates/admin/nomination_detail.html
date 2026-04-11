@@ -303,7 +303,6 @@
 
 {# ── Bulk add nominees ── #}
 {% if films %}
-{# Auto-open bulk panel if we just returned from a bulk operation #}
 {% set bulk_had_result = bulk_created is not none %}
 {% set bulk_had_errors = bulk_not_found and bulk_not_found | length > 0 %}
 <div class="bg-white shadow rounded-xl p-6 mb-8"
@@ -316,7 +315,6 @@
 
   <div x-show="open" x-cloak class="mt-4 space-y-3">
 
-    {# Result banner after bulk submit #}
     {% if bulk_had_result %}
     <div class="rounded-lg px-4 py-3 text-sm space-y-1
       {{ 'bg-green-50 border border-green-200 text-green-700' if bulk_created | int > 0 else 'bg-gray-50 border border-gray-200 text-gray-500' }}">
@@ -377,20 +375,34 @@
     { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
-  function rowEditor(currentPersonId, currentFilmId, currentItem, currentItemUrl) {
+
+  {# Store nominee data in a JS map keyed by nominee id — avoids embedding strings in HTML attributes #}
+  const NOMINEE_DATA = {
+    {% for nominee in nom.nominees %}
+    {{ nominee.id }}: {
+      personId: {{ nominee.person_id or 'null' }},
+      filmId: {{ nominee.film_id }},
+      item: {{ nominee.item | tojson if nominee.item else 'null' }},
+      itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  };
+
+  function rowEditor(nomineeId) {
+    const d = NOMINEE_DATA[nomineeId] || {};
     return {
       editing: false,
       personSel: null,
       personQ: '', personOpen: false,
       filmSel: null,
       filmQ: '', filmOpen: false,
-      itemVal: currentItem || '',
-      itemUrlVal: currentItemUrl || '',
+      itemVal: d.item || '',
+      itemUrlVal: d.itemUrl || '',
       init() {
         {% if nom.type.value == 'PICK' %}
-        this.personSel = ALL_PERSONS.find(p => p.id === currentPersonId) || null;
+        this.personSel = ALL_PERSONS.find(p => p.id === d.personId) || null;
         {% endif %}
-        this.filmSel = ALL_FILMS.find(f => f.id === currentFilmId) || null;
+        this.filmSel = ALL_FILMS.find(f => f.id === d.filmId) || null;
       },
       visiblePersons() {
         const q = this.personQ.toLowerCase().trim();
@@ -422,7 +434,7 @@
     <tbody>
       {% for nominee in nom.nominees %}
       <tr class="border-b last:border-0 align-top"
-          x-data="rowEditor({{ nominee.person_id or 'null' }}, {{ nominee.film_id }}, {{ nominee.item | tojson if nominee.item else 'null' }}, {{ nominee.item_url | tojson if nominee.item_url else 'null' }})">
+          x-data="rowEditor({{ nominee.id }})">
 
         <td class="py-2 pr-4 font-medium">
           <span x-show="!editing">
@@ -546,7 +558,7 @@
             <button type="button" @click="editing=true"
                     class="text-xs text-indigo-500 hover:underline">Изменить</button>
             <form method="post" action="/admin/nominees/{{ nominee.id }}/delete"
-                  @submit.prevent="confirm('Удалить «{{ nominee.film.title }}»?') && $el.submit()">
+                  @submit.prevent="confirm('Удалить?') && $el.submit()">
               <input type="hidden" name="back" value="nomination" />
               <button class="text-xs text-red-500 hover:underline">Удалить</button>
             </form>
