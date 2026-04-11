@@ -17,8 +17,6 @@ def _annotate_rows(rows: list, count: int | None) -> list:
     """Add dense_rank and is_nominee using DENSE_RANK logic."""
     if not rows:
         return rows
-
-    # DENSE_RANK: одинаковый score → одинаковый ранг
     rank = 1
     prev_score = None
     for i, row in enumerate(rows):
@@ -27,8 +25,19 @@ def _annotate_rows(rows: list, count: int | None) -> list:
         row["position"] = rank
         row["is_nominee"] = bool(count and rank <= count)
         prev_score = row["score"]
-
     return rows
+
+
+def _nominee_label(nominee) -> str:
+    """Build display label for a PICK nominee: person > item > film."""
+    film_part = f"{nominee.film.title} ({nominee.film.year})" if nominee.film else "?"
+    if getattr(nominee, 'persons_label', None):
+        return f"{nominee.persons_label} — {film_part}"
+    if getattr(nominee, 'person', None) and nominee.person:
+        return f"{nominee.person.name} — {film_part}"
+    if getattr(nominee, 'item', None) and nominee.item:
+        return f"{nominee.item} — {film_part}"
+    return nominee.film.title if nominee.film else "?"
 
 
 def get_results(db: Session):
@@ -73,9 +82,7 @@ def get_results(db: Session):
             )
             rows = []
             for nominee, votes in rows_raw:
-                label = nominee.film.title
-                if nominee.person:
-                    label = f"{nominee.person.name} ({nominee.film.title})"
+                label = _nominee_label(nominee)
                 voter_names = ", ".join(
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes)
                 )
@@ -105,7 +112,7 @@ def export_results(db: Session = Depends(get_db)):
             ws.append(["Участник", "Голоса", "Проголосовали",
                        "Номинант" if item["nom"].nominees_count else ""])
         for row in item["rows"]:
-            extra = ["✅ Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
+            extra = ["\u2705 Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
             ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)

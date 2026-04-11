@@ -1,4 +1,4 @@
-"""Voter-facing routes — round-aware.
+"""Вотер-фасинг роутс — round-aware.
 
 URL scheme
 ----------
@@ -179,7 +179,6 @@ async def submit_vote(round_id: int, request: Request, db: Session = Depends(get
     round_nominee_ids = {
         n.id for nom in nominations for n in nom.nominees
     }
-    round_nomination_ids = {nom.id for nom in nominations}
 
     # Delete previous votes/rankings for this round's nominations only
     for nom in nominations:
@@ -202,6 +201,9 @@ async def submit_vote(round_id: int, request: Request, db: Session = Depends(get
         if nom.type == NominationType.PICK:
             key = f"pick_{nom.id}"
             raw = form.getlist(key)
+            # Backend pick_max guard: silently truncate to the limit
+            if nom.pick_max and len(raw) > nom.pick_max:
+                raw = raw[:nom.pick_max]
             for val in raw:
                 try:
                     nid = int(val)
@@ -313,12 +315,12 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
             ru_votes   = [n for n in nom.nominees
                           if n.id in pick_votes and pick_votes[n.id]]
             for n in main_votes:
-                label = n.persons_label and f"{n.persons_label} ({n.film.title})" \
+                label = (n.persons_label and f"{n.persons_label} ({n.film.title})") \
                         or (n.item and f"{n.item} ({n.film.title})") \
                         or n.film.title
                 ws.append([nom.name, "PICK", label, "✔"])
             for n in ru_votes:
-                label = n.persons_label and f"{n.persons_label} ({n.film.title})" \
+                label = (n.persons_label and f"{n.persons_label} ({n.film.title})") \
                         or (n.item and f"{n.item} ({n.film.title})") \
                         or n.film.title
                 ws.append([nom.name, "PICK", label, "runner-up"])

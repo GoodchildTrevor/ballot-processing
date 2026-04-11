@@ -16,7 +16,6 @@
 {% endblock %}
 
 {% block content %}
-{# Draft restore banner #}
 {% if draft_restored %}
 <div class="mb-6 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
   💾 Найден незавершённый черновик — данные восстановлены.
@@ -36,9 +35,10 @@
       action="/rounds/{{ round.id }}/vote">
 
   {% for nom in nominations %}
+  {% set pick_max = nom.pick_max %}
+  {% set nom_id = nom.id %}
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-8 overflow-hidden">
 
-    {# Nomination header #}
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex flex-wrap items-center gap-3">
       <span class="font-semibold text-gray-900">{{ nom.name }}</span>
       <span class="text-xs px-2 py-0.5 rounded-full
@@ -46,7 +46,7 @@
         {{ nom.type.value }}
       </span>
       {% if nom.type.value == 'PICK' %}
-        <span class="text-xs text-gray-400">
+        <span class="text-xs text-gray-400" id="hint-{{ nom.id }}">
           {% if nom.pick_min and nom.pick_max %}
             Выберите от {{ nom.pick_min }} до {{ nom.pick_max }}
           {% elif nom.pick_max %}
@@ -55,23 +55,27 @@
             Выберите нужное количество
           {% endif %}
         </span>
+        {% if nom.pick_max %}
+          <span class="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" id="counter-{{ nom.id }}">
+            0 / {{ nom.pick_max }}
+          </span>
+        {% endif %}
       {% else %}
         <span class="text-xs text-gray-400">Расставьте места (от 1 до {{ nom.nominees | length }})</span>
       {% endif %}
     </div>
 
-    {# Nominees #}
     <div class="divide-y divide-gray-100">
       {% for nominee in nom.nominees %}
       <div class="px-5 py-3 flex flex-wrap items-center gap-3">
 
-        {# PICK — checkbox #}
         {% if nom.type.value == 'PICK' %}
           <input type="checkbox"
                  name="pick_{{ nom.id }}"
                  value="{{ nominee.id }}"
                  id="pick_{{ nom.id }}_{{ nominee.id }}"
-                 class="w-4 h-4 text-indigo-600 rounded"
+                 class="w-4 h-4 text-indigo-600 rounded pick-cb"
+                 data-nom="{{ nom.id }}"
                  {% if draft and (nom.id | string) in draft.get('picks', {}) and (nominee.id | string) in draft['picks'][(nom.id | string)] %}checked{% endif %}
           />
           <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-sm text-gray-800">
@@ -87,7 +91,6 @@
             {% endif %}
           </label>
 
-        {# RANK — number input #}
         {% else %}
           <input type="number"
                  name="rank_{{ nom.id }}_{{ nominee.film_id }}"
@@ -108,7 +111,6 @@
       {% endfor %}
     </div>
 
-    {# Runner-up block — only FINAL PICK nominations with has_runner_up #}
     {% if nom.type.value == 'PICK' and nom.has_runner_up %}
     <div class="border-t border-dashed border-amber-200 bg-amber-50 px-5 py-4">
       <p class="text-xs font-semibold text-amber-700 mb-3">🥈 Runner-up (второй выбор)</p>
@@ -149,6 +151,61 @@
 </form>
 
 <script>
+// ── pick_max enforcement ────────────────────────────────────────────────────
+(function() {
+  // Map: nomId -> { max, checkboxes[] }
+  const groups = {};
+  document.querySelectorAll('input.pick-cb').forEach(cb => {
+    const nomId = cb.dataset.nom;
+    if (!groups[nomId]) {
+      // Find pick_max from counter element (if exists)
+      const counter = document.getElementById('counter-' + nomId);
+      const max = counter ? parseInt(counter.textContent.split('/')[1]) : null;
+      groups[nomId] = { max, checkboxes: [], counter };
+    }
+    groups[nomId].checkboxes.push(cb);
+  });
+
+  function updateGroup(nomId) {
+    const g = groups[nomId];
+    if (!g) return;
+    const checked = g.checkboxes.filter(c => c.checked).length;
+    // Update counter
+    if (g.counter) {
+      const max = g.max;
+      g.counter.textContent = checked + '\u00a0/\u00a0' + max;
+      g.counter.className = g.counter.className.replace(/text-\w+-\d+/g, '');
+      if (max && checked >= max) {
+        g.counter.classList.add('text-red-600', 'font-semibold');
+      } else {
+        g.counter.classList.add('text-gray-500');
+      }
+    }
+    // Disable unchecked boxes if limit reached
+    if (g.max && checked >= g.max) {
+      g.checkboxes.forEach(cb => {
+        if (!cb.checked) {
+          cb.disabled = true;
+          cb.closest('div').style.opacity = '0.4';
+        }
+      });
+    } else {
+      g.checkboxes.forEach(cb => {
+        cb.disabled = false;
+        cb.closest('div').style.opacity = '';
+      });
+    }
+  }
+
+  // Init all groups
+  Object.keys(groups).forEach(nomId => updateGroup(nomId));
+
+  // Listen for changes
+  document.querySelectorAll('input.pick-cb').forEach(cb => {
+    cb.addEventListener('change', () => updateGroup(cb.dataset.nom));
+  });
+})();
+
 // ── Autosave draft ──────────────────────────────────────────────────────────
 function collectDraft() {
   const picks = {}, ranks = {}, runnerups = {};
@@ -187,10 +244,7 @@ async function saveDraft(silent = true) {
   }
 }
 
-// Manual save
 document.getElementById('save-draft-btn').addEventListener('click', () => saveDraft(false));
-
-// Auto-save every 60 sec
 setInterval(() => saveDraft(true), 60000);
 
 // ── Deadline countdown ───────────────────────────────────────────────────────
