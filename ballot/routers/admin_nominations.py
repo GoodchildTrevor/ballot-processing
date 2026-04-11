@@ -1,8 +1,10 @@
+import io
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+import openpyxl
 from ballot.database import get_db
 from ballot.models import Nomination, NominationType, Nominee, Film, Person
 from ballot.auth import require_admin
@@ -114,6 +116,36 @@ def move_nomination(
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
 
+@router.get("/nominations/export-longlist")
+def export_longlist(db: Session = Depends(get_db)):
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for nom in nominations:
+        ws = wb.create_sheet(title=nom.name[:31])
+        ws.append(["Фильм", "Год", "Персона", "Элемент", "Ссылка на фильм"])
+        nominees_sorted = sorted(
+            nom.nominees,
+            key=lambda n: (n.person.name.lower() if n.person else n.film.title.lower())
+        )
+        for n in nominees_sorted:
+            ws.append([
+                n.film.title,
+                n.film.year,
+                n.person.name if n.person else "",
+                n.item if n.item else "",
+                n.film.url or "",
+            ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=longlist.xlsx"},
+    )
+
+
 @router.get("/nominations/{nom_id}", response_class=HTMLResponse)
 def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_db)):
     nom = db.get(Nomination, nom_id)
@@ -157,7 +189,7 @@ def add_nominee_via_nomination(
         Nominee.nomination_id == nom_id,
         Nominee.film_id == film_id,
         Nominee.person_id == pid,
-        Nominee.song == song_val,
+        Nominee.item == song_val,
     ).first()
     if existing:
         return RedirectResponse(
@@ -165,6 +197,6 @@ def add_nominee_via_nomination(
             status_code=303,
         )
 
-    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, song=song_val))
+    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, item=song_val))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
