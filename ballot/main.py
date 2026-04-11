@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 from ballot.database import engine, Base, run_migrations, get_db
 import ballot.models  # noqa: F401
 from ballot.models import Voter
-from ballot.routers import vote, admin_films, admin_nominations, admin_voters, admin_results, admin_persons
+from ballot.routers import (
+    vote,
+    admin_films,
+    admin_nominations,
+    admin_voters,
+    admin_results,
+    admin_persons,
+    admin_rounds,
+)
 
 run_migrations()
 Base.metadata.create_all(bind=engine)
@@ -19,6 +27,7 @@ app.include_router(admin_nominations.router)
 app.include_router(admin_voters.router)
 app.include_router(admin_results.router)
 app.include_router(admin_persons.router)
+app.include_router(admin_rounds.router)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -1,21 +1,45 @@
+"""Voter-facing routes — round-aware.
+
+URL scheme
+----------
+/vote                     GET  – redirect to the active round's vote page
+/rounds/{round_id}/vote   GET  – ballot page for a specific round
+/rounds/{round_id}/vote   POST – submit ballot
+/rounds/{round_id}/draft  POST – autosave draft
+/thank-you                GET  – confirmation
+/my-ballot/{round_id}/export  GET – download own ballot as xlsx
+
+Fallback compat: /vote still works (finds first active round).
+"""
+from __future__ import annotations
+
 import io
-from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Form, Request
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import openpyxl
-from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Vote, Ranking, Voter
+
 from ballot.auth import require_voter
+from ballot.database import get_db
+from ballot.models import (
+    Nomination, NominationType,
+    Nominee, Vote, Ranking, Voter,
+    Round, RoundParticipation,
+)
 
 router = APIRouter(dependencies=[Depends(require_voter)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _nominee_sort_key(nominee) -> str:
-    """Alphabetical sort key: person name > item title > film title."""
     if nominee.person:
         return (nominee.person.name or "").lower()
     if nominee.item:
@@ -29,65 +53,150 @@ def _sort_nominations(nominations):
     return nominations
 
 
-def _is_voting_open(nominations: list) -> tuple[bool, Optional[object]]:
-    """Return (True, None) if all deadlines allow voting, else (False, earliest_expired_nom)."""
-    now = datetime.now()
-    for nom in nominations:
-        if nom.vote_deadline and now > nom.vote_deadline:
-            return False, nom
-    return True, None
+def _get_or_create_participation(
+    db: Session, round_id: int, voter_id: int
+) -> RoundParticipation:
+    p = db.query(RoundParticipation).filter_by(
+        round_id=round_id, voter_id=voter_id
+    ).first()
+    if not p:
+        p = RoundParticipation(round_id=round_id, voter_id=voter_id)
+        db.add(p)
+        db.flush()
+    return p
 
+
+def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
+    return (
+        db.query(Nomination)
+        .options(
+            joinedload(Nomination.nominees).joinedload(Nominee.film),
+            joinedload(Nomination.nominees).joinedload(Nominee.person),
+        )
+        .filter(Nomination.round_id == round_id)
+        .order_by(Nomination.sort_order, Nomination.id)
+        .all()
+    )
+
+
+# ---------------------------------------------------------------------------
+# /vote  – redirect to first active round
+# ---------------------------------------------------------------------------
 
 @router.get("/vote", response_class=HTMLResponse)
-def vote_page(request: Request, db: Session = Depends(get_db)):
-    voter: Voter = request.state.voter
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-
-    open_, expired_nom = _is_voting_open(nominations)
-    if not open_:
+def vote_redirect(request: Request, db: Session = Depends(get_db)):
+    active = db.query(Round).filter(Round.is_active == True).order_by(Round.sort_order).first()  # noqa: E712
+    if not active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
-            {"nom": expired_nom},
+            {"nom": None, "message": "Активных раундов нет."},
+            status_code=403,
+        )
+    return RedirectResponse(url=f"/rounds/{active.id}/vote", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# GET /rounds/{round_id}/vote
+# ---------------------------------------------------------------------------
+
+@router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
+def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = db.get(Round, round_id)
+
+    if not rnd or not rnd.is_active:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": "Этот раунд не активен."},
             status_code=403,
         )
 
+    # Deadline check
+    if rnd.deadline and datetime.now() > rnd.deadline:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
+            status_code=403,
+        )
+
+    nominations = _nominations_for_round(db, round_id)
     _sort_nominations(nominations)
-    draft = voter.draft or {}
+
+    participation = _get_or_create_participation(db, round_id, voter.id)
+    db.commit()
+
+    draft = participation.draft or {}
     draft_restored = bool(draft)
     return templates.TemplateResponse(request, "vote.html", {
         "voter": voter,
+        "round": rnd,
         "nominations": nominations,
         "draft": draft,
         "draft_restored": draft_restored,
     })
 
 
-@router.post("/vote/draft")
-async def save_draft(request: Request, db: Session = Depends(get_db)):
+# ---------------------------------------------------------------------------
+# POST /rounds/{round_id}/draft  – autosave
+# ---------------------------------------------------------------------------
+
+@router.post("/rounds/{round_id}/draft")
+async def save_draft(round_id: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     body = await request.json()
-    voter.draft = body
+    p = _get_or_create_participation(db, round_id, voter.id)
+    p.draft = body
     db.commit()
     return {"ok": True}
 
 
-@router.post("/vote")
-async def submit_vote(request: Request, db: Session = Depends(get_db)):
-    voter: Voter = request.state.voter
-    nominations = db.query(Nomination).all()
+# ---------------------------------------------------------------------------
+# POST /rounds/{round_id}/vote  – submit
+# ---------------------------------------------------------------------------
 
-    open_, expired_nom = _is_voting_open(nominations)
-    if not open_:
+@router.post("/rounds/{round_id}/vote")
+async def submit_vote(round_id: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = db.get(Round, round_id)
+
+    if not rnd or not rnd.is_active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
-            {"nom": expired_nom},
+            {"nom": None, "message": "Этот раунд не активен."},
+            status_code=403,
+        )
+    if rnd.deadline and datetime.now() > rnd.deadline:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
             status_code=403,
         )
 
+    nominations = _nominations_for_round(db, round_id)
     form = await request.form()
 
-    db.query(Vote).filter(Vote.voter_id == voter.id).delete()
-    db.query(Ranking).filter(Ranking.voter_id == voter.id).delete()
+    # Collect nominee ids that belong to this round (safety check)
+    round_nominee_ids = {
+        n.id for nom in nominations for n in nom.nominees
+    }
+    round_nomination_ids = {nom.id for nom in nominations}
+
+    # Delete previous votes/rankings for this round's nominations only
+    for nom in nominations:
+        if nom.type == NominationType.RANK:
+            db.query(Ranking).filter(
+                Ranking.voter_id == voter.id,
+                Ranking.nomination_id == nom.id,
+            ).delete()
+        else:
+            nominee_ids = [n.id for n in nom.nominees]
+            if nominee_ids:
+                db.query(Vote).filter(
+                    Vote.voter_id == voter.id,
+                    Vote.nominee_id.in_(nominee_ids),
+                ).delete(synchronize_session="fetch")
+
+    is_final = (rnd.round_type.value == "FINAL")
 
     for nom in nominations:
         if nom.type == NominationType.PICK:
@@ -96,11 +205,22 @@ async def submit_vote(request: Request, db: Session = Depends(get_db)):
             for val in raw:
                 try:
                     nid = int(val)
-                    if db.get(Nominee, nid):
-                        db.add(Vote(voter_id=voter.id, nominee_id=nid))
+                    if nid in round_nominee_ids:
+                        db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=False))
                 except ValueError:
                     pass
-        else:
+            # Runner-up (FINAL only)
+            if is_final and nom.has_runner_up:
+                ru_key = f"runnerup_{nom.id}"
+                ru_val = form.get(ru_key)
+                if ru_val:
+                    try:
+                        nid = int(ru_val)
+                        if nid in round_nominee_ids:
+                            db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=True))
+                    except ValueError:
+                        pass
+        else:  # RANK
             for nominee in nom.nominees:
                 key = f"rank_{nom.id}_{nominee.film_id}"
                 val = form.get(key)
@@ -117,54 +237,92 @@ async def submit_vote(request: Request, db: Session = Depends(get_db)):
                     except ValueError:
                         pass
 
-    voter.voted_at = datetime.now(timezone.utc)
-    voter.draft = None
+    participation = _get_or_create_participation(db, round_id, voter.id)
+    participation.voted_at = datetime.now(timezone.utc)
+    participation.draft = None
     db.commit()
-    return RedirectResponse(url="/thank-you", status_code=303)
+    return RedirectResponse(url=f"/thank-you?round_id={round_id}", status_code=303)
 
+
+# ---------------------------------------------------------------------------
+# /thank-you
+# ---------------------------------------------------------------------------
 
 @router.get("/thank-you", response_class=HTMLResponse)
 def thank_you(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
-    has_votes = bool(voter.voted_at)
-    return templates.TemplateResponse(request, "thank_you.html", {"has_votes": has_votes})
+    round_id_str = request.query_params.get("round_id")
+    has_votes = False
+    round_id = None
+    if round_id_str:
+        try:
+            round_id = int(round_id_str)
+            p = db.query(RoundParticipation).filter_by(
+                round_id=round_id, voter_id=voter.id
+            ).first()
+            has_votes = bool(p and p.voted_at)
+        except ValueError:
+            pass
+    return templates.TemplateResponse(
+        request, "thank_you.html",
+        {"has_votes": has_votes, "round_id": round_id},
+    )
 
 
-@router.get("/my-ballot/export")
-def export_my_ballot(request: Request, db: Session = Depends(get_db)):
-    """Download the current voter's own ballot as an Excel file."""
+# ---------------------------------------------------------------------------
+# /my-ballot/{round_id}/export
+# ---------------------------------------------------------------------------
+
+@router.get("/my-ballot/{round_id}/export")
+def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
-    if not voter.voted_at:
-        return RedirectResponse(url="/thank-you", status_code=303)
+    p = db.query(RoundParticipation).filter_by(
+        round_id=round_id, voter_id=voter.id
+    ).first()
+    if not p or not p.voted_at:
+        return RedirectResponse(url=f"/thank-you?round_id={round_id}", status_code=303)
 
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    nominations = _nominations_for_round(db, round_id)
+    rnd = db.get(Round, round_id)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Бюллетень"
     ws.append(["Номинация", "Тип", "Номинант", "Голос / Место"])
 
+    nominee_ids = {n.id for nom in nominations for n in nom.nominees}
     pick_votes = {
-        v.nominee_id for v in db.query(Vote).filter(Vote.voter_id == voter.id).all()
+        v.nominee_id: v.is_runner_up
+        for v in db.query(Vote).filter(
+            Vote.voter_id == voter.id,
+            Vote.nominee_id.in_(nominee_ids),
+        ).all()
     }
     rankings = {
         (r.nomination_id, r.film_id): r.rank
-        for r in db.query(Ranking).filter(Ranking.voter_id == voter.id).all()
+        for r in db.query(Ranking).filter(
+            Ranking.voter_id == voter.id,
+            Ranking.nomination_id.in_({nom.id for nom in nominations}),
+        ).all()
     }
 
     for nom in nominations:
         if nom.type == NominationType.PICK:
-            voted_nominees = [n for n in nom.nominees if n.id in pick_votes]
-            if voted_nominees:
-                for n in voted_nominees:
-                    if n.persons_label:
-                        label = f"{n.persons_label} ({n.film.title})"
-                    elif n.item:
-                        label = f"{n.item} ({n.film.title})"
-                    else:
-                        label = n.film.title
-                    ws.append([nom.name, "PICK", label, "✔"])
-            else:
+            main_votes = [n for n in nom.nominees
+                          if n.id in pick_votes and not pick_votes[n.id]]
+            ru_votes   = [n for n in nom.nominees
+                          if n.id in pick_votes and pick_votes[n.id]]
+            for n in main_votes:
+                label = n.persons_label and f"{n.persons_label} ({n.film.title})" \
+                        or (n.item and f"{n.item} ({n.film.title})") \
+                        or n.film.title
+                ws.append([nom.name, "PICK", label, "✔"])
+            for n in ru_votes:
+                label = n.persons_label and f"{n.persons_label} ({n.film.title})" \
+                        or (n.item and f"{n.item} ({n.film.title})") \
+                        or n.film.title
+                ws.append([nom.name, "PICK", label, "runner-up"])
+            if not main_votes and not ru_votes:
                 ws.append([nom.name, "PICK", "— пропущено", ""])
         else:
             ranked = [
@@ -182,8 +340,10 @@ def export_my_ballot(request: Request, db: Session = Depends(get_db)):
     wb.save(buf)
     buf.seek(0)
     safe_name = voter.name.replace(" ", "_")
+    label_safe = (rnd.label if rnd else str(round_id)).replace(" ", "_")
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=ballot_{safe_name}.xlsx"},
+        headers={"Content-Disposition":
+                 f"attachment; filename=ballot_{safe_name}_{label_safe}.xlsx"},
     )
