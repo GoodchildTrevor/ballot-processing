@@ -70,15 +70,13 @@ const PERSONS_DATA = [
       <template x-for="p in filtered()" :key="p.id">
         <tr class="border-b last:border-0 hover:bg-gray-50 align-top" x-data="{ editing: false }">
 
+          {# Person name — external link if url exists, plain span otherwise #}
           <td class="py-2 pr-4">
             <span x-show="!editing">
-              <template x-if="p.url">
-                <a :href="p.url" target="_blank" rel="noopener noreferrer"
-                   class="font-medium text-indigo-600 hover:underline" x-text="p.name"></a>
-              </template>
-              <template x-if="!p.url">
-                <span class="font-medium" x-text="p.name"></span>
-              </template>
+              <span x-html="p.url
+                ? '<a href=&quot;' + p.url + '&quot; target=&quot;_blank&quot; rel=&quot;noopener noreferrer&quot; class=&quot;font-medium text-indigo-600 hover:underline&quot;>' + escHtml(p.name) + '</a>'
+                : '<span class=&quot;font-medium text-gray-800&quot;>' + escHtml(p.name) + '</span>'
+              "></span>
             </span>
             <form x-show="editing" :action="'/admin/persons/' + p.id + '/edit'"
                   method="post" class="flex flex-wrap gap-2 items-center">
@@ -94,28 +92,12 @@ const PERSONS_DATA = [
 
           <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="p.longlist_count || '—'"></td>
 
+          {# Longlist entries: film link (external if url) + nomination link (internal admin page) #}
           <td class="py-2 pr-4">
-            <template x-if="p.longlists.length === 0">
-              <span class="text-gray-300 text-xs">—</span>
-            </template>
+            <span x-show="p.longlists.length === 0" class="text-gray-300 text-xs">—</span>
             <template x-for="ll in p.longlists" :key="ll.nom_id + '-' + ll.film_id">
-              <div class="text-xs mb-0.5 flex flex-wrap items-baseline gap-x-1">
-                {# Film: link to external URL if exists, else plain text #}
-                <template x-if="ll.film_url">
-                  <a :href="ll.film_url" target="_blank" rel="noopener noreferrer"
-                     class="font-medium text-gray-700 hover:text-indigo-600 hover:underline"
-                     x-text="ll.film"></a>
-                </template>
-                <template x-if="!ll.film_url">
-                  <span class="font-medium text-gray-700" x-text="ll.film"></span>
-                </template>
-                <span class="text-gray-400" x-text="'(' + ll.year + ')'"></span>
-                <span class="text-gray-300">—</span>
-                {# Nomination: link to admin nomination detail page #}
-                <a :href="'/admin/nominations/' + ll.nom_id"
-                   class="text-indigo-400 hover:text-indigo-600 hover:underline"
-                   x-text="ll.nom"></a>
-              </div>
+              <div class="text-xs mb-0.5 flex flex-wrap items-baseline gap-x-1"
+                   x-html="filmEntry(ll)"></div>
             </template>
           </td>
 
@@ -137,6 +119,23 @@ const PERSONS_DATA = [
 </div>
 
 <script>
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function filmEntry(ll) {
+  const filmPart = ll.film_url
+    ? '<a href="' + ll.film_url + '" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-700 hover:text-indigo-600 hover:underline">' + escHtml(ll.film) + '</a>'
+    : '<span class="font-medium text-gray-700">' + escHtml(ll.film) + '</span>';
+  const yearPart = '<span class="text-gray-400">(' + ll.year + ')</span>';
+  const nomPart  = '<a href="/admin/nominations/' + ll.nom_id + '" class="text-indigo-400 hover:text-indigo-600 hover:underline">' + escHtml(ll.nom) + '</a>';
+  return filmPart + ' ' + yearPart + ' — ' + nomPart;
+}
+
 function personsTable() {
   return {
     search: '',
