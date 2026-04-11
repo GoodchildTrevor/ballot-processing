@@ -15,7 +15,13 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _voter_voted_at(voter: Voter, db: Session) -> datetime | None:
-    """Return the most recent voted_at across all RoundParticipations for this voter."""
+    """Return the most recent voted_at for this voter.
+    
+    Primary: look for RoundParticipation with voted_at set.
+    Fallback: if voter has any Vote or Ranking records but no participation
+    (legacy data from before the Round system), return a sentinel datetime
+    so the UI shows them as having voted.
+    """
     p = (
         db.query(RoundParticipation)
         .filter(
@@ -25,7 +31,18 @@ def _voter_voted_at(voter: Voter, db: Session) -> datetime | None:
         .order_by(RoundParticipation.voted_at.desc())
         .first()
     )
-    return p.voted_at if p else None
+    if p:
+        return p.voted_at
+
+    # Legacy fallback: voter has votes/rankings but no participation record
+    has_votes = db.query(Vote).filter(Vote.voter_id == voter.id).first() is not None
+    if not has_votes:
+        has_votes = db.query(Ranking).filter(Ranking.voter_id == voter.id).first() is not None
+    if has_votes:
+        # Return a placeholder so the template shows voted status.
+        # We don't know the exact time, so return a zero-epoch datetime as a marker.
+        return datetime(2000, 1, 1, 0, 0, 0)
+    return None
 
 
 @router.get("/voters", response_class=HTMLResponse)
