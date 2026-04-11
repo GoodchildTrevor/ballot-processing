@@ -1,10 +1,11 @@
 from typing import Optional
+from collections import defaultdict
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Person, Nominee
+from ballot.models import Person, Nominee, Nomination, Round
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -56,3 +57,60 @@ def edit_person(
         person.url = url.strip() if url and url.strip() else None
         db.commit()
     return RedirectResponse(url="/admin/persons", status_code=303)
+
+
+@router.get("/persons/{person_id}", response_class=HTMLResponse)
+def person_detail(person_id: int, request: Request, db: Session = Depends(get_db)):
+    person = (
+        db.query(Person)
+        .filter(Person.id == person_id)
+        .first()
+    )
+    if not person:
+        return HTMLResponse("Персона не найдена.", status_code=404)
+
+    nominees = (
+        db.query(Nominee)
+        .options(
+            joinedload(Nominee.nomination).joinedload(Nomination.round),
+            joinedload(Nominee.film),
+        )
+        .filter(Nominee.person_id == person_id)
+        .all()
+    )
+
+    # Group by round (or "without round") then by nomination
+    rounds_map: dict = defaultdict(lambda: defaultdict(list))
+    no_round_nom: dict = defaultdict(list)
+
+    for n in nominees:
+        nom = n.nomination
+        if nom and nom.round:
+            rounds_map[nom.round][nom].append(n)
+        else:
+            no_round_nom[nom].append(n)
+
+    # Build ordered stats list: [{round, nominations: [{nom, nominees: [...]}]}]
+    stats = []
+    # rounds sorted by sort_order
+    for rnd in sorted(rounds_map.keys(), key=lambda r: (r.sort_order, r.id)):
+        noms_for_round = []
+        for nom, noms in sorted(rounds_map[rnd].items(), key=lambda x: (x[0].sort_order, x[0].id)):
+            noms_for_round.append({"nom": nom, "nominees": sorted(noms, key=lambda n: n.film.title)})
+        stats.append({"round": rnd, "nominations": noms_for_round})
+
+    if no_round_nom:
+        noms_no_round = []
+        for nom, noms in sorted(no_round_nom.items(), key=lambda x: (x[0].sort_order if x[0] else 0, x[0].id if x[0] else 0)):
+            noms_no_round.append({"nom": nom, "nominees": sorted(noms, key=lambda n: n.film.title)})
+        stats.append({"round": None, "nominations": noms_no_round})
+
+    total_noms = len(nominees)
+    rounds_count = len(rounds_map)
+
+    return templates.TemplateResponse(request, "admin/person_detail.html", {
+        "person": person,
+        "stats": stats,
+        "total_noms": total_noms,
+        "rounds_count": rounds_count,
+    })
