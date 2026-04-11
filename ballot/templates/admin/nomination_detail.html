@@ -15,6 +15,9 @@
         {% if nom.type.value == 'PICK' %}
         <span class="text-xs text-gray-500">выбрать {{ nom.pick_min or 1 }}–{{ nom.pick_max or 1 }}</span>
         {% endif %}
+        {% if nom.nominees_count %}
+        <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">номинантов: {{ nom.nominees_count }}</span>
+        {% endif %}
         {% if nom.year_filter %}
         <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">год: {{ nom.year_filter }}</span>
         {% endif %}
@@ -55,6 +58,15 @@
         </div>
       </div>
       <div>
+        <label class="block text-xs text-gray-500 mb-1">
+          Число номинантов <span class="text-gray-300">(необяз.)</span>
+        </label>
+        <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}"
+               placeholder="—"
+               class="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+        <p class="text-xs text-gray-400 mt-1">Ограничивает pick_max сверху; используется для отображения прогресса лонг-листа.</p>
+      </div>
+      <div>
         <label class="block text-xs text-gray-500 mb-1">Год <span class="text-gray-300">(необяз.)</span></label>
         <select name="year_filter"
                 class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
@@ -76,7 +88,18 @@
 
 {# ── Add to longlist ── #}
 <div class="bg-white shadow rounded-xl p-6 mb-4">
-  <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм в лонг-лист</h2>
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-base font-semibold text-gray-700">Добавить фильм в лонг-лист</h2>
+    {% if nom.nominees_count %}
+    <span class="text-xs text-gray-400">{{ nom.nominees | length }}
+      <span class="text-gray-300">/</span>
+      {{ nom.nominees_count }}
+      {% if nom.nominees | length >= nom.nominees_count %}
+      <span class="ml-1 text-green-600 font-medium">✓ заполнен</span>
+      {% endif %}
+    </span>
+    {% endif %}
+  </div>
 
   {% if error == 'duplicate' %}
   <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
@@ -419,7 +442,7 @@
 </script>
 
 <div class="bg-white shadow rounded-xl p-6">
-  <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }})</h2>
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }}{% if nom.nominees_count %} / {{ nom.nominees_count }}{% endif %})</h2>
   {% if nom.nominees %}
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
