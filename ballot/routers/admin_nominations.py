@@ -4,10 +4,9 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from datetime import datetime
 import openpyxl
 from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Film, Person
+from ballot.models import Nomination, NominationType, Nominee, Film, Person, Round
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -23,16 +22,6 @@ def _parse_int(v: Optional[str]) -> Optional[int]:
     return None
 
 
-def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
-    """Parse HTML datetime-local value (YYYY-MM-DDTHH:MM) to naive datetime."""
-    if v and v.strip():
-        try:
-            return datetime.fromisoformat(v.strip())
-        except ValueError:
-            pass
-    return None
-
-
 def _get_years(db: Session) -> list[int]:
     rows = db.query(Film.year).distinct().order_by(Film.year.desc()).all()
     return [r[0] for r in rows]
@@ -42,9 +31,11 @@ def _get_years(db: Session) -> list[int]:
 def list_nominations(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     years = _get_years(db)
+    rounds = db.query(Round).order_by(Round.sort_order, Round.id).all()
     return templates.TemplateResponse(request, "admin/nominations.html", {
         "nominations": nominations,
         "years": years,
+        "rounds": rounds,
     })
 
 
@@ -56,22 +47,23 @@ def create_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
-    vote_deadline: Optional[str] = Form(None),
+    round_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     pmin = _parse_int(pick_min) if type == NominationType.PICK else None
     pmax = _parse_int(pick_max) if type == NominationType.PICK else None
     nc = _parse_int(nominees_count)
     yf = _parse_int(year_filter)
-    dl = _parse_deadline(vote_deadline)
+    rid = _parse_int(round_id)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
     db.add(Nomination(
         name=name, type=type,
         pick_min=pmin, pick_max=pmax,
         nominees_count=nc,
-        year_filter=yf, sort_order=order,
-        vote_deadline=dl,
+        year_filter=yf,
+        round_id=rid,
+        sort_order=order,
     ))
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
@@ -86,7 +78,7 @@ def edit_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
-    vote_deadline: Optional[str] = Form(None),
+    round_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
@@ -98,7 +90,7 @@ def edit_nomination(
     nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
     nom.nominees_count = _parse_int(nominees_count)
     nom.year_filter = _parse_int(year_filter)
-    nom.vote_deadline = _parse_deadline(vote_deadline)
+    nom.round_id = _parse_int(round_id)
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 

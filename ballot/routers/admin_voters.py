@@ -3,12 +3,29 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Voter, Vote, Ranking, Nomination, NominationType, Nominee, Film, Person
+from ballot.models import (
+    Voter, Vote, Ranking, Nomination, NominationType, Nominee,
+    RoundParticipation,
+)
 from ballot.auth import require_admin
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
+
+
+def _voter_voted_at(voter: Voter, db: Session) -> datetime | None:
+    """Return the most recent voted_at across all RoundParticipations for this voter."""
+    p = (
+        db.query(RoundParticipation)
+        .filter(
+            RoundParticipation.voter_id == voter.id,
+            RoundParticipation.voted_at.isnot(None),
+        )
+        .order_by(RoundParticipation.voted_at.desc())
+        .first()
+    )
+    return p.voted_at if p else None
 
 
 @router.get("/voters", response_class=HTMLResponse)
@@ -26,6 +43,7 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     voter_ballots = []
     for voter in voters:
+        voted_at = _voter_voted_at(voter, db)
         ballot = []
         for nom in nominations:
             if nom.type == NominationType.PICK:
@@ -36,13 +54,13 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
                 if chosen:
                     ballot.append({"nom": nom, "type": "pick", "items": chosen})
             else:
-                ranks = [
-                    r for r in voter.rankings if r.nomination_id == nom.id
-                ]
-                ranks.sort(key=lambda r: r.rank)
+                ranks = sorted(
+                    [r for r in voter.rankings if r.nomination_id == nom.id],
+                    key=lambda r: r.rank,
+                )
                 if ranks:
                     ballot.append({"nom": nom, "type": "rank", "items": ranks})
-        voter_ballots.append({"voter": voter, "ballot": ballot})
+        voter_ballots.append({"voter": voter, "ballot": ballot, "voted_at": voted_at})
     return templates.TemplateResponse(request, "admin/voters.html", {"voter_ballots": voter_ballots})
 
 
@@ -52,7 +70,10 @@ def delete_voter_vote(voter_id: int, db: Session = Depends(get_db)):
     if voter:
         db.query(Vote).filter(Vote.voter_id == voter_id).delete()
         db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
-        voter.voted_at = None
+        # Clear voted_at on all round participations
+        db.query(RoundParticipation).filter(
+            RoundParticipation.voter_id == voter_id
+        ).update({"voted_at": None, "draft": None})
         db.commit()
     return RedirectResponse(url="/admin/voters", status_code=303)
 
@@ -109,7 +130,6 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
     db.flush()
 
     form = await request.form()
-    # Eager-load nominees so nom.nominees is populated for RANK processing
     nominations = (
         db.query(Nomination)
         .options(joinedload(Nomination.nominees))
@@ -132,7 +152,6 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
                         pass
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
-            # No artificial slice — trust the form (same as vote.py)
             for nominee_id in chosen:
                 try:
                     nid = int(nominee_id)
@@ -141,7 +160,14 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
                 except ValueError:
                     pass
 
-    if voter.voted_at is None:
-        voter.voted_at = datetime.now(timezone.utc)
+    # Mark voted_at on the most recent active round participation (or any)
+    p = (
+        db.query(RoundParticipation)
+        .filter(RoundParticipation.voter_id == voter_id)
+        .order_by(RoundParticipation.id.desc())
+        .first()
+    )
+    if p:
+        p.voted_at = datetime.now(timezone.utc)
     db.commit()
     return RedirectResponse(url="/admin/voters", status_code=303)

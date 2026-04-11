@@ -3,9 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import Film, Nominee, Person
+from ballot.models import Film, Nominee, Nomination, Person
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -66,6 +66,28 @@ def bulk_create_films(
     )
 
 
+@router.get("/films/{film_id}", response_class=HTMLResponse)
+def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
+    film = (
+        db.query(Film)
+        .options(
+            joinedload(Film.nominees).joinedload(Nominee.nomination),
+            joinedload(Film.nominees).joinedload(Nominee.person),
+        )
+        .filter(Film.id == film_id)
+        .first()
+    )
+    if not film:
+        return HTMLResponse("Фильм не найден.", status_code=404)
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+    persons = db.query(Person).order_by(Person.name).all()
+    return templates.TemplateResponse(request, "admin/film_detail.html", {
+        "film": film,
+        "nominations": nominations,
+        "persons": persons,
+    })
+
+
 @router.post("/films/{film_id}/edit")
 def edit_film(
     film_id: int,
@@ -93,6 +115,37 @@ def delete_film(film_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/admin/films", status_code=303)
 
 
+@router.post("/films/{film_id}/nominees")
+def add_nominee_from_film(
+    film_id: int,
+    nomination_id: int = Form(...),
+    person_id: Optional[str] = Form(None),
+    item: Optional[str] = Form(None),
+    item_url: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    from ballot.models import NominationType
+    nom = db.get(Nomination, nomination_id)
+    if not nom:
+        return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
+    pid = int(person_id) if person_id and person_id.strip() else None
+    item_val = item.strip() if item and item.strip() else None
+    item_url_val = item_url.strip() if item_url and item_url.strip() else None
+    existing = db.query(Nominee).filter_by(
+        nomination_id=nomination_id, film_id=film_id, person_id=pid, item=item_val
+    ).first()
+    if not existing:
+        db.add(Nominee(
+            nomination_id=nomination_id,
+            film_id=film_id,
+            person_id=pid,
+            item=item_val,
+            item_url=item_url_val,
+        ))
+        db.commit()
+    return RedirectResponse(url=f"/admin/films/{film_id}", status_code=303)
+
+
 @router.get("/nominees/{nominee_id}/edit")
 def edit_nominee_get(nominee_id: int, request: Request, db: Session = Depends(get_db)):
     nominee = db.get(Nominee, nominee_id)
@@ -112,18 +165,18 @@ def edit_nominee(
     nominee_id: int,
     film_id: int = Form(...),
     person_id: Optional[str] = Form(None),
-    song: Optional[str] = Form(None),
-    song_url: Optional[str] = Form(None),
+    item: Optional[str] = Form(None),
+    item_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nominee = db.get(Nominee, nominee_id)
     if nominee:
         nominee.film_id = film_id
         nominee.person_id = int(person_id) if person_id and person_id.strip() else None
-        nominee.song = song.strip() if song and song.strip() else None
-        nominee.song_url = song_url.strip() if song_url and song_url.strip() else None
+        nominee.item = item.strip() if item and item.strip() else None
+        nominee.item_url = item_url.strip() if item_url and item_url.strip() else None
         db.commit()
-    back = "/admin/nominations/" + str(nominee.nomination_id) if nominee else "/admin/films"
+    back = f"/admin/nominations/{nominee.nomination_id}" if nominee else "/admin/films"
     return RedirectResponse(url=back, status_code=303)
 
 

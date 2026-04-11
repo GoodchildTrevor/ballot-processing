@@ -15,11 +15,12 @@
     <tbody>
       {% for vb in voter_ballots %}
       {% set voter = vb['voter'] %}
+      {% set voted_at = vb['voted_at'] %}
       <tr class="border-b last:border-0" x-data="{ open: false }">
         <td class="py-2 pr-4 font-medium align-top">{{ voter.name }}</td>
         <td class="py-2 pr-4 align-top">
-          {% if voter.voted_at %}
-          <span class="text-green-600 font-semibold">✅ {{ voter.voted_at.strftime('%d.%m.%Y %H:%M') }}</span>
+          {% if voted_at %}
+          <span class="text-green-600 font-semibold">✅ {{ voted_at.strftime('%d.%m.%Y %H:%M') }}</span>
           {% else %}
           <span class="text-gray-400">ещё не голосовал</span>
           {% endif %}
@@ -38,8 +39,9 @@
               <ul class="space-y-0.5">
                 {% for nominee in bsection['items'] %}
                 <li class="text-xs text-gray-700">
-                  •
+                  &bull;
                   {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
+                  {% elif nominee.item %}<span class="italic">{{ nominee.item }}</span> <span class="text-gray-400">({{ nominee.film.title }})</span>
                   {% else %}{{ nominee.film.title }}{% endif %}
                 </li>
                 {% endfor %}
@@ -62,7 +64,7 @@
           {% endif %}
         </td>
         <td class="py-2 pl-4 align-top whitespace-nowrap">
-          {% if voter.voted_at %}
+          {% if voted_at %}
           <a href="/admin/voters/{{ voter.id }}/edit-vote"
              class="text-xs text-indigo-500 hover:underline mr-3">✏️ Редактировать</a>
           <form method="post" action="/admin/voters/{{ voter.id }}/delete-vote"
