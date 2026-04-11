@@ -31,8 +31,11 @@ const PERSONS_DATA = [
     longlists: [
       {% for n in person.nominees %}
       {
+        nom_id: {{ n.nomination.id }},
         nom: {{ n.nomination.name | tojson }},
         film: {{ n.film.title | tojson }},
+        film_id: {{ n.film.id }},
+        film_url: {{ n.film.url | tojson if n.film.url else 'null' }},
         year: {{ n.film.year }}
       }{% if not loop.last %},{% endif %}
       {% endfor %}
@@ -95,11 +98,23 @@ const PERSONS_DATA = [
             <template x-if="p.longlists.length === 0">
               <span class="text-gray-300 text-xs">—</span>
             </template>
-            <template x-for="ll in p.longlists" :key="ll.nom + ll.film">
-              <div class="text-xs mb-0.5">
-                <span class="font-medium text-gray-700" x-text="ll.film"></span>
-                <span class="text-gray-400" x-text="' (' + ll.year + ')'"></span>
-                <span class="text-indigo-400 ml-1" x-text="'— ' + ll.nom"></span>
+            <template x-for="ll in p.longlists" :key="ll.nom_id + '-' + ll.film_id">
+              <div class="text-xs mb-0.5 flex flex-wrap items-baseline gap-x-1">
+                {# Film: link to external URL if exists, else plain text #}
+                <template x-if="ll.film_url">
+                  <a :href="ll.film_url" target="_blank" rel="noopener noreferrer"
+                     class="font-medium text-gray-700 hover:text-indigo-600 hover:underline"
+                     x-text="ll.film"></a>
+                </template>
+                <template x-if="!ll.film_url">
+                  <span class="font-medium text-gray-700" x-text="ll.film"></span>
+                </template>
+                <span class="text-gray-400" x-text="'(' + ll.year + ')'"></span>
+                <span class="text-gray-300">—</span>
+                {# Nomination: link to admin nomination detail page #}
+                <a :href="'/admin/nominations/' + ll.nom_id"
+                   class="text-indigo-400 hover:text-indigo-600 hover:underline"
+                   x-text="ll.nom"></a>
               </div>
             </template>
           </td>
