@@ -1,8 +1,11 @@
+import io
 from typing import Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+import openpyxl
 from ballot.database import get_db
 from ballot.models import Nomination, NominationType, Nominee, Vote, Ranking, Voter
 from ballot.auth import require_voter
@@ -12,11 +15,11 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _nominee_sort_key(nominee) -> str:
-    """Alphabetical sort key: person name > song title > film title."""
+    """Alphabetical sort key: person name > item title > film title."""
     if nominee.person:
         return (nominee.person.name or "").lower()
-    if nominee.song:
-        return (nominee.song or "").lower()
+    if nominee.item:
+        return (nominee.item or "").lower()
     return (nominee.film.title if nominee.film else "").lower()
 
 
@@ -26,10 +29,28 @@ def _sort_nominations(nominations):
     return nominations
 
 
+def _is_voting_open(nominations: list) -> tuple[bool, Optional[object]]:
+    """Return (True, None) if all deadlines allow voting, else (False, earliest_expired_nom)."""
+    now = datetime.now()
+    for nom in nominations:
+        if nom.vote_deadline and now > nom.vote_deadline:
+            return False, nom
+    return True, None
+
+
 @router.get("/vote", response_class=HTMLResponse)
 def vote_page(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+
+    open_, expired_nom = _is_voting_open(nominations)
+    if not open_:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": expired_nom},
+            status_code=403,
+        )
+
     _sort_nominations(nominations)
     draft = voter.draft or {}
     draft_restored = bool(draft)
@@ -53,12 +74,21 @@ async def save_draft(request: Request, db: Session = Depends(get_db)):
 @router.post("/vote")
 async def submit_vote(request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
+    nominations = db.query(Nomination).all()
+
+    open_, expired_nom = _is_voting_open(nominations)
+    if not open_:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": expired_nom},
+            status_code=403,
+        )
+
     form = await request.form()
 
     db.query(Vote).filter(Vote.voter_id == voter.id).delete()
     db.query(Ranking).filter(Ranking.voter_id == voter.id).delete()
 
-    nominations = db.query(Nomination).all()
     for nom in nominations:
         if nom.type == NominationType.PICK:
             key = f"pick_{nom.id}"
@@ -87,7 +117,6 @@ async def submit_vote(request: Request, db: Session = Depends(get_db)):
                     except ValueError:
                         pass
 
-    from datetime import datetime, timezone
     voter.voted_at = datetime.now(timezone.utc)
     voter.draft = None
     db.commit()
@@ -95,5 +124,66 @@ async def submit_vote(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/thank-you", response_class=HTMLResponse)
-def thank_you(request: Request):
-    return templates.TemplateResponse(request, "thank_you.html", {})
+def thank_you(request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    has_votes = bool(voter.voted_at)
+    return templates.TemplateResponse(request, "thank_you.html", {"has_votes": has_votes})
+
+
+@router.get("/my-ballot/export")
+def export_my_ballot(request: Request, db: Session = Depends(get_db)):
+    """Download the current voter's own ballot as an Excel file."""
+    voter: Voter = request.state.voter
+    if not voter.voted_at:
+        return RedirectResponse(url="/thank-you", status_code=303)
+
+    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Бюллетень"
+    ws.append(["Номинация", "Тип", "Номинант", "Голос / Место"])
+
+    pick_votes = {
+        v.nominee_id for v in db.query(Vote).filter(Vote.voter_id == voter.id).all()
+    }
+    rankings = {
+        (r.nomination_id, r.film_id): r.rank
+        for r in db.query(Ranking).filter(Ranking.voter_id == voter.id).all()
+    }
+
+    for nom in nominations:
+        if nom.type == NominationType.PICK:
+            voted_nominees = [n for n in nom.nominees if n.id in pick_votes]
+            if voted_nominees:
+                for n in voted_nominees:
+                    if n.persons_label:
+                        label = f"{n.persons_label} ({n.film.title})"
+                    elif n.item:
+                        label = f"{n.item} ({n.film.title})"
+                    else:
+                        label = n.film.title
+                    ws.append([nom.name, "PICK", label, "✔"])
+            else:
+                ws.append([nom.name, "PICK", "— пропущено", ""])
+        else:
+            ranked = [
+                (rankings[(nom.id, n.film_id)], n.film.title)
+                for n in nom.nominees
+                if (nom.id, n.film_id) in rankings
+            ]
+            if ranked:
+                for rank, title in sorted(ranked):
+                    ws.append([nom.name, "RANK", title, rank])
+            else:
+                ws.append([nom.name, "RANK", "— пропущено", ""])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe_name = voter.name.replace(" ", "_")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=ballot_{safe_name}.xlsx"},
+    )

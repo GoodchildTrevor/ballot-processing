@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from datetime import datetime
 import openpyxl
 from ballot.database import get_db
 from ballot.models import Nomination, NominationType, Nominee, Film, Person
@@ -17,6 +18,16 @@ def _parse_int(v: Optional[str]) -> Optional[int]:
     if v and v.strip():
         try:
             return int(v)
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
+    """Parse HTML datetime-local value (YYYY-MM-DDTHH:MM) to naive datetime."""
+    if v and v.strip():
+        try:
+            return datetime.fromisoformat(v.strip())
         except ValueError:
             pass
     return None
@@ -45,12 +56,14 @@ def create_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
+    vote_deadline: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     pmin = _parse_int(pick_min) if type == NominationType.PICK else None
     pmax = _parse_int(pick_max) if type == NominationType.PICK else None
     nc = _parse_int(nominees_count)
     yf = _parse_int(year_filter)
+    dl = _parse_deadline(vote_deadline)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
     db.add(Nomination(
@@ -58,6 +71,7 @@ def create_nomination(
         pick_min=pmin, pick_max=pmax,
         nominees_count=nc,
         year_filter=yf, sort_order=order,
+        vote_deadline=dl,
     ))
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
@@ -72,6 +86,7 @@ def edit_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
+    vote_deadline: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
@@ -83,6 +98,7 @@ def edit_nomination(
     nom.pick_max = _parse_int(pick_max) if type == NominationType.PICK else None
     nom.nominees_count = _parse_int(nominees_count)
     nom.year_filter = _parse_int(year_filter)
+    nom.vote_deadline = _parse_deadline(vote_deadline)
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
@@ -132,7 +148,7 @@ def export_longlist(db: Session = Depends(get_db)):
             ws.append([
                 n.film.title,
                 n.film.year,
-                n.person.name if n.person else "",
+                n.persons_label,
                 n.item if n.item else "",
                 n.film.url or "",
             ])
@@ -183,13 +199,13 @@ def add_nominee_via_nomination(
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
     pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
-    song_val = song.strip() if song and song.strip() else None
+    item_val = song.strip() if song and song.strip() else None
 
     existing = db.query(Nominee).filter(
         Nominee.nomination_id == nom_id,
         Nominee.film_id == film_id,
         Nominee.person_id == pid,
-        Nominee.item == song_val,
+        Nominee.item == item_val,
     ).first()
     if existing:
         return RedirectResponse(
@@ -197,6 +213,6 @@ def add_nominee_via_nomination(
             status_code=303,
         )
 
-    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, item=song_val))
+    db.add(Nominee(nomination_id=nom_id, film_id=film_id, person_id=pid, item=item_val))
     db.commit()
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
