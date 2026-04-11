@@ -2,16 +2,31 @@
 {% block title %}{{ film.title }} — Фильм{% endblock %}
 {% block content %}
 <a href="/admin/films" class="text-sm text-indigo-500 hover:underline">← Все фильмы</a>
-<h1 class="text-2xl font-bold mt-2 mb-1">
-  {{ film.title }}
-  <span class="text-gray-400 font-normal">({{ film.year }})</span>
-</h1>
-{% if film.url %}
-<a href="{{ film.url }}" target="_blank" rel="noopener noreferrer"
-   class="text-xs text-indigo-400 hover:underline mb-6 inline-block">↗ {{ film.url }}</a>
-{% endif %}
 
-<div class="bg-white shadow rounded-xl p-6 mb-8 mt-4">
+<div class="flex items-start justify-between mt-2 mb-6 flex-wrap gap-4">
+  <div>
+    <h1 class="text-2xl font-bold">
+      {{ film.title }}
+      <span class="text-gray-400 font-normal">({{ film.year }})</span>
+    </h1>
+    {% if film.url %}
+    <a href="{{ film.url }}" target="_blank" rel="noopener noreferrer"
+       class="text-xs text-indigo-400 hover:underline mt-1 inline-block">↗ {{ film.url }}</a>
+    {% endif %}
+  </div>
+  <div class="flex gap-4 text-center">
+    <div class="bg-white shadow rounded-xl px-5 py-3">
+      <div class="text-2xl font-bold text-indigo-600">{{ longlists_count }}</div>
+      <div class="text-xs text-gray-400 mt-0.5">лонгов</div>
+    </div>
+    <div class="bg-white shadow rounded-xl px-5 py-3">
+      <div class="text-2xl font-bold text-indigo-600">{{ nominations_count }}</div>
+      <div class="text-xs text-gray-400 mt-0.5">номинаций</div>
+    </div>
+  </div>
+</div>
+
+<div class="bg-white shadow rounded-xl p-6 mb-8">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить в лонг-лист номинации</h2>
   <form method="post" action="/admin/films/{{ film.id }}/nominees"
         class="flex flex-wrap gap-3 items-end">
