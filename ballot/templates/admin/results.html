@@ -48,7 +48,11 @@
             {% endif %}
           {% else %}
             <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
-              {{ row.voters if row.voters else '&mdash;' }}
+              {% if row.voters %}
+                {{ row.voters }}
+              {% else %}
+                &mdash;
+              {% endif %}
             </span>
           {% endif %}
         </td>

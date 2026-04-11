@@ -57,12 +57,6 @@
       </select>
     </div>
 
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">Дедлайн голосования <span class="text-gray-300">(необяз.)</span></label>
-      <input type="datetime-local" name="vote_deadline"
-             class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
-    </div>
-
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
   </form>
 </div>
@@ -91,7 +85,6 @@
           <th class="pb-2 pr-4">Тип</th>
           <th class="pb-2 pr-4">Параметры</th>
           <th class="pb-2 pr-4">Год</th>
-          <th class="pb-2 pr-4">Дедлайн</th>
           <th class="pb-2 pr-4">Лонг-лист</th>
           <th class="pb-2"></th>
         </tr>
@@ -122,7 +115,7 @@
           </td>
 
           {# Name / inline edit form #}
-          <td class="py-2 pr-4" x-bind:colspan="editing ? 6 : 1">
+          <td class="py-2 pr-4" x-bind:colspan="editing ? 5 : 1">
             <template x-if="!editing">
               <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
             </template>
@@ -172,12 +165,6 @@
                     {% endfor %}
                   </select>
                 </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Дедлайн</label>
-                  <input type="datetime-local" name="vote_deadline"
-                         value="{{ nom.vote_deadline.strftime('%Y-%m-%dT%H:%M') if nom.vote_deadline else '' }}"
-                         class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
-                </div>
                 <div class="flex gap-2 items-end">
                   <button type="submit"
                           class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs transition">Сохранить</button>
@@ -204,19 +191,6 @@
           </td>
 
           <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
-
-          {# Deadline badge #}
-          <td class="py-2 pr-4 text-xs" x-show="!editing">
-            {% if nom.vote_deadline %}
-              {% set now = now() if now is defined else none %}
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium
-                {{ 'bg-red-100 text-red-700' if nom.vote_deadline < deadline_threshold else 'bg-amber-100 text-amber-700' }}">
-                {{ nom.vote_deadline.strftime('%d.%m %H:%M') }}
-              </span>
-            {% else %}
-              <span class="text-gray-300">—</span>
-            {% endif %}
-          </td>
 
           <td class="py-2 pr-4 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
 
