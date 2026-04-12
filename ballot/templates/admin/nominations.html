@@ -82,7 +82,7 @@
       {% endfor %}
     </div>
 
-    {# Export button — dynamically appends ?year=N when a year pill is active #}
+    {# Export button #}
     <a :href="activeYear ? '/admin/nominations/export-longlist?year=' + activeYear : '/admin/nominations/export-longlist'"
        class="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
       ↓ Скачать лонг-листы (Excel)
@@ -106,7 +106,35 @@
         </tr>
       </thead>
       <tbody>
+        {%- set ns = namespace(last_year=None, last_tour=None) %}
         {% for nom in nominations %}
+
+        {# ── Tour / year divider ── #}
+        {%- set tour = nom.round.tour if nom.round else None %}
+        {%- set yr   = nom.year_filter %}
+        {%- if yr != ns.last_year or tour != ns.last_tour %}
+          {%- set ns.last_year = yr %}
+          {%- set ns.last_tour = tour %}
+          <tr class="nomination-row"
+              :class="activeYear !== null && activeYear !== {{ yr or 'null' }} ? 'hidden' : ''"
+              data-year="{{ yr or '' }}">
+            <td colspan="7" class="pt-5 pb-1 px-0">
+              <div class="flex items-center gap-3">
+                {% if yr %}
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ yr }}</span>
+                {% endif %}
+                {% if tour %}
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+                  {% if tour == 1 %}bg-blue-100 text-blue-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+                  {{ tour }} тур
+                </span>
+                {% endif %}
+                <div class="flex-1 h-px bg-gray-100"></div>
+              </div>
+            </td>
+          </tr>
+        {%- endif %}
+
         <tr class="border-b last:border-0 align-top nomination-row"
             data-year="{{ nom.year_filter or '' }}"
             :class="activeYear !== null && activeYear !== {{ nom.year_filter or 'null' }} ? 'hidden' : ''"

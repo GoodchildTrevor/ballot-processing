@@ -20,7 +20,7 @@ from ballot.database import get_db
 from ballot.models import (
     Nomination, NominationType,
     Nominee, Vote, Ranking, Voter,
-    Round, RoundParticipation,
+    Round, RoundParticipation, RoundType,
 )
 
 router = APIRouter(dependencies=[Depends(require_voter)])
@@ -62,16 +62,7 @@ def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, l
 
 
 def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
-    """Build xlsx where each nomination is a separate sheet.
-
-    nominations_data: list of dicts:
-      name   : str
-      type   : str
-      header : list[str]
-      rows   : list of dicts with keys:
-                 cols  – list of cell values
-                 urls  – parallel list of url|None for each col (optional)
-    """
+    """Build xlsx where each nomination is a separate sheet."""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -108,7 +99,6 @@ def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
 
         data_row = 4
         for row in nom["rows"]:
-            # Support both old format (list) and new format (dict with cols/urls)
             if isinstance(row, dict):
                 cols = row.get("cols", [])
                 urls = row.get("urls", [None] * len(cols))
@@ -155,12 +145,41 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
 
 
 def _find_active_round_for_year(db: Session, year: int) -> Round | None:
-    return (
+    """Return the active round for the year, preferring FINAL over LONGLIST."""
+    rounds = (
         db.query(Round)
         .filter(Round.year == year, Round.is_active == True)  # noqa: E712
-        .order_by(Round.sort_order)
-        .first()
+        .all()
     )
+    if not rounds:
+        return None
+    # Prefer FINAL, then LONGLIST
+    for rnd in rounds:
+        if rnd.round_type == RoundType.FINAL:
+            return rnd
+    return rounds[0]
+
+
+def _find_latest_active_round(db: Session) -> Round | None:
+    """Return the most relevant active round across all years.
+
+    Priority:
+    1. FINAL round (any year) — most recent year first
+    2. LONGLIST round — most recent year first
+    """
+    active = (
+        db.query(Round)
+        .filter(Round.is_active == True)  # noqa: E712
+        .order_by(Round.year.desc(), Round.sort_order)
+        .all()
+    )
+    if not active:
+        return None
+    # prefer FINAL
+    for rnd in active:
+        if rnd.round_type == RoundType.FINAL:
+            return rnd
+    return active[0]
 
 
 def _render_vote_page(request, db, rnd, voter):
@@ -195,12 +214,12 @@ def _check_round_open(request, rnd) -> HTMLResponse | None:
 
 
 # ---------------------------------------------------------------------------
-# /vote
+# /vote  — redirects to the most relevant active round
 # ---------------------------------------------------------------------------
 
 @router.get("/vote", response_class=HTMLResponse)
 def vote_redirect(request: Request, db: Session = Depends(get_db)):
-    active = db.query(Round).filter(Round.is_active == True).order_by(Round.sort_order).first()  # noqa: E712
+    active = _find_latest_active_round(db)
     if not active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
@@ -256,8 +275,7 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 
 # ---------------------------------------------------------------------------
-# POST /{year}/ballot-export   (client-side data → xlsx with sheets per nom)
-# Each row in the payload: { cols: [...], urls: [...] } or plain array (legacy)
+# POST /{year}/ballot-export
 # ---------------------------------------------------------------------------
 
 @router.post("/{year}/ballot-export")
@@ -404,7 +422,7 @@ def thank_you(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# /my-ballot/{round_id}/export  (server-side, one sheet per nomination)
+# /my-ballot/{round_id}/export
 # ---------------------------------------------------------------------------
 
 @router.get("/my-ballot/{round_id}/export")

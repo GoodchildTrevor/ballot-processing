@@ -24,6 +24,24 @@
 {% if not selected_contest %}
 <p class="text-gray-400">Нет конкурсов. <a href="/admin/rounds" class="underline text-indigo-500">Создайте конкурс</a>.</p>
 {% else %}
+
+{# Round tabs (1 тур / 2 тур) #}
+{% if selected_contest.rounds | length > 1 %}
+<div class="flex gap-2 mb-5" x-data="{}">
+  {% for rnd in selected_contest.rounds | sort(attribute='tour') %}
+  <a href="/admin/voters?contest_id={{ selected_contest.id }}&round_id={{ rnd.id }}"
+     class="text-xs font-semibold px-3 py-1.5 rounded-full border transition
+       {% if selected_round and selected_round.id == rnd.id %}
+         {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600{% else %}bg-amber-500 text-white border-amber-500{% endif %}
+       {% else %}
+         bg-white text-gray-600 border-gray-300 hover:bg-gray-50
+       {% endif %}">
+    {{ rnd.tour }} тур — {{ rnd.label }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="bg-white shadow rounded-xl overflow-hidden">
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b bg-gray-50">
