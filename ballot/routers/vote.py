@@ -1,15 +1,16 @@
-"""Вотер-фасинг роутс — round-aware.
+"""Voter-facing routes — round-aware.
 
 URL scheme
 ----------
 /vote                     GET  – redirect to the active round's vote page
-/rounds/{round_id}/vote   GET  – ballot page for a specific round
-/rounds/{round_id}/vote   POST – submit ballot
-/rounds/{round_id}/draft  POST – autosave draft
+/{year}/vote              GET  – ballot page for the active round of a given year
+/{year}/vote              POST – submit ballot for that round
+/{year}/draft             POST – autosave draft for that round
+/rounds/{round_id}/vote   GET  – ballot page by round id (kept for compat)
+/rounds/{round_id}/vote   POST – submit ballot by round id (kept for compat)
+/rounds/{round_id}/draft  POST – autosave draft by round id
 /thank-you                GET  – confirmation
 /my-ballot/{round_id}/export  GET – download own ballot as xlsx
-
-Fallback compat: /vote still works (finds first active round).
 """
 from __future__ import annotations
 
@@ -79,6 +80,50 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
     )
 
 
+def _find_active_round_for_year(db: Session, year: int) -> Round | None:
+    """Return the active round for a given year, preferring FINAL over LONGLIST."""
+    return (
+        db.query(Round)
+        .filter(Round.year == year, Round.is_active == True)  # noqa: E712
+        .order_by(Round.sort_order)
+        .first()
+    )
+
+
+def _render_vote_page(request, db, rnd, voter):
+    """Shared render logic for both URL schemes."""
+    nominations = _nominations_for_round(db, rnd.id)
+    _sort_nominations(nominations)
+    participation = _get_or_create_participation(db, rnd.id, voter.id)
+    db.commit()
+    draft = participation.draft or {}
+    draft_restored = bool(draft)
+    return templates.TemplateResponse(request, "vote.html", {
+        "voter": voter,
+        "round": rnd,
+        "nominations": nominations,
+        "draft": draft,
+        "draft_restored": draft_restored,
+    })
+
+
+def _check_round_open(request, rnd) -> HTMLResponse | None:
+    """Return an error response if round is closed/expired, else None."""
+    if not rnd or not rnd.is_active:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": "Этот раунд не активен."},
+            status_code=403,
+        )
+    if rnd.deadline and datetime.now() > rnd.deadline:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
+            status_code=403,
+        )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # /vote  – redirect to first active round
 # ---------------------------------------------------------------------------
@@ -92,52 +137,83 @@ def vote_redirect(request: Request, db: Session = Depends(get_db)):
             {"nom": None, "message": "Активных раундов нет."},
             status_code=403,
         )
-    return RedirectResponse(url=f"/rounds/{active.id}/vote", status_code=302)
+    return RedirectResponse(url=f"/{active.year}/vote", status_code=302)
 
 
 # ---------------------------------------------------------------------------
-# GET /rounds/{round_id}/vote
+# GET /{year}/vote
+# ---------------------------------------------------------------------------
+
+@router.get("/{year}/vote", response_class=HTMLResponse)
+def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активных раундов для {year} года нет."},
+            status_code=403,
+        )
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return _render_vote_page(request, db, rnd, voter)
+
+
+# ---------------------------------------------------------------------------
+# POST /{year}/vote
+# ---------------------------------------------------------------------------
+
+@router.post("/{year}/vote")
+async def submit_vote_year(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активных раундов для {year} года нет."},
+            status_code=403,
+        )
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return await _do_submit(request, db, rnd, voter)
+
+
+# ---------------------------------------------------------------------------
+# POST /{year}/draft  – autosave
+# ---------------------------------------------------------------------------
+
+@router.post("/{year}/draft")
+async def save_draft_year(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year)
+    if not rnd:
+        return {"ok": False, "error": "no active round"}
+    body = await request.json()
+    p = _get_or_create_participation(db, rnd.id, voter.id)
+    p.draft = body
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# GET /rounds/{round_id}/vote  – compat
 # ---------------------------------------------------------------------------
 
 @router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
 def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     rnd = db.get(Round, round_id)
-
-    if not rnd or not rnd.is_active:
-        return templates.TemplateResponse(
-            request, "voting_closed.html",
-            {"nom": None, "message": "Этот раунд не активен."},
-            status_code=403,
-        )
-
-    # Deadline check
-    if rnd.deadline and datetime.now() > rnd.deadline:
-        return templates.TemplateResponse(
-            request, "voting_closed.html",
-            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
-            status_code=403,
-        )
-
-    nominations = _nominations_for_round(db, round_id)
-    _sort_nominations(nominations)
-
-    participation = _get_or_create_participation(db, round_id, voter.id)
-    db.commit()
-
-    draft = participation.draft or {}
-    draft_restored = bool(draft)
-    return templates.TemplateResponse(request, "vote.html", {
-        "voter": voter,
-        "round": rnd,
-        "nominations": nominations,
-        "draft": draft,
-        "draft_restored": draft_restored,
-    })
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    # Redirect to canonical year URL
+    return RedirectResponse(url=f"/{rnd.year}/vote", status_code=301)
 
 
 # ---------------------------------------------------------------------------
-# POST /rounds/{round_id}/draft  – autosave
+# POST /rounds/{round_id}/draft  – compat
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/draft")
@@ -151,31 +227,27 @@ async def save_draft(round_id: int, request: Request, db: Session = Depends(get_
 
 
 # ---------------------------------------------------------------------------
-# POST /rounds/{round_id}/vote  – submit
+# POST /rounds/{round_id}/vote  – compat (redirects to year-based)
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/vote")
-async def submit_vote(round_id: int, request: Request, db: Session = Depends(get_db)):
+async def submit_vote_compat(round_id: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     rnd = db.get(Round, round_id)
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return await _do_submit(request, db, rnd, voter)
 
-    if not rnd or not rnd.is_active:
-        return templates.TemplateResponse(
-            request, "voting_closed.html",
-            {"nom": None, "message": "Этот раунд не активен."},
-            status_code=403,
-        )
-    if rnd.deadline and datetime.now() > rnd.deadline:
-        return templates.TemplateResponse(
-            request, "voting_closed.html",
-            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
-            status_code=403,
-        )
 
-    nominations = _nominations_for_round(db, round_id)
+# ---------------------------------------------------------------------------
+# Shared submit logic
+# ---------------------------------------------------------------------------
+
+async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
+    nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
 
-    # Collect nominee ids that belong to this round (safety check)
     round_nominee_ids = {
         n.id for nom in nominations for n in nom.nominees
     }
@@ -201,7 +273,6 @@ async def submit_vote(round_id: int, request: Request, db: Session = Depends(get
         if nom.type == NominationType.PICK:
             key = f"pick_{nom.id}"
             raw = form.getlist(key)
-            # Backend pick_max guard: silently truncate to the limit
             if nom.pick_max and len(raw) > nom.pick_max:
                 raw = raw[:nom.pick_max]
             for val in raw:
@@ -211,7 +282,6 @@ async def submit_vote(round_id: int, request: Request, db: Session = Depends(get
                         db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=False))
                 except ValueError:
                     pass
-            # Runner-up (FINAL only)
             if is_final and nom.has_runner_up:
                 ru_key = f"runnerup_{nom.id}"
                 ru_val = form.get(ru_key)
@@ -239,11 +309,11 @@ async def submit_vote(round_id: int, request: Request, db: Session = Depends(get
                     except ValueError:
                         pass
 
-    participation = _get_or_create_participation(db, round_id, voter.id)
+    participation = _get_or_create_participation(db, rnd.id, voter.id)
     participation.voted_at = datetime.now(timezone.utc)
     participation.draft = None
     db.commit()
-    return RedirectResponse(url=f"/thank-you?round_id={round_id}", status_code=303)
+    return RedirectResponse(url=f"/thank-you?round_id={rnd.id}", status_code=303)
 
 
 # ---------------------------------------------------------------------------
