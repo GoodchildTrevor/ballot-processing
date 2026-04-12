@@ -1,23 +1,9 @@
-"""Voter-facing routes — round-aware.
-
-URL scheme
-----------
-/vote                     GET  – redirect to the active round's vote page
-/{year}/vote              GET  – ballot page for the active round of a given year
-/{year}/vote              POST – submit ballot for that round
-/{year}/draft             POST – autosave draft for that round
-/{year}/ballot-export     POST – download ballot as xlsx (client-side rows)
-/rounds/{round_id}/vote   GET  – ballot page by round id (kept for compat)
-/rounds/{round_id}/vote   POST – submit ballot by round id (kept for compat)
-/rounds/{round_id}/draft  POST – autosave draft by round id
-/thank-you                GET  – confirmation
-/my-ballot/{round_id}/export  GET – download own ballot as xlsx
-"""
+"""Voter-facing routes — round-aware."""
 from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
@@ -25,7 +11,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 import openpyxl
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
 from ballot.auth import require_voter
 from ballot.database import get_db
@@ -44,12 +31,73 @@ templates = Jinja2Templates(directory="ballot/templates")
 # ---------------------------------------------------------------------------
 
 def _content_disposition(filename: str) -> str:
-    """Return a Content-Disposition header value safe for non-ASCII filenames.
-    Uses RFC 5987 encoding so Cyrillic characters don\'t cause latin-1 errors.
-    """
     ascii_name = filename.encode("ascii", "ignore").decode()
     encoded_name = quote(filename, safe="")
-    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8\'\'{encoded_name}"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
+
+
+def _auto_width(ws):
+    for col in ws.columns:
+        max_len = max((len(str(c.value or "")) for c in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 80)
+
+
+def _sheet_title(name: str) -> str:
+    """Truncate and sanitise nomination name for xlsx sheet title (max 31 chars)."""
+    for ch in r'\/:*?[]':
+        name = name.replace(ch, '')
+    return name[:31]
+
+
+def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
+    """Build xlsx where each nomination is a separate sheet.
+    nominations_data: list of dicts with keys: name, type, header, rows
+      rows: list of [col1, col2, ...]
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default sheet
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4F46E5")  # indigo
+    header_align = Alignment(horizontal="center")
+
+    seen_titles: dict[str, int] = {}
+    for nom in nominations_data:
+        raw_title = _sheet_title(nom["name"])
+        if raw_title in seen_titles:
+            seen_titles[raw_title] += 1
+            title = _sheet_title(raw_title)[:28] + f" {seen_titles[raw_title]}"
+        else:
+            seen_titles[raw_title] = 1
+            title = raw_title
+
+        ws = wb.create_sheet(title=title)
+
+        # nomination name as a big header in row 1
+        ws.append([nom["name"]])
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(len(nom["header"]), 1))
+        ws.cell(1, 1).font = Font(bold=True, size=13)
+        ws.cell(1, 1).alignment = Alignment(horizontal="left")
+        ws.append([])  # blank row
+
+        # column headers
+        ws.append(nom["header"])
+        for i, _ in enumerate(nom["header"], start=1):
+            cell = ws.cell(3, i)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+
+        # data rows
+        for row in nom["rows"]:
+            ws.append(row)
+
+        _auto_width(ws)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
 
 
 def _get_or_create_participation(
@@ -180,33 +228,17 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 
 # ---------------------------------------------------------------------------
-# POST /{year}/ballot-export
+# POST /{year}/ballot-export   (client-side data → xlsx with sheets per nom)
 # ---------------------------------------------------------------------------
 
 @router.post("/{year}/ballot-export")
 async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     body: dict[str, Any] = await request.json()
-    rows: list[list] = body.get("rows", [])
+    # nominations: [{name, type, header:[...], rows:[[...], ...]}, ...]
+    nominations_data: list[dict] = body.get("nominations", [])
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Бюллетень"
-
-    for i, row in enumerate(rows):
-        ws.append(row)
-        if i == 0:
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
-
-    for col in ws.columns:
-        max_len = max((len(str(c.value or "")) for c in col), default=10)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
+    buf = _build_xlsx_per_nomination(nominations_data)
     fname = f"ballot_{year}_{voter.name}.xlsx"
     return StreamingResponse(
         buf,
@@ -344,7 +376,7 @@ def thank_you(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# /my-ballot/{round_id}/export
+# /my-ballot/{round_id}/export  (server-side, one sheet per nomination)
 # ---------------------------------------------------------------------------
 
 @router.get("/my-ballot/{round_id}/export")
@@ -358,13 +390,6 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
 
     nominations = _nominations_for_round(db, round_id)
     rnd = db.get(Round, round_id)
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Бюллетень"
-    ws.append(["Номинация", "Тип", "Номинант", "Голос / Место"])
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
 
     nominee_ids = {n.id for nom in nominations for n in nom.nominees}
     pick_votes = {
@@ -382,38 +407,42 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
         ).all()
     }
 
+    nominations_data = []
     for nom in nominations:
         if nom.type == NominationType.PICK:
-            main_votes = [n for n in nom.nominees if n.id in pick_votes and not pick_votes[n.id]]
-            ru_votes   = [n for n in nom.nominees if n.id in pick_votes and pick_votes[n.id]]
-            for n in main_votes:
-                label = (n.persons_label and f"{n.persons_label} ({n.film.title})") \
-                        or (n.item and f"{n.item} ({n.film.title})") \
+            header = ["Номинант", "Голос"]
+            rows = []
+            for n in nom.nominees:
+                if n.id in pick_votes:
+                    label = (
+                        (n.persons_label and f"{n.persons_label} ({n.film.title})")
+                        or (n.item and f"{n.item} ({n.film.title})")
                         or n.film.title
-                ws.append([nom.name, "PICK", label, "✔"])
-            for n in ru_votes:
-                label = (n.persons_label and f"{n.persons_label} ({n.film.title})") \
-                        or (n.item and f"{n.item} ({n.film.title})") \
-                        or n.film.title
-                ws.append([nom.name, "PICK", label, "runner-up"])
-            if not main_votes and not ru_votes:
-                ws.append([nom.name, "PICK", "— пропущено", ""])
+                    )
+                    vote_label = "runner-up" if pick_votes[n.id] else "✔"
+                    rows.append([label, vote_label])
+            if not rows:
+                rows = [["— пропущено", ""]]
         else:
+            header = ["Место", "Фильм"]
             ranked = [
                 (rankings[(nom.id, n.film_id)], n.film.title)
                 for n in nom.nominees
                 if (nom.id, n.film_id) in rankings
             ]
             if ranked:
-                for rank, title in sorted(ranked):
-                    ws.append([nom.name, "RANK", title, rank])
+                rows = [[rank, title] for rank, title in sorted(ranked)]
             else:
-                ws.append([nom.name, "RANK", "— пропущено", ""])
+                rows = [["", "— пропущено"]]
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+        nominations_data.append({
+            "name": nom.name,
+            "type": nom.type.value,
+            "header": header,
+            "rows": rows,
+        })
 
+    buf = _build_xlsx_per_nomination(nominations_data)
     label_safe = rnd.label if rnd else str(round_id)
     fname = f"ballot_{voter.name}_{label_safe}.xlsx"
     return StreamingResponse(

@@ -25,16 +25,15 @@
 
 {% if nominations %}
 
-{# ── Error banner (hidden until submit attempt) ── #}
+{# ── Error banner ── #}
 <div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
   <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
   <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
 </div>
 
-{# ── Slide container ── #}
 <div id="slides">
 
-{# ════════════════════════════════ SLIDE 0 — TABLE OF CONTENTS ════ #}
+{# ══ SLIDE 0 — TABLE OF CONTENTS ══ #}
 <div class="slide" data-slide="0">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6 max-w-xl mx-auto">
     <h1 class="text-2xl font-extrabold text-gray-900 mb-1">Голосование</h1>
@@ -45,9 +44,8 @@
     <ol class="space-y-2">
       {% for nom in nominations %}
       <li>
-        <button type="button"
-                onclick="goToSlide({{ loop.index }})"
-                class="w-full text-left flex items-center gap-2 text-base text-indigo-600 hover:underline group">
+        <button type="button" onclick="goToSlide({{ loop.index }})"
+                class="w-full text-left flex items-center gap-2 text-base text-indigo-600 hover:underline">
           <span class="text-gray-400 w-5 text-right tabular-nums text-sm">{{ loop.index }}.</span>
           <span class="flex-1">{{ nom.name }}</span>
           <span class="toc-status-{{ nom.id }} text-sm text-gray-300">—</span>
@@ -59,8 +57,7 @@
       </li>
       {% endfor %}
       <li class="pt-2 border-t border-gray-100 mt-2">
-        <button type="button"
-                onclick="goToSlide({{ nominations|length + 1 }})"
+        <button type="button" onclick="goToSlide({{ nominations|length + 1 }})"
                 class="w-full text-left flex items-center gap-2 text-base text-green-600 hover:underline">
           <span class="text-gray-400 w-5 text-right tabular-nums text-sm">✓</span>
           <span>Проверка бюллетеня</span>
@@ -74,13 +71,12 @@
   </div>
 </div>
 
-{# ════════════════════════════════ SLIDES 1…N — NOMINATIONS ══════ #}
+{# ══ SLIDES 1…N — NOMINATIONS ══ #}
 <form id="vote-form" method="post" action="/{{ round.year }}/vote">
 {% for nom in nominations %}
 <div class="slide hidden" data-slide="{{ loop.index }}" data-nom-id="{{ nom.id }}">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
-    {# header #}
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex flex-wrap items-center gap-3">
       <span class="text-sm text-gray-400 tabular-nums">{{ loop.index }} / {{ nominations|length }}</span>
       <span class="font-bold text-lg text-gray-900">{{ nom.name }}</span>
@@ -104,25 +100,20 @@
       {% else %}
         <span class="text-sm text-gray-400">Расставьте места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
       {% endif %}
-      {# inline warning #}
       <span id="warn-{{ nom.id }}"
             class="hidden ml-auto text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5"></span>
     </div>
 
-    {# nominees list #}
     <div class="divide-y divide-gray-100">
       {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
       <div class="px-5 py-3.5 flex flex-wrap items-center gap-3">
-
         {% if nom.type.value == 'PICK' %}
           <input type="checkbox"
-                 name="pick_{{ nom.id }}"
-                 value="{{ nominee.id }}"
+                 name="pick_{{ nom.id }}" value="{{ nominee.id }}"
                  id="pick_{{ nom.id }}_{{ nominee.id }}"
                  class="w-5 h-5 text-indigo-600 rounded pick-cb"
                  data-nom="{{ nom.id }}"
-                 {% if draft and (nom.id|string) in draft.get('picks',{}) and (nominee.id|string) in draft['picks'][(nom.id|string)] %}checked{% endif %}
-          />
+                 {% if draft and (nom.id|string) in draft.get('picks',{}) and (nominee.id|string) in draft['picks'][(nom.id|string)] %}checked{% endif %} />
           <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-800">
             {% if nominee.persons_label %}
               {% if nominee.person and nominee.person.url %}
@@ -155,17 +146,13 @@
               <span class="text-gray-400"> ({{ nominee.film.year }})</span>
             {% endif %}
           </label>
-
-        {% else %}{# RANK #}
+        {% else %}
           <input type="number"
                  name="rank_{{ nom.id }}_{{ nominee.film_id }}"
-                 min="1" max="{{ nom.nominees|length }}"
-                 placeholder="—"
+                 min="1" max="{{ nom.nominees|length }}" placeholder="—"
                  class="rank-inp w-16 border border-gray-300 rounded-lg text-center py-1.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                 data-nom="{{ nom.id }}"
-                 data-max="{{ nom.nominees|length }}"
-                 value="{% if draft and (nom.id|string) in draft.get('ranks',{}) %}{{ draft['ranks'][(nom.id|string)].get(nominee.film_id|string, '') }}{% endif %}"
-          />
+                 data-nom="{{ nom.id }}" data-max="{{ nom.nominees|length }}"
+                 value="{% if draft and (nom.id|string) in draft.get('ranks',{}) %}{{ draft['ranks'][(nom.id|string)].get(nominee.film_id|string, '') }}{% endif %}" />
           <span class="text-base text-gray-800">
             {% if nominee.person %}
               {% if nominee.person.url %}
@@ -181,7 +168,6 @@
             <span class="text-gray-400">({{ nominee.film.year }})</span>
           </span>
         {% endif %}
-
       </div>
       {% endfor %}
     </div>
@@ -205,29 +191,25 @@
     </div>
     {% endif %}
 
-  </div>{# /card #}
+  </div>
 
-  {# navigation buttons for this slide #}
+  {# nav — no draft button, autosave is silent #}
   <div class="flex items-center justify-between mt-4">
     <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
             class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
-    <button type="button"
-            onclick="saveDraft(false).then(() => {})"
-            class="border border-gray-200 text-gray-400 px-4 py-2 rounded-xl text-sm hover:bg-gray-50 transition" id="draft-btn-{{ loop.index }}">
-      💾 Черновик
-    </button>
+    <span id="autosave-indicator" class="text-xs text-gray-300">автосохранение</span>
     <button type="button" onclick="goToSlide({{ loop.index + 1 }})"
             class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition">
       {% if loop.last %}Проверить бюллетень →{% else %}Далее →{% endif %}
     </button>
   </div>
 
-</div>{# /slide #}
+</div>
 {% endfor %}
 
-{# ════════════════════════════════ SLIDE N+1 — PREVIEW + SUBMIT ══ #}
+{# ══ SLIDE N+1 — PREVIEW + SUBMIT ══ #}
 <div class="slide hidden" data-slide="{{ nominations|length + 1 }}">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center justify-between">
@@ -237,7 +219,6 @@
         ↓ Скачать Excel
       </button>
     </div>
-    {# preview body — rendered by JS, each nom row has an edit button #}
     <div id="ballot-body" class="divide-y divide-gray-100 text-base"></div>
   </div>
 
@@ -254,20 +235,15 @@
 </div>
 
 </form>
-</div>{# /slides #}
+</div>
 
-{# ─────────────────── EMPTY STATE ─────────────────────────────── #}
 {% else %}
 <div class="flex flex-col items-center justify-center py-24 text-center">
-  <svg class="w-16 h-16 text-gray-300 mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-  </svg>
   <h2 class="text-xl font-bold text-gray-700 mb-2">Бюллетень ещё не готов</h2>
   <p class="text-gray-400 text-base max-w-xs">Номинации для раунда <strong>{{ round.label }}</strong> пока не назначены.</p>
 </div>
 {% endif %}
 
-{# ──────────── JS DATA ──────────────────────────────────────────── #}
 {% if nominations %}
 <script>
 const NOM_DATA = [
@@ -295,17 +271,13 @@ const NOM_DATA = [
   {% endfor %}
 ];
 const YEAR = {{ round.year }};
-const TOTAL_SLIDES = {{ nominations|length + 1 }}; // 0=toc, 1..N=noms, N+1=preview
+const TOTAL_SLIDES = {{ nominations|length + 1 }};
 </script>
 <script>
-// ═══════════════════════════════════════════════════════════════════
-// SLIDE NAVIGATION
-// ═══════════════════════════════════════════════════════════════════
 let currentSlide = 0;
 
 function goToSlide(n) {
-  const slides = document.querySelectorAll('.slide');
-  slides.forEach(s => s.classList.add('hidden'));
+  document.querySelectorAll('.slide').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`.slide[data-slide="${n}"]`);
   if (target) {
     target.classList.remove('hidden');
@@ -315,13 +287,9 @@ function goToSlide(n) {
     if (n === TOTAL_SLIDES) renderBallot();
   }
 }
-
-// initial
 goToSlide(0);
 
-// ═══════════════════════════════════════════════════════════════════
-// PICK — enforce pick_max, counter
-// ═══════════════════════════════════════════════════════════════════
+// ── PICK groups ──
 (function() {
   const groups = {};
   document.querySelectorAll('input.pick-cb').forEach(cb => {
@@ -333,7 +301,6 @@ goToSlide(0);
     }
     groups[nomId].checkboxes.push(cb);
   });
-
   function updateGroup(nomId) {
     const g = groups[nomId];
     if (!g) return;
@@ -342,64 +309,40 @@ goToSlide(0);
       g.counter.textContent = checked + '\u00a0/\u00a0' + g.max;
       g.counter.classList.toggle('text-red-600', !!(g.max && checked >= g.max));
       g.counter.classList.toggle('text-gray-500', !(g.max && checked >= g.max));
-      g.counter.classList.toggle('font-semibold', !!(g.max && checked >= g.max));
     }
     if (g.max && checked >= g.max) {
-      g.checkboxes.forEach(cb => {
-        if (!cb.checked) { cb.disabled = true; cb.closest('div').style.opacity = '0.4'; }
-      });
+      g.checkboxes.forEach(cb => { if (!cb.checked) { cb.disabled = true; cb.closest('div').style.opacity = '0.4'; } });
     } else {
       g.checkboxes.forEach(cb => { cb.disabled = false; cb.closest('div').style.opacity = ''; });
     }
-    validateNom(nomId);
-    updateToc();
+    validateNom(nomId); updateToc();
   }
-
   window._getPickGroups = () => groups;
   window._updatePickGroup = updateGroup;
-
   Object.keys(groups).forEach(updateGroup);
-  document.querySelectorAll('input.pick-cb').forEach(cb => {
-    cb.addEventListener('change', () => updateGroup(cb.dataset.nom));
-  });
+  document.querySelectorAll('input.pick-cb').forEach(cb =>
+    cb.addEventListener('change', () => updateGroup(cb.dataset.nom))
+  );
 })();
 
-// ═══════════════════════════════════════════════════════════════════
-// RANK — duplicate / out-of-range inline warning
-// ═══════════════════════════════════════════════════════════════════
+// ── RANK inline warning ──
 function validateRankNom(nomId) {
   const inputs = document.querySelectorAll(`.rank-inp[data-nom="${nomId}"]`);
-  const values = [];
-  inputs.forEach(inp => { if (inp.value !== '') values.push(parseInt(inp.value)); });
+  const values = [...inputs].filter(i => i.value !== '').map(i => parseInt(i.value));
   const max = inputs.length ? parseInt(inputs[0].dataset.max) : 0;
   const hasDup = values.length !== new Set(values).size;
   const warn = document.getElementById('warn-' + nomId);
   if (!warn) return;
-  if (hasDup) {
-    warn.textContent = '⚠️ Одно место указано дважды';
-    warn.classList.remove('hidden');
-  } else if (values.length > 0 && values.length < max) {
-    warn.textContent = `⚠️ Указано ${values.length} из ${max}`;
-    warn.classList.remove('hidden');
-  } else {
-    warn.textContent = '';
-    warn.classList.add('hidden');
-  }
+  if (hasDup) { warn.textContent = '⚠️ Одно место указано дважды'; warn.classList.remove('hidden'); }
+  else if (values.length > 0 && values.length < max) { warn.textContent = `⚠️ Указано ${values.length} из ${max}`; warn.classList.remove('hidden'); }
+  else { warn.textContent = ''; warn.classList.add('hidden'); }
 }
+document.querySelectorAll('.rank-inp').forEach(inp =>
+  inp.addEventListener('input', () => { validateRankNom(inp.dataset.nom); updateToc(); })
+);
+[...new Set([...document.querySelectorAll('.rank-inp')].map(i => i.dataset.nom))].forEach(validateRankNom);
 
-document.querySelectorAll('.rank-inp').forEach(inp => {
-  inp.addEventListener('input', () => {
-    validateRankNom(inp.dataset.nom);
-    updateToc();
-  });
-});
-
-[...new Set([...document.querySelectorAll('.rank-inp')].map(i => i.dataset.nom))]
-  .forEach(validateRankNom);
-
-// ═══════════════════════════════════════════════════════════════════
-// PICK — pick_min inline warning
-// ═══════════════════════════════════════════════════════════════════
+// ── PICK min warning ──
 NOM_DATA.forEach(nom => {
   if (nom.type !== 'PICK' || !nom.pick_min) return;
   const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`);
@@ -407,61 +350,42 @@ NOM_DATA.forEach(nom => {
     const checked = [...cbs].filter(c => c.checked).length;
     const warn = document.getElementById('warn-' + nom.id);
     if (!warn) return;
-    if (checked > 0 && checked < nom.pick_min) {
-      warn.textContent = `⚠️ Выбрано ${checked}, нужно ≥ ${nom.pick_min}`;
-      warn.classList.remove('hidden');
-    } else {
-      warn.textContent = '';
-      warn.classList.add('hidden');
-    }
+    if (checked > 0 && checked < nom.pick_min) { warn.textContent = `⚠️ Выбрано ${checked}, нужно ≥ ${nom.pick_min}`; warn.classList.remove('hidden'); }
+    else { warn.textContent = ''; warn.classList.add('hidden'); }
     updateToc();
   }
   cbs.forEach(cb => cb.addEventListener('change', update));
   update();
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// VALIDATE NOM
-// ═══════════════════════════════════════════════════════════════════
 function validateNom(nomId) {
   const nom = NOM_DATA.find(n => n.id == nomId);
-  if (!nom) return;
-  if (nom.type === 'PICK') {
-    const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nomId}"]`);
-    const checked = [...cbs].filter(c => c.checked).length;
-    const warn = document.getElementById('warn-' + nomId);
-    if (!warn) return;
-    if (checked > 0 && nom.pick_min && checked < nom.pick_min) {
-      warn.textContent = `⚠️ Выбрано ${checked}, нужно ≥ ${nom.pick_min}`;
-      warn.classList.remove('hidden');
-    } else {
-      warn.textContent = '';
-      warn.classList.add('hidden');
-    }
-  }
+  if (!nom || nom.type !== 'PICK') return;
+  const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nomId}"]`);
+  const checked = [...cbs].filter(c => c.checked).length;
+  const warn = document.getElementById('warn-' + nomId);
+  if (!warn) return;
+  if (checked > 0 && nom.pick_min && checked < nom.pick_min) {
+    warn.textContent = `⚠️ Выбрано ${checked}, нужно ≥ ${nom.pick_min}`; warn.classList.remove('hidden');
+  } else { warn.textContent = ''; warn.classList.add('hidden'); }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// TOC STATUS UPDATE
-// ═══════════════════════════════════════════════════════════════════
+// ── TOC ──
 function getNomStatus(nom) {
   if (nom.type === 'PICK') {
     const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`);
     const checked = [...cbs].filter(c => c.checked).length;
-    const errs = getPickErrors(nom, checked);
-    if (errs.length) return { icon: '❌', cls: 'text-red-400' };
+    if (getPickErrors(nom, checked).length) return { icon: '❌', cls: 'text-red-400' };
     if (checked === 0) return { icon: '—', cls: 'text-gray-300' };
     return { icon: `✔ ${checked}`, cls: 'text-green-500' };
   } else {
     const inputs = document.querySelectorAll(`.rank-inp[data-nom="${nom.id}"]`);
     const vals = [...inputs].map(i => i.value !== '' ? parseInt(i.value) : null).filter(v => v !== null);
-    const errs = getRankErrors(nom, vals);
-    if (errs.length) return { icon: '❌', cls: 'text-red-400' };
+    if (getRankErrors(nom, vals).length) return { icon: '❌', cls: 'text-red-400' };
     if (vals.length === 0) return { icon: '—', cls: 'text-gray-300' };
     return { icon: `✔ ${vals.length}/${nom.total}`, cls: 'text-green-500' };
   }
 }
-
 function updateToc() {
   NOM_DATA.forEach(nom => {
     const el = document.querySelector(`.toc-status-${nom.id}`);
@@ -472,53 +396,41 @@ function updateToc() {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// VALIDATION RULES (0 = skip is always ok)
-// ═══════════════════════════════════════════════════════════════════
+// ── Validation ──
 function getPickErrors(nom, checked) {
-  const errors = [];
   if (checked === 0) return [];
-  if (nom.pick_min && checked < nom.pick_min)
-    errors.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
-  if (nom.pick_max && checked > nom.pick_max)
-    errors.push(`«${nom.name}»: выбрано ${checked}, максимум ${nom.pick_max}`);
-  return errors;
+  const e = [];
+  if (nom.pick_min && checked < nom.pick_min) e.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
+  if (nom.pick_max && checked > nom.pick_max) e.push(`«${nom.name}»: выбрано ${checked}, максимум ${nom.pick_max}`);
+  return e;
 }
-
 function getRankErrors(nom, vals) {
-  const errors = [];
   if (vals.length === 0) return [];
-  const hasDup = vals.length !== new Set(vals).size;
-  if (hasDup)
-    errors.push(`«${nom.name}»: одно место указано дважды`);
-  if (vals.length > 0 && vals.length < nom.total)
-    errors.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
-  return errors;
+  const e = [];
+  if (vals.length !== new Set(vals).size) e.push(`«${nom.name}»: одно место указано дважды`);
+  if (vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
+  return e;
 }
-
 function collectAllErrors() {
-  const errors = [];
+  const e = [];
   NOM_DATA.forEach(nom => {
     if (nom.type === 'PICK') {
-      const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`);
-      const checked = [...cbs].filter(c => c.checked).length;
-      errors.push(...getPickErrors(nom, checked));
+      const checked = [...document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`)].filter(c => c.checked).length;
+      e.push(...getPickErrors(nom, checked));
     } else {
-      const inputs = document.querySelectorAll(`.rank-inp[data-nom="${nom.id}"]`);
-      const vals = [...inputs].map(i => i.value !== '' ? parseInt(i.value) : null).filter(v => v !== null);
-      errors.push(...getRankErrors(nom, vals));
+      const vals = [...document.querySelectorAll(`.rank-inp[data-nom="${nom.id}"]`)]
+        .map(i => i.value !== '' ? parseInt(i.value) : null).filter(v => v !== null);
+      e.push(...getRankErrors(nom, vals));
     }
   });
-  return errors;
+  return e;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// FORM SUBMIT — validate before send
-// ═══════════════════════════════════════════════════════════════════
+// ── Submit ──
 document.getElementById('vote-form').addEventListener('submit', function(e) {
   const errors = collectAllErrors();
   const banner = document.getElementById('error-banner');
-  const list   = document.getElementById('error-list');
+  const list = document.getElementById('error-list');
   if (errors.length > 0) {
     e.preventDefault();
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
@@ -530,46 +442,36 @@ document.getElementById('vote-form').addEventListener('submit', function(e) {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// BALLOT PREVIEW  —  with edit buttons
-// ═══════════════════════════════════════════════════════════════════
+// ── Collect state ──
 function collectState() {
   const picks = {}, ranks = {};
   document.querySelectorAll('input[type=checkbox][name^=pick_]').forEach(cb => {
     const m = cb.name.match(/pick_(\d+)/);
-    if (!m) return;
-    const nomId = m[1];
-    if (!picks[nomId]) picks[nomId] = {};
-    if (cb.checked) picks[nomId][cb.value] = true;
+    if (!m || !cb.checked) return;
+    if (!picks[m[1]]) picks[m[1]] = {};
+    picks[m[1]][cb.value] = true;
   });
   document.querySelectorAll('input[type=number][name^=rank_]').forEach(inp => {
     const m = inp.name.match(/rank_(\d+)_(\d+)/);
     if (!m || inp.value === '') return;
-    const [, nomId, filmId] = m;
-    if (!ranks[nomId]) ranks[nomId] = {};
-    ranks[nomId][filmId] = parseInt(inp.value);
+    if (!ranks[m[1]]) ranks[m[1]] = {};
+    ranks[m[1]][m[2]] = parseInt(inp.value);
   });
   return { picks, ranks };
 }
 
+// ── Preview ──
 function renderBallot() {
   const { picks, ranks } = collectState();
   const body = document.getElementById('ballot-body');
   if (!body) return;
   let html = '';
   NOM_DATA.forEach(nom => {
-    const editBtn = `<button type="button"
-      onclick="goToSlide(${nom.slideIndex})"
+    const editBtn = `<button type="button" onclick="goToSlide(${nom.slideIndex})"
       class="ml-auto text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-400 rounded-lg px-2 py-0.5 transition whitespace-nowrap">
-      ✏️ Изменить
-    </button>`;
-
-    html += `<div class="px-5 py-4">`;
-    html += `<div class="flex items-center gap-2 mb-2">
-      <span class="font-semibold text-gray-800 text-base">${nom.name}</span>
-      ${editBtn}
-    </div>`;
-
+      ✏️ Изменить</button>`;
+    html += `<div class="px-5 py-4"><div class="flex items-center gap-2 mb-2">
+      <span class="font-semibold text-gray-800 text-base">${nom.name}</span>${editBtn}</div>`;
     if (nom.type === 'PICK') {
       const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
       if (chosen.length === 0) {
@@ -579,11 +481,8 @@ function renderBallot() {
         chosen.forEach(nid => {
           const n = nom.nominees.find(x => x.id == nid);
           if (!n) return;
-          const linkUrl = n.person_url || n.film_url;
-          const entry = linkUrl
-            ? `<a href="${linkUrl}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
-            : `<span>${n.label}</span>`;
-          html += `<li class="text-base text-gray-800">${entry}</li>`;
+          const url = n.person_url || n.film_url;
+          html += `<li class="text-base text-gray-800">${url ? `<a href="${url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>` : n.label}</li>`;
         });
         html += '</ul>';
       }
@@ -597,11 +496,8 @@ function renderBallot() {
         entries.forEach(([filmId, rank]) => {
           const n = nom.nominees.find(x => x.film_id == filmId);
           if (!n) return;
-          const linkUrl = n.film_url;
-          const entry = linkUrl
-            ? `<a href="${linkUrl}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
-            : `<span>${n.label}</span>`;
-          html += `<li class="text-base text-gray-800"><span class="inline-block w-6 text-gray-400 tabular-nums text-sm">${rank}.</span> ${entry}</li>`;
+          const url = n.film_url;
+          html += `<li class="text-base text-gray-800"><span class="inline-block w-6 text-gray-400 tabular-nums text-sm">${rank}.</span> ${url ? `<a href="${url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>` : n.label}</li>`;
         });
         html += '</ol>';
       }
@@ -611,43 +507,42 @@ function renderBallot() {
   body.innerHTML = html;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// XLSX EXPORT
-// ═══════════════════════════════════════════════════════════════════
+// ── XLSX export — one nomination per sheet ──
 document.getElementById('export-xlsx-btn').addEventListener('click', async function() {
   const { picks, ranks } = collectState();
-  const sheetRows = [];
-  NOM_DATA.forEach(nom => {
+  const nominations = NOM_DATA.map(nom => {
+    let header, rows;
     if (nom.type === 'PICK') {
+      header = ['Номинант', 'Выбор'];
       const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
       if (chosen.length === 0) {
-        sheetRows.push([nom.name, '', '(пропущено)', '']);
+        rows = [['(пропущено)', '']];
       } else {
-        chosen.forEach(nid => {
+        rows = chosen.map(nid => {
           const n = nom.nominees.find(x => x.id == nid);
-          if (!n) return;
-          sheetRows.push([nom.name, '✓', n.label, n.person_url || n.film_url || '']);
-        });
+          return n ? [n.label, '✓'] : [];
+        }).filter(r => r.length);
       }
     } else {
+      header = ['Место', 'Фильм'];
       const nomRanks = ranks[nom.id] || {};
       const entries = Object.entries(nomRanks).sort((a, b) => a[1] - b[1]);
       if (entries.length === 0) {
-        sheetRows.push([nom.name, '', '(пропущено)', '']);
+        rows = [['', '(пропущено)']];
       } else {
-        entries.forEach(([filmId, rank]) => {
+        rows = entries.map(([filmId, rank]) => {
           const n = nom.nominees.find(x => x.film_id == filmId);
-          if (!n) return;
-          sheetRows.push([nom.name, rank, n.label, n.film_url || '']);
-        });
+          return n ? [rank, n.label] : [];
+        }).filter(r => r.length);
       }
     }
+    return { name: nom.name, type: nom.type, header, rows };
   });
-  const allRows = [['Номинация', 'Место / Выбор', 'Номинант', 'Ссылка'], ...sheetRows];
+
   const resp = await fetch(`/${YEAR}/ballot-export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows: allRows }),
+    body: JSON.stringify({ nominations }),
   });
   if (!resp.ok) { alert('Ошибка экспорта'); return; }
   const blob = await resp.blob();
@@ -657,9 +552,7 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
   a.click();
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// AUTOSAVE DRAFT
-// ═══════════════════════════════════════════════════════════════════
+// ── Autosave draft (silent, no button) ──
 function collectDraft() {
   const { picks, ranks } = collectState();
   const runnerups = {};
@@ -670,32 +563,34 @@ function collectDraft() {
   return { picks, ranks, runnerups };
 }
 
+const autosaveIndicator = document.getElementById('autosave-indicator');
 let draftTimer = null;
-async function saveDraft(silent = true) {
+async function saveDraft() {
   await fetch(`/${YEAR}/draft`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(collectDraft()),
   });
-  if (!silent) {
-    document.querySelectorAll('[id^=draft-btn-]').forEach(btn => {
-      btn.textContent = '✓ Сохранено';
-      setTimeout(() => { btn.textContent = '💾 Черновик'; }, 2000);
-    });
+  if (autosaveIndicator) {
+    autosaveIndicator.textContent = '✓ сохранено';
+    autosaveIndicator.classList.add('text-green-400');
+    autosaveIndicator.classList.remove('text-gray-300');
+    setTimeout(() => {
+      autosaveIndicator.textContent = 'автосохранение';
+      autosaveIndicator.classList.remove('text-green-400');
+      autosaveIndicator.classList.add('text-gray-300');
+    }, 2000);
   }
 }
 
-document.querySelectorAll('[id^=draft-btn-]').forEach(btn => {
-  btn.addEventListener('click', () => saveDraft(false));
-});
-setInterval(() => saveDraft(true), 60000);
-
+// autosave on change (debounced 3s) + every 60s
 document.querySelectorAll('#vote-form input').forEach(el => {
   el.addEventListener('change', () => {
     clearTimeout(draftTimer);
-    draftTimer = setTimeout(() => saveDraft(true), 3000);
+    draftTimer = setTimeout(saveDraft, 3000);
   });
 });
+setInterval(saveDraft, 60000);
 
 updateToc();
 </script>
@@ -709,9 +604,7 @@ updateToc();
   function tick() {
     const diff = deadline - Date.now();
     if (diff <= 0) { el.textContent = 'истёк'; el.style.color = '#ef4444'; return; }
-    const h = Math.floor(diff / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
     el.textContent = h > 0 ? `${h}ч ${m}м ${s}с` : m > 0 ? `${m}м ${s}с` : `${s}с`;
   }
   tick(); setInterval(tick, 1000);
