@@ -85,11 +85,13 @@
       year: {{ film.year }},
       url: {{ film.url | tojson if film.url else 'null' }},
       nom_count: {{ film.nominees | length }},
+      shortlist_count: {{ film.nominees | selectattr('nomination.nominees_count') | list | length }},
       noms: [
         {% for n in film.nominees %}
         {
           nom_name: {{ n.nomination.name | tojson }},
-          person: {{ n.person.name | tojson if n.person else 'null' }}
+          person: {{ n.person.name | tojson if n.person else 'null' }},
+          is_shortlist: {{ 'true' if n.nomination.nominees_count else 'false' }}
         }{% if not loop.last %},{% endif %}
         {% endfor %}
       ]
@@ -137,6 +139,9 @@
         <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('nom_count')">
           Лонг-листов <span x-text="sortIcon('nom_count')" class="text-xs"></span>
         </th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('shortlist_count')">
+          Номинаций <span x-text="sortIcon('shortlist_count')" class="text-xs"></span>
+        </th>
         <th class="pb-2 pr-4">В лонг-листах</th>
         <th class="pb-2"></th>
       </tr>
@@ -174,13 +179,22 @@
           </td>
           <td class="py-2 pr-4 tabular-nums" x-show="!editing" x-text="film.year"></td>
           <td class="py-2 pr-4" x-show="editing"></td>
-          <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="film.nom_count"></td>
+          <td class="py-2 pr-4 tabular-nums text-gray-600" x-text="film.nom_count"></td>
+          <td class="py-2 pr-4 tabular-nums">
+            <span x-show="film.shortlist_count > 0"
+                  class="font-semibold text-purple-700" x-text="film.shortlist_count"></span>
+            <span x-show="film.shortlist_count === 0" class="text-gray-300">—</span>
+          </td>
           <td class="py-2 pr-4">
-            <template x-for="n in film.noms" :key="n.nom_name">
-              <span class="inline-block bg-indigo-50 text-indigo-700 rounded px-2 py-0.5 mr-1 mb-1 text-xs">
+            <template x-for="n in film.noms" :key="n.nom_name + (n.person || '')">
+              <span :class="n.is_shortlist
+                      ? 'bg-purple-50 text-purple-700'
+                      : 'bg-indigo-50 text-indigo-700'"
+                    class="inline-block rounded px-2 py-0.5 mr-1 mb-1 text-xs">
                 <span x-text="n.nom_name"></span>
                 <template x-if="n.person">
-                  <span class="text-indigo-400" x-text="' — ' + n.person"></span>
+                  <span :class="n.is_shortlist ? 'text-purple-400' : 'text-indigo-400'"
+                        x-text="' — ' + n.person"></span>
                 </template>
               </span>
             </template>
