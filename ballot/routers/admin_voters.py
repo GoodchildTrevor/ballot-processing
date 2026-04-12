@@ -47,6 +47,7 @@ def _voter_voted_at(voter: Voter, round_ids: set[int] | None, db: Session) -> da
 def list_voters(
     request: Request,
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),  # optional: filter to a single round
     db: Session = Depends(get_db),
 ):
     contests = (
@@ -56,16 +57,36 @@ def list_voters(
     )
 
     selected_contest = None
+    selected_round = None
+    all_rounds: list[Round] = []
     round_ids: set[int] | None = None
 
     if contests:
         if contest_id:
             selected_contest = db.get(Contest, contest_id)
         if not selected_contest:
-            selected_contest = contests[0]  # newest by default
+            selected_contest = contests[0]
 
-        rounds = db.query(Round).filter(Round.contest_id == selected_contest.id).all()
-        round_ids = {r.id for r in rounds}
+        all_rounds = (
+            db.query(Round)
+            .filter(Round.contest_id == selected_contest.id)
+            .order_by(Round.tour)
+            .all()
+        )
+
+        if round_id:
+            # Validate that this round belongs to the selected contest
+            selected_round = next((r for r in all_rounds if r.id == round_id), None)
+
+        if selected_round:
+            round_ids = {selected_round.id}
+        elif all_rounds:
+            # Default: show the first round (usually LONGLIST / tour 1)
+            # User can switch via tabs
+            selected_round = all_rounds[0]
+            round_ids = {selected_round.id}
+        else:
+            round_ids = set()
 
     voters = (
         db.query(Voter)
@@ -78,8 +99,8 @@ def list_voters(
         .all()
     )
 
-    # Nominations scoped to selected contest's rounds
-    if round_ids is not None:
+    # Nominations scoped to selected round(s)
+    if round_ids:
         nominations = (
             db.query(Nomination)
             .filter(Nomination.round_id.in_(round_ids))
@@ -87,13 +108,7 @@ def list_voters(
             .all()
         )
     else:
-        nominations = (
-            db.query(Nomination)
-            .order_by(Nomination.sort_order, Nomination.id)
-            .all()
-        )
-
-    nom_ids = {n.id for n in nominations}
+        nominations = []
 
     voter_ballots = []
     for voter in voters:
@@ -120,6 +135,7 @@ def list_voters(
         "voter_ballots": voter_ballots,
         "contests": contests,
         "selected_contest": selected_contest,
+        "selected_round": selected_round,
     })
 
 
@@ -127,17 +143,52 @@ def list_voters(
 def delete_voter_vote(
     voter_id: int,
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     voter = db.get(Voter, voter_id)
-    if voter:
+    if voter and round_id:
+        # Scoped delete: only remove votes/rankings for the specific round
+        nom_ids = [
+            n.id for n in db.query(Nomination)
+            .filter(Nomination.round_id == round_id)
+            .all()
+        ]
+        nominee_ids = [
+            n.id for n in db.query(Nominee)
+            .filter(Nominee.nomination_id.in_(nom_ids))
+            .all()
+        ] if nom_ids else []
+        if nominee_ids:
+            db.query(Vote).filter(
+                Vote.voter_id == voter_id,
+                Vote.nominee_id.in_(nominee_ids),
+            ).delete(synchronize_session="fetch")
+        if nom_ids:
+            db.query(Ranking).filter(
+                Ranking.voter_id == voter_id,
+                Ranking.nomination_id.in_(nom_ids),
+            ).delete(synchronize_session="fetch")
+        db.query(RoundParticipation).filter(
+            RoundParticipation.voter_id == voter_id,
+            RoundParticipation.round_id == round_id,
+        ).update({"voted_at": None, "draft": None})
+        db.commit()
+    elif voter:
+        # Fallback: delete everything (legacy, no round specified)
         db.query(Vote).filter(Vote.voter_id == voter_id).delete()
         db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
         db.query(RoundParticipation).filter(
             RoundParticipation.voter_id == voter_id
         ).update({"voted_at": None, "draft": None})
         db.commit()
-    redirect = f"/admin/voters?contest_id={contest_id}" if contest_id else "/admin/voters"
+
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id:
+        parts.append(f"round_id={round_id}")
+    redirect = "/admin/voters" + ("?" + "&".join(parts) if parts else "")
     return RedirectResponse(url=redirect, status_code=303)
 
 
@@ -146,6 +197,7 @@ def edit_vote_form(
     voter_id: int,
     request: Request,
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     voter = (
@@ -160,8 +212,19 @@ def edit_vote_form(
     if not voter:
         return HTMLResponse("Участник не найден.", status_code=404)
 
-    # Scope nominations to contest if provided
-    if contest_id:
+    # Scope nominations to round_id if given, else contest
+    if round_id:
+        nominations = (
+            db.query(Nomination)
+            .options(
+                joinedload(Nomination.nominees).joinedload(Nominee.film),
+                joinedload(Nomination.nominees).joinedload(Nominee.person),
+            )
+            .filter(Nomination.round_id == round_id)
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+    elif contest_id:
         rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
         round_ids = [r.id for r in rounds]
         nominations = (
@@ -204,6 +267,7 @@ def edit_vote_form(
         "current_rankings": current_rankings,
         "current_picks": current_picks,
         "contest_id": contest_id,
+        "round_id": round_id,
     })
 
 
@@ -212,33 +276,45 @@ async def edit_vote_submit(
     voter_id: int,
     request: Request,
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     voter = db.get(Voter, voter_id)
     if not voter:
         return RedirectResponse(url="/admin/voters", status_code=303)
 
-    db.query(Vote).filter(Vote.voter_id == voter_id).delete()
-    db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
+    # Scope delete to round if specified
+    if round_id:
+        nom_ids = [n.id for n in db.query(Nomination).filter(Nomination.round_id == round_id).all()]
+        nominee_ids = [n.id for n in db.query(Nominee).filter(Nominee.nomination_id.in_(nom_ids)).all()] if nom_ids else []
+        if nominee_ids:
+            db.query(Vote).filter(Vote.voter_id == voter_id, Vote.nominee_id.in_(nominee_ids)).delete(synchronize_session="fetch")
+        if nom_ids:
+            db.query(Ranking).filter(Ranking.voter_id == voter_id, Ranking.nomination_id.in_(nom_ids)).delete(synchronize_session="fetch")
+    else:
+        db.query(Vote).filter(Vote.voter_id == voter_id).delete()
+        db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
     db.flush()
 
     form = await request.form()
 
-    if contest_id:
-        rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
-        round_ids = [r.id for r in rounds]
+    if round_id:
         nominations = (
             db.query(Nomination)
             .options(joinedload(Nomination.nominees))
-            .filter(Nomination.round_id.in_(round_ids))
+            .filter(Nomination.round_id == round_id)
+            .all()
+        )
+    elif contest_id:
+        rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
+        nominations = (
+            db.query(Nomination)
+            .options(joinedload(Nomination.nominees))
+            .filter(Nomination.round_id.in_([r.id for r in rounds]))
             .all()
         )
     else:
-        nominations = (
-            db.query(Nomination)
-            .options(joinedload(Nomination.nominees))
-            .all()
-        )
+        nominations = db.query(Nomination).options(joinedload(Nomination.nominees)).all()
 
     for nom in nominations:
         if nom.type == NominationType.RANK:
@@ -264,15 +340,36 @@ async def edit_vote_submit(
                 except ValueError:
                     pass
 
-    p = (
-        db.query(RoundParticipation)
-        .filter(RoundParticipation.voter_id == voter_id)
-        .order_by(RoundParticipation.id.desc())
-        .first()
-    )
-    if p:
+    # Update participation for the specific round
+    target_round_id = round_id
+    if not target_round_id and contest_id:
+        rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
+        if rounds:
+            target_round_id = rounds[0].id
+
+    if target_round_id:
+        p = db.query(RoundParticipation).filter_by(
+            voter_id=voter_id, round_id=target_round_id
+        ).first()
+        if not p:
+            p = RoundParticipation(voter_id=voter_id, round_id=target_round_id)
+            db.add(p)
         p.voted_at = datetime.now(timezone.utc)
+    else:
+        p = (
+            db.query(RoundParticipation)
+            .filter(RoundParticipation.voter_id == voter_id)
+            .order_by(RoundParticipation.id.desc())
+            .first()
+        )
+        if p:
+            p.voted_at = datetime.now(timezone.utc)
     db.commit()
 
-    redirect = f"/admin/voters?contest_id={contest_id}" if contest_id else "/admin/voters"
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id:
+        parts.append(f"round_id={round_id}")
+    redirect = "/admin/voters" + ("?" + "&".join(parts) if parts else "")
     return RedirectResponse(url=redirect, status_code=303)

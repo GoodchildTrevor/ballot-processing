@@ -7,7 +7,7 @@
 
 {# Contest selector #}
 {% if contests %}
-<div class="mb-6 flex items-center gap-3">
+<div class="mb-5 flex items-center gap-3">
   <label class="text-sm font-medium text-gray-500 whitespace-nowrap">Конкурс:</label>
   <select id="contest-select"
           class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
@@ -25,30 +25,31 @@
 <p class="text-gray-400">Нет конкурсов. <a href="/admin/rounds" class="underline text-indigo-500">Создайте конкурс</a>.</p>
 {% else %}
 
-{# Round tabs (1 тур / 2 тур) #}
-{% if selected_contest.rounds | length > 1 %}
+{# Round tabs — each tab is a separate link with round_id #}
+{% set rounds = selected_contest.rounds | sort(attribute='tour') %}
+{% if rounds | length > 1 %}
 <div class="flex gap-2 mb-5">
-  {% for rnd in selected_contest.rounds | sort(attribute='tour') %}
+  {% for rnd in rounds %}
+  {% set is_active = selected_round and selected_round.id == rnd.id %}
   <a href="/admin/voters?contest_id={{ selected_contest.id }}&round_id={{ rnd.id }}"
      class="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl border-2 transition
-       {% if selected_round and selected_round.id == rnd.id %}
+       {% if is_active %}
          {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600 shadow-sm{% else %}bg-amber-500 text-white border-amber-500 shadow-sm{% endif %}
        {% else %}
          {% if rnd.tour == 1 %}bg-white text-blue-600 border-blue-200 hover:bg-blue-50{% else %}bg-white text-amber-600 border-amber-200 hover:bg-amber-50{% endif %}
        {% endif %}">
     <span class="text-base leading-none">{% if rnd.tour == 1 %}①{% else %}②{% endif %}</span>
     <span>{{ rnd.tour }} тур</span>
-    <span class="font-normal opacity-75 text-xs">{{ rnd.label }}</span>
+    <span class="font-normal opacity-75 text-xs">&mdash; {{ rnd.label }}</span>
   </a>
   {% endfor %}
 </div>
-{% elif selected_contest.rounds | length == 1 %}
-{# Single round — still show a header so user knows which tour they're on #}
-{% set rnd = selected_contest.rounds[0] %}
+{% elif rounds | length == 1 %}
+{% set rnd = rounds[0] %}
 <div class="flex items-center gap-3 mb-5">
   <div class="w-1 h-7 rounded-full {% if rnd.tour == 1 %}bg-blue-500{% else %}bg-amber-500{% endif %} flex-shrink-0"></div>
   <span class="text-sm font-extrabold {% if rnd.tour == 1 %}text-blue-700{% else %}text-amber-700{% endif %} uppercase tracking-wider">
-    {{ rnd.tour }} тур — {{ rnd.label }}
+    {{ rnd.tour }} тур &mdash; {{ rnd.label }}
   </span>
   <div class="flex-1 h-px {% if rnd.tour == 1 %}bg-blue-100{% else %}bg-amber-100{% endif %}"></div>
 </div>
@@ -112,21 +113,21 @@
             {% endfor %}
           </div>
           {% else %}
-          <span class="text-xs text-gray-300">—</span>
+          <span class="text-xs text-gray-300">&mdash;</span>
           {% endif %}
         </td>
         <td class="px-4 py-3 align-top whitespace-nowrap">
           {% if voted_at %}
-          <a href="/admin/voters/{{ voter.id }}/edit-vote?contest_id={{ selected_contest.id }}"
+          <a href="/admin/voters/{{ voter.id }}/edit-vote?contest_id={{ selected_contest.id }}{% if selected_round %}&round_id={{ selected_round.id }}{% endif %}"
              class="text-xs text-indigo-500 hover:underline mr-3">✏️ Редактировать</a>
           <form method="post"
-                action="/admin/voters/{{ voter.id }}/delete-vote?contest_id={{ selected_contest.id }}"
+                action="/admin/voters/{{ voter.id }}/delete-vote?contest_id={{ selected_contest.id }}{% if selected_round %}&round_id={{ selected_round.id }}{% endif %}"
                 class="inline"
                 onsubmit="return confirm('Удалить весь голос {{ voter.name }}?')">
             <button type="submit" class="text-xs text-red-400 hover:underline">🗑 Удалить голос</button>
           </form>
           {% else %}
-          <span class="text-xs text-gray-300">—</span>
+          <span class="text-xs text-gray-300">&mdash;</span>
           {% endif %}
         </td>
       </tr>

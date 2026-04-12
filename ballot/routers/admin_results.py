@@ -43,13 +43,25 @@ def _nominee_label(nominee) -> str:
 
 
 def get_results(db: Session, round_ids: set[int] | None = None):
+    """Build results list. Each item includes 'round' so the template can group by tour."""
     q = db.query(Nomination)
     if round_ids is not None:
         q = q.filter(Nomination.round_id.in_(round_ids))
-    nominations = q.order_by(Nomination.sort_order, Nomination.id).all()
+    nominations = (
+        q.order_by(Nomination.round_id, Nomination.sort_order, Nomination.id)
+        .all()
+    )
+
+    # Pre-fetch rounds to avoid N+1
+    round_cache: dict[int, Round] = {}
+    if round_ids:
+        for rnd in db.query(Round).filter(Round.id.in_(round_ids)).all():
+            round_cache[rnd.id] = rnd
 
     results = []
     for nom in nominations:
+        rnd = round_cache.get(nom.round_id) if nom.round_id else None
+
         if nom.type == NominationType.RANK:
             rows_raw = (
                 db.query(Film.title, func.sum(11 - Ranking.rank).label("score"))
@@ -76,7 +88,7 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                     "voters": ", ".join(f"{n} ({rank})" for n, rank in voter_entries),
                 })
             rows = _annotate_rows(rows, nom.nominees_count)
-            results.append({"nom": nom, "rows": rows})
+            results.append({"nom": nom, "round": rnd, "rows": rows})
         else:
             rows_raw = (
                 db.query(Nominee, func.count(Vote.id).label("votes"))
@@ -94,7 +106,7 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 )
                 rows.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
             rows = _annotate_rows(rows, nom.nominees_count)
-            results.append({"nom": nom, "rows": rows})
+            results.append({"nom": nom, "round": rnd, "rows": rows})
     return results
 
 
