@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Request
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
 from ballot.models import (
+    Contest, Round, RoundParticipation,
     Voter, Vote, Ranking, Nomination, NominationType, Nominee,
-    RoundParticipation,
 )
 from ballot.auth import require_admin
 from datetime import datetime, timezone
@@ -14,39 +15,58 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _voter_voted_at(voter: Voter, db: Session) -> datetime | None:
-    """Return the most recent voted_at for this voter.
-    
-    Primary: look for RoundParticipation with voted_at set.
-    Fallback: if voter has any Vote or Ranking records but no participation
-    (legacy data from before the Round system), return a sentinel datetime
-    so the UI shows them as having voted.
-    """
-    p = (
-        db.query(RoundParticipation)
-        .filter(
-            RoundParticipation.voter_id == voter.id,
-            RoundParticipation.voted_at.isnot(None),
-        )
-        .order_by(RoundParticipation.voted_at.desc())
-        .first()
+def _voter_voted_at(voter: Voter, round_ids: set[int] | None, db: Session) -> datetime | None:
+    """Return the most recent voted_at for this voter within the given rounds."""
+    q = db.query(RoundParticipation).filter(
+        RoundParticipation.voter_id == voter.id,
+        RoundParticipation.voted_at.isnot(None),
     )
+    if round_ids is not None:
+        q = q.filter(RoundParticipation.round_id.in_(round_ids))
+    p = q.order_by(RoundParticipation.voted_at.desc()).first()
     if p:
         return p.voted_at
 
-    # Legacy fallback: voter has votes/rankings but no participation record
-    has_votes = db.query(Vote).filter(Vote.voter_id == voter.id).first() is not None
-    if not has_votes:
-        has_votes = db.query(Ranking).filter(Ranking.voter_id == voter.id).first() is not None
-    if has_votes:
-        # Return a placeholder so the template shows voted status.
-        # We don't know the exact time, so return a zero-epoch datetime as a marker.
+    # Legacy fallback: votes exist but no participation record
+    vq = db.query(Vote).filter(Vote.voter_id == voter.id)
+    rq = db.query(Ranking).filter(Ranking.voter_id == voter.id)
+    if round_ids is not None:
+        nom_ids = [
+            n.id for n in db.query(Nomination.id)
+            .filter(Nomination.round_id.in_(round_ids))
+            .all()
+        ]
+        vq = vq.join(Nominee).filter(Nominee.nomination_id.in_(nom_ids))
+        rq = rq.filter(Ranking.nomination_id.in_(nom_ids))
+    if vq.first() is not None or rq.first() is not None:
         return datetime(2000, 1, 1, 0, 0, 0)
     return None
 
 
 @router.get("/voters", response_class=HTMLResponse)
-def list_voters(request: Request, db: Session = Depends(get_db)):
+def list_voters(
+    request: Request,
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    contests = (
+        db.query(Contest)
+        .order_by(Contest.year.desc())
+        .all()
+    )
+
+    selected_contest = None
+    round_ids: set[int] | None = None
+
+    if contests:
+        if contest_id:
+            selected_contest = db.get(Contest, contest_id)
+        if not selected_contest:
+            selected_contest = contests[0]  # newest by default
+
+        rounds = db.query(Round).filter(Round.contest_id == selected_contest.id).all()
+        round_ids = {r.id for r in rounds}
+
     voters = (
         db.query(Voter)
         .options(
@@ -57,10 +77,27 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
         .order_by(Voter.name)
         .all()
     )
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+
+    # Nominations scoped to selected contest's rounds
+    if round_ids is not None:
+        nominations = (
+            db.query(Nomination)
+            .filter(Nomination.round_id.in_(round_ids))
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+    else:
+        nominations = (
+            db.query(Nomination)
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+
+    nom_ids = {n.id for n in nominations}
+
     voter_ballots = []
     for voter in voters:
-        voted_at = _voter_voted_at(voter, db)
+        voted_at = _voter_voted_at(voter, round_ids, db)
         ballot = []
         for nom in nominations:
             if nom.type == NominationType.PICK:
@@ -78,25 +115,39 @@ def list_voters(request: Request, db: Session = Depends(get_db)):
                 if ranks:
                     ballot.append({"nom": nom, "type": "rank", "items": ranks})
         voter_ballots.append({"voter": voter, "ballot": ballot, "voted_at": voted_at})
-    return templates.TemplateResponse(request, "admin/voters.html", {"voter_ballots": voter_ballots})
+
+    return templates.TemplateResponse(request, "admin/voters.html", {
+        "voter_ballots": voter_ballots,
+        "contests": contests,
+        "selected_contest": selected_contest,
+    })
 
 
 @router.post("/voters/{voter_id}/delete-vote")
-def delete_voter_vote(voter_id: int, db: Session = Depends(get_db)):
+def delete_voter_vote(
+    voter_id: int,
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     voter = db.get(Voter, voter_id)
     if voter:
         db.query(Vote).filter(Vote.voter_id == voter_id).delete()
         db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
-        # Clear voted_at on all round participations
         db.query(RoundParticipation).filter(
             RoundParticipation.voter_id == voter_id
         ).update({"voted_at": None, "draft": None})
         db.commit()
-    return RedirectResponse(url="/admin/voters", status_code=303)
+    redirect = f"/admin/voters?contest_id={contest_id}" if contest_id else "/admin/voters"
+    return RedirectResponse(url=redirect, status_code=303)
 
 
 @router.get("/voters/{voter_id}/edit-vote", response_class=HTMLResponse)
-def edit_vote_form(voter_id: int, request: Request, db: Session = Depends(get_db)):
+def edit_vote_form(
+    voter_id: int,
+    request: Request,
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     voter = (
         db.query(Voter)
         .options(
@@ -108,13 +159,32 @@ def edit_vote_form(voter_id: int, request: Request, db: Session = Depends(get_db
     )
     if not voter:
         return HTMLResponse("Участник не найден.", status_code=404)
-    nominations = (
-        db.query(Nomination)
-        .options(joinedload(Nomination.nominees).joinedload(Nominee.film),
-                 joinedload(Nomination.nominees).joinedload(Nominee.person))
-        .order_by(Nomination.sort_order, Nomination.id)
-        .all()
-    )
+
+    # Scope nominations to contest if provided
+    if contest_id:
+        rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
+        round_ids = [r.id for r in rounds]
+        nominations = (
+            db.query(Nomination)
+            .options(
+                joinedload(Nomination.nominees).joinedload(Nominee.film),
+                joinedload(Nomination.nominees).joinedload(Nominee.person),
+            )
+            .filter(Nomination.round_id.in_(round_ids))
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+    else:
+        nominations = (
+            db.query(Nomination)
+            .options(
+                joinedload(Nomination.nominees).joinedload(Nominee.film),
+                joinedload(Nomination.nominees).joinedload(Nominee.person),
+            )
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+
     rank_noms = [n for n in nominations if n.type == NominationType.RANK]
     pick_noms = [n for n in nominations if n.type == NominationType.PICK]
 
@@ -133,11 +203,17 @@ def edit_vote_form(voter_id: int, request: Request, db: Session = Depends(get_db
         "pick_noms": pick_noms,
         "current_rankings": current_rankings,
         "current_picks": current_picks,
+        "contest_id": contest_id,
     })
 
 
 @router.post("/voters/{voter_id}/edit-vote")
-async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depends(get_db)):
+async def edit_vote_submit(
+    voter_id: int,
+    request: Request,
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     voter = db.get(Voter, voter_id)
     if not voter:
         return RedirectResponse(url="/admin/voters", status_code=303)
@@ -147,11 +223,22 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
     db.flush()
 
     form = await request.form()
-    nominations = (
-        db.query(Nomination)
-        .options(joinedload(Nomination.nominees))
-        .all()
-    )
+
+    if contest_id:
+        rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
+        round_ids = [r.id for r in rounds]
+        nominations = (
+            db.query(Nomination)
+            .options(joinedload(Nomination.nominees))
+            .filter(Nomination.round_id.in_(round_ids))
+            .all()
+        )
+    else:
+        nominations = (
+            db.query(Nomination)
+            .options(joinedload(Nomination.nominees))
+            .all()
+        )
 
     for nom in nominations:
         if nom.type == NominationType.RANK:
@@ -177,7 +264,6 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
                 except ValueError:
                     pass
 
-    # Mark voted_at on the most recent active round participation (or any)
     p = (
         db.query(RoundParticipation)
         .filter(RoundParticipation.voter_id == voter_id)
@@ -187,4 +273,6 @@ async def edit_vote_submit(voter_id: int, request: Request, db: Session = Depend
     if p:
         p.voted_at = datetime.now(timezone.utc)
     db.commit()
-    return RedirectResponse(url="/admin/voters", status_code=303)
+
+    redirect = f"/admin/voters?contest_id={contest_id}" if contest_id else "/admin/voters"
+    return RedirectResponse(url=redirect, status_code=303)

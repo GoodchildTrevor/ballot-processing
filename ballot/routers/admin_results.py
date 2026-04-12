@@ -1,11 +1,15 @@
 import io
-from fastapi import APIRouter, Depends, Request
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Film, Vote, Ranking, Voter
+from ballot.models import (
+    Contest, Round,
+    Nomination, NominationType, Nominee, Film, Vote, Ranking, Voter,
+)
 from ballot.auth import require_admin
 import openpyxl
 
@@ -14,7 +18,6 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _annotate_rows(rows: list, count: int | None) -> list:
-    """Add dense_rank and is_nominee using DENSE_RANK logic."""
     if not rows:
         return rows
     rank = 1
@@ -29,7 +32,6 @@ def _annotate_rows(rows: list, count: int | None) -> list:
 
 
 def _nominee_label(nominee) -> str:
-    """Build display label for a PICK nominee: person > item > film."""
     film_part = f"{nominee.film.title} ({nominee.film.year})" if nominee.film else "?"
     if getattr(nominee, 'persons_label', None):
         return f"{nominee.persons_label} — {film_part}"
@@ -40,8 +42,12 @@ def _nominee_label(nominee) -> str:
     return nominee.film.title if nominee.film else "?"
 
 
-def get_results(db: Session):
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+def get_results(db: Session, round_ids: set[int] | None = None):
+    q = db.query(Nomination)
+    if round_ids is not None:
+        q = q.filter(Nomination.round_id.in_(round_ids))
+    nominations = q.order_by(Nomination.sort_order, Nomination.id).all()
+
     results = []
     for nom in nominations:
         if nom.type == NominationType.RANK:
@@ -93,14 +99,48 @@ def get_results(db: Session):
 
 
 @router.get("/results", response_class=HTMLResponse)
-def show_results(request: Request, db: Session = Depends(get_db)):
-    results = get_results(db)
-    return templates.TemplateResponse(request, "admin/results.html", {"results": results})
+def show_results(
+    request: Request,
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    contests = db.query(Contest).order_by(Contest.year.desc()).all()
+
+    selected_contest = None
+    round_ids: set[int] | None = None
+
+    if contests:
+        if contest_id:
+            selected_contest = db.get(Contest, contest_id)
+        if not selected_contest:
+            selected_contest = contests[0]
+
+        rounds = db.query(Round).filter(Round.contest_id == selected_contest.id).all()
+        round_ids = {r.id for r in rounds}
+
+    results = get_results(db, round_ids)
+    return templates.TemplateResponse(request, "admin/results.html", {
+        "results": results,
+        "contests": contests,
+        "selected_contest": selected_contest,
+    })
 
 
 @router.get("/results/export")
-def export_results(db: Session = Depends(get_db)):
-    results = get_results(db)
+def export_results(
+    contest_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    round_ids: set[int] | None = None
+    filename = "results.xlsx"
+    if contest_id:
+        contest = db.get(Contest, contest_id)
+        if contest:
+            rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
+            round_ids = {r.id for r in rounds}
+            filename = f"results_{contest.year}_{contest.name}.xlsx".replace(" ", "_")
+
+    results = get_results(db, round_ids)
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for item in results:
@@ -112,7 +152,7 @@ def export_results(db: Session = Depends(get_db)):
             ws.append(["Участник", "Голоса", "Проголосовали",
                        "Номинант" if item["nom"].nominees_count else ""])
         for row in item["rows"]:
-            extra = ["\u2705 Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
+            extra = ["✅ Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
             ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
@@ -120,5 +160,5 @@ def export_results(db: Session = Depends(get_db)):
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=results.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

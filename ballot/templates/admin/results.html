@@ -1,67 +1,94 @@
 {% extends "base.html" %}
-{% block title %}Результаты — Админка{% endblock %}
+{% block title %}Результаты{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold">Результаты</h1>
-  <a href="/admin/results/export" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">📥 Скачать .xlsx</a>
+  <h1 class="text-2xl font-bold text-gray-900">Результаты</h1>
+  {% if selected_contest %}
+  <a href="/admin/results/export?contest_id={{ selected_contest.id }}"
+     class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-2">
+    ⬇ Скачать .xlsx
+  </a>
+  {% endif %}
 </div>
-{% for item in results %}
-<div class="bg-white shadow rounded-xl p-6 mb-6">
-  <div class="flex items-center gap-3 mb-4">
-    <h2 class="text-lg font-bold text-gray-800">{{ item.nom.name }}</h2>
-    <span class="px-2 py-0.5 rounded text-xs font-semibold
-      {{ 'bg-yellow-100 text-yellow-700' if item.nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
-      {{ item.nom.type.value }}
-    </span>
-    {% if item.nom.nominees_count %}
-    <span class="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
-      Номинантов: {{ item.nom.nominees_count }}
-    </span>
+
+{# Contest selector #}
+{% if contests %}
+<div class="mb-6 flex items-center gap-3">
+  <label class="text-sm font-medium text-gray-500 whitespace-nowrap">Конкурс:</label>
+  <select id="contest-select"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+          onchange="window.location.href = '/admin/results?contest_id=' + this.value">
+    {% for c in contests %}
+    <option value="{{ c.id }}" {% if selected_contest and c.id == selected_contest.id %}selected{% endif %}>
+      {{ c.name }} ({{ c.year }})
+    </option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+{% if not selected_contest %}
+<p class="text-gray-400">Нет конкурсов. <a href="/admin/rounds" class="underline text-indigo-500">Создайте конкурс</a>.</p>
+{% elif not results %}
+<div class="text-center py-20 text-gray-400">
+  <div class="text-4xl mb-3">📊</div>
+  <p>Нет данных для «{{ selected_contest.name }}»</p>
+</div>
+{% else %}
+<div class="space-y-6">
+  {% for item in results %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+      <h2 class="font-bold text-gray-900 text-base">{{ item.nom.name }}</h2>
+      <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+        {% if item.nom.type.value == 'RANK' %}bg-amber-100 text-amber-700
+        {% else %}bg-blue-100 text-blue-700{% endif %}">
+        {{ item.nom.type.value }}
+      </span>
+      {% if item.nom.nominees_count %}
+      <span class="text-xs text-gray-400">Номинантов: {{ item.nom.nominees_count }}</span>
+      {% endif %}
+    </div>
+    {% if not item.rows %}
+    <p class="px-5 py-4 text-sm text-gray-400">Голосов пока нет</p>
+    {% else %}
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-400 border-b bg-gray-50">
+        <tr>
+          <th class="px-5 py-2 text-left w-8">#</th>
+          <th class="px-5 py-2 text-left">{{ 'Фильм' if item.nom.type.value == 'RANK' else 'Участник' }}</th>
+          <th class="px-5 py-2 text-left">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+          <th class="px-5 py-2 text-left">Проголосовали</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for row in item.rows %}
+        <tr class="{% if row.is_nominee %}bg-green-50{% endif %}">
+          <td class="px-5 py-2 font-bold {% if row.is_nominee %}text-green-600{% else %}text-gray-400{% endif %} tabular-nums">
+            {{ row.position }}
+          </td>
+          <td class="px-5 py-2 font-medium text-gray-800">{{ row.label }}</td>
+          <td class="px-5 py-2 text-gray-600 tabular-nums">{{ row.score }}</td>
+          <td class="px-5 py-2 text-gray-400 text-xs">
+            {% if row.voter_list %}
+              {% for entry in row.voter_list %}
+                <span class="inline-block mr-2">{{ entry.name }}
+                  {% if entry.rank is defined and entry.rank %}({{ entry.rank }}){% endif %}
+                </span>
+              {% endfor %}
+            {% elif row.voters %}
+              {{ row.voters }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% endif %}
   </div>
-  <table class="w-full text-sm">
-    <thead class="text-left text-gray-500 border-b">
-      <tr>
-        <th class="pb-2 pr-3 w-8">#</th>
-        <th class="pb-2 pr-4">Фильм</th>
-        <th class="pb-2 pr-4 tabular-nums">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
-        <th class="pb-2 text-gray-400">Проголосовали</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in item.rows %}
-      {% set hl = row.is_nominee %}
-      <tr class="border-b last:border-0 {{ 'bg-green-50 hover:bg-green-100' if hl else 'hover:bg-gray-50' }}">
-        <td class="py-2 pr-3 font-bold tabular-nums {{ 'text-green-600' if hl else 'text-indigo-600' }}">{{ row.position }}</td>
-        <td class="py-2 pr-4 {{ 'font-semibold text-green-800' if hl else '' }}">{{ row.label }}</td>
-        <td class="py-2 pr-4 font-semibold tabular-nums {{ 'text-green-700' if hl else '' }}">{{ row.score }}</td>
-        <td class="py-2 text-xs">
-          {% if item.nom.type.value == 'RANK' %}
-            {% if row.voter_list %}
-              <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
-                {% for entry in row.voter_list %}
-                  {{ entry.name }}<span class="font-mono bg-gray-100 px-1 rounded ml-0.5">&#8470;{{ entry.rank }}</span>{% if not loop.last %} , {% endif %}
-                {% endfor %}
-              </span>
-            {% else %}
-              <span class="text-gray-300">&mdash;</span>
-            {% endif %}
-          {% else %}
-            <span class="{{ 'text-green-600' if hl else 'text-gray-400' }}">
-              {% if row.voters %}
-                {{ row.voters }}
-              {% else %}
-                &mdash;
-              {% endif %}
-            </span>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4" class="py-4 text-gray-400 text-center">Голосов пока нет</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {% endfor %}
 </div>
-{% endfor %}
+{% endif %}
 {% endblock %}
