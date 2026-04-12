@@ -25,6 +25,12 @@
 
 {% if nominations %}
 
+{# ── Error banner — above slides, always reachable via scroll-to-top ── #}
+<div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
+  <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
+  <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
+</div>
+
 <div id="slides">
 
 {# ══ SLIDE 0 — TABLE OF CONTENTS ══ #}
@@ -230,13 +236,6 @@
 
 {# ══ SLIDE N+1 — PREVIEW + SUBMIT ══ #}
 <div class="slide hidden" data-slide="{{ nominations|length + 1 }}">
-
-  {# ── Error banner — inside the final slide so it's always visible ── #}
-  <div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
-    <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
-    <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
-  </div>
-
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center justify-between">
       <h2 class="font-bold text-lg text-gray-900">✅ Проверка бюллетеня</h2>
@@ -481,12 +480,11 @@ document.getElementById('vote-form').addEventListener('submit', function(e) {
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
     e.preventDefault();
-    // First go to final slide and render ballot, then show banner
-    goToSlide(TOTAL_SLIDES);
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
     banner.classList.remove('hidden');
-    // Small timeout to let the slide render before scrolling
-    setTimeout(() => banner.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    // Switch to final slide (renders ballot preview), then snap to top where banner lives
+    goToSlide(TOTAL_SLIDES);
+    window.scrollTo({ top: 0, behavior: 'instant' });
   } else {
     banner.classList.add('hidden');
   }
@@ -552,7 +550,6 @@ function renderBallot() {
           const n = nom.nominees.find(x => x.film_id == filmId);
           if (!n) return;
           const url = n.film_url;
-          // highlight duplicate ranks in red
           const dupRank = entries.filter(([, r]) => r === rank).length > 1;
           const rankCls = dupRank ? 'text-red-500 font-bold' : 'text-gray-400';
           html += `<li class="text-base text-gray-800"><span class="inline-block w-6 tabular-nums text-sm ${rankCls}">${rank}.</span> ${url ? `<a href="${url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>` : n.label}</li>`;
@@ -568,7 +565,7 @@ function renderBallot() {
   body.innerHTML = html;
 }
 
-// ── XLSX export — one nomination per sheet ──
+// ── XLSX export ──
 document.getElementById('export-xlsx-btn').addEventListener('click', async function() {
   const { picks, ranks } = collectState();
   const nominations = NOM_DATA.map(nom => {
@@ -613,7 +610,7 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
   a.click();
 });
 
-// ── Autosave draft (silent) ──
+// ── Autosave draft ──
 function collectDraft() {
   const { picks, ranks } = collectState();
   const runnerups = {};
