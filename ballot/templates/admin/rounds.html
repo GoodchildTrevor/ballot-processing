@@ -1,20 +1,79 @@
 {% extends "base.html" %}
-{% block title %}Раунды{% endblock %}
+{% block title %}Конкурсы и раунды{% endblock %}
 {% block content %}
-<div x-data="{ showCreate: false }">
+<div x-data="{ showCreateContest: false, showCreateRound: false }">
 
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-extrabold text-gray-900">Раунды голосования</h1>
-    <button @click="showCreate = !showCreate"
-            class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
-      + Новый раунд
-    </button>
+    <h1 class="text-2xl font-extrabold text-gray-900">Конкурсы и раунды</h1>
+    <div class="flex gap-2">
+      <button @click="showCreateContest = !showCreateContest"
+              class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+        + Конкурс
+      </button>
+      <button @click="showCreateRound = !showCreateRound"
+              class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-300 transition">
+        + Раунд (вручную)
+      </button>
+    </div>
   </div>
 
-  {# ── Create form ── #}
-  <div x-show="showCreate" x-cloak
+  {# ── Create Contest form ── #}
+  <div x-show="showCreateContest" x-cloak
+       class="bg-white border border-indigo-200 rounded-xl p-6 mb-8 shadow-sm">
+    <h2 class="font-semibold text-gray-800 mb-1">Создать конкурс</h2>
+    <p class="text-xs text-gray-400 mb-4">Автоматически создаёт лонг-лист раунд и номинации по выбранным шаблонам.</p>
+    <form method="post" action="/admin/contests" class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Год конкурса</label>
+          <input name="year" type="number" required placeholder="2024"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Название конкурса</label>
+          <input name="name" required placeholder="Премия 2024"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+        </div>
+        <div class="sm:col-span-3">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Дедлайн лонг-листа (необязательно)</label>
+          <input name="deadline" type="datetime-local"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+        </div>
+      </div>
+
+      {# Template checkboxes #}
+      {% if all_templates %}
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-2">Номинации из шаблонов</label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {% for tmpl in all_templates %}
+          <label class="flex items-center gap-2 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50">
+            <input type="checkbox" name="template_ids" value="{{ tmpl.id }}" class="accent-indigo-600" />
+            <span class="font-medium">{{ tmpl.name }}</span>
+            <span class="ml-auto text-xs text-gray-400">{{ tmpl.type.value }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <p class="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+        ⚠ Нет активных шаблонов. <a href="/admin/templates" class="underline">Создайте шаблоны</a> перед созданием конкурса.
+      </p>
+      {% endif %}
+
+      <div class="flex gap-3">
+        <button type="submit"
+                class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Создать конкурс</button>
+        <button type="button" @click="showCreateContest = false"
+                class="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100 transition">Отмена</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Create Round (manual) form ── #}
+  <div x-show="showCreateRound" x-cloak
        class="bg-white border border-gray-200 rounded-xl p-6 mb-8 shadow-sm">
-    <h2 class="font-semibold text-gray-800 mb-4">Создать раунд</h2>
+    <h2 class="font-semibold text-gray-800 mb-4">Создать раунд вручную</h2>
     <form method="post" action="/admin/rounds" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="sm:col-span-2">
         <label class="block text-xs font-medium text-gray-500 mb-1">Название</label>
@@ -25,8 +84,8 @@
         <label class="block text-xs font-medium text-gray-500 mb-1">Тип</label>
         <select name="round_type"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-          <option value="LONGLIST">LONGLIST — Лонг-лист</option>
-          <option value="FINAL">FINAL — Финал</option>
+          <option value="LONGLIST">LONGLIST</option>
+          <option value="FINAL">FINAL</option>
         </select>
       </div>
       <div>
@@ -35,90 +94,174 @@
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
       </div>
       <div class="sm:col-span-2">
-        <label class="block text-xs font-medium text-gray-500 mb-1">Дедлайн (необязательно)</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Дедлайн</label>
         <input name="deadline" type="datetime-local"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
       </div>
       <div class="sm:col-span-2 flex gap-3">
         <button type="submit"
-                class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Создать</button>
-        <button type="button" @click="showCreate = false"
+                class="bg-gray-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition">Создать</button>
+        <button type="button" @click="showCreateRound = false"
                 class="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100 transition">Отмена</button>
       </div>
     </form>
   </div>
 
-  {# ── Rounds table ── #}
-  {% if rounds %}
-  <div class="space-y-4">
-    {% for rnd in rounds %}
-    <div x-data="{ showEdit: false }"
-         class="bg-white border {% if rnd.is_active %}border-green-400{% else %}border-gray-200{% endif %} rounded-xl shadow-sm overflow-hidden">
+  {# ── Contests ── #}
+  {% if contests %}
+  <div class="space-y-6 mb-8">
+    {% for contest in contests %}
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
-      {# Header row #}
-      <div class="flex flex-wrap items-center gap-3 px-5 py-4">
-        {# Type badge #}
-        {% if rnd.round_type.value == 'LONGLIST' %}
-          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">LONGLIST</span>
-        {% else %}
-          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">FINAL</span>
-        {% endif %}
-
-        <span class="font-semibold text-gray-900">{{ rnd.label }}</span>
-        <span class="text-xs text-gray-400">{{ rnd.year }}</span>
-
-        {% if rnd.is_active %}
-          <span class="ml-1 text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Активен</span>
-        {% else %}
-          <span class="ml-1 text-xs text-gray-400 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Неактивен</span>
-        {% endif %}
-
-        {% if rnd.deadline %}
-          <span class="text-xs text-gray-500">📅 {{ rnd.deadline.strftime('%d.%m.%Y %H:%M') }}</span>
-        {% else %}
-          <span class="text-xs text-red-400">⚠ Дедлайн не задан</span>
-        {% endif %}
-
-        {# Actions #}
-        <div class="ml-auto flex flex-wrap gap-2">
-          {# Edit toggle #}
-          <button @click="showEdit = !showEdit"
-                  class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">✏ Изменить</button>
-
-          {# Activate / Deactivate #}
-          {% if rnd.is_active %}
-            <form method="post" action="/admin/rounds/{{ rnd.id }}/deactivate">
-              <button class="text-xs px-3 py-1.5 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-800 hover:bg-yellow-200 transition">⏸ Деактивировать</button>
-            </form>
-          {% else %}
-            <form method="post" action="/admin/rounds/{{ rnd.id }}/activate"
-                  title="{% if not rnd.deadline %}Сначала задайте дедлайн{% endif %}">
-              <button {% if not rnd.deadline %}disabled class="opacity-40 cursor-not-allowed"{% endif %}
-                      class="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition">▶ Активировать</button>
-            </form>
-          {% endif %}
-
-          {# Preview (always) #}
-          <a href="/admin/rounds/{{ rnd.id }}/preview"
-             class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition">👁 Превью</a>
-
-          {# Promote to FINAL (only for LONGLIST) #}
-          {% if rnd.round_type.value == 'LONGLIST' %}
-            <form method="post" action="/admin/rounds/{{ rnd.id }}/promote"
-                  onsubmit="return confirm('Создать финальный раунд из лонга {{ rnd.label }}?')">
-              <button class="text-xs px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">🚀 Промоут в финал</button>
-            </form>
-          {% endif %}
-
-          {# Delete #}
-          <form method="post" action="/admin/rounds/{{ rnd.id }}/delete"
-                onsubmit="return confirm('Удалить раунд {{ rnd.label }}?')">
+      {# Contest header #}
+      <div class="flex flex-wrap items-center gap-3 px-5 py-4 bg-indigo-50 border-b border-indigo-100">
+        <span class="text-lg font-bold text-indigo-900">{{ contest.name }}</span>
+        <span class="text-sm text-indigo-500">{{ contest.year }}</span>
+        <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+          {% if contest.status.value == 'LONGLIST_ACTIVE' %}bg-green-100 text-green-700
+          {% elif contest.status.value == 'LONGLIST_CLOSED' %}bg-gray-100 text-gray-500
+          {% elif contest.status.value == 'FINAL_ACTIVE' %}bg-amber-100 text-amber-700
+          {% elif contest.status.value == 'FINAL_CLOSED' %}bg-purple-100 text-purple-700
+          {% else %}bg-gray-100 text-gray-500{% endif %}">{{ contest.status.value.replace('_', ' ') }}</span>
+        <div class="ml-auto">
+          <form method="post" action="/admin/contests/{{ contest.id }}/delete"
+                onsubmit="return confirm('Удалить конкурс {{ contest.name }} и все его данные?')">
             <button class="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition">🗑 Удалить</button>
           </form>
         </div>
       </div>
 
-      {# Edit sub-form #}
+      {# Rounds inside contest #}
+      {% if contest.rounds %}
+      <div class="divide-y divide-gray-100">
+        {% for rnd in contest.rounds | sort(attribute='tour') %}
+        <div x-data="{ showEdit: false }" class="px-5 py-3">
+          <div class="flex flex-wrap items-center gap-2">
+            {% if rnd.round_type.value == 'LONGLIST' %}
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">LONGLIST</span>
+            {% else %}
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">FINAL</span>
+            {% endif %}
+            <span class="font-medium text-gray-800">{{ rnd.label }}</span>
+            {% if rnd.is_active %}
+              <span class="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Активен</span>
+            {% else %}
+              <span class="text-xs text-gray-400 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Неактивен</span>
+            {% endif %}
+            {% if rnd.deadline %}
+              <span class="text-xs text-gray-500">📅 {{ rnd.deadline.strftime('%d.%m.%Y %H:%M') }}</span>
+            {% else %}
+              <span class="text-xs text-red-400">⚠ Дедлайн не задан</span>
+            {% endif %}
+            <div class="ml-auto flex flex-wrap gap-2">
+              <button @click="showEdit = !showEdit"
+                      class="text-xs px-3 py-1 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">✏</button>
+              {% if rnd.is_active %}
+                <form method="post" action="/admin/rounds/{{ rnd.id }}/deactivate">
+                  <button class="text-xs px-3 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-800 hover:bg-yellow-200 transition">⏸</button>
+                </form>
+              {% else %}
+                <form method="post" action="/admin/rounds/{{ rnd.id }}/activate">
+                  <button {% if not rnd.deadline %}disabled class="opacity-40 cursor-not-allowed"{% endif %}
+                          class="text-xs px-3 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition">▶</button>
+                </form>
+              {% endif %}
+              <a href="/admin/rounds/{{ rnd.id }}/preview"
+                 class="text-xs px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition">👁</a>
+              {% if rnd.round_type.value == 'LONGLIST' %}
+                <form method="post" action="/admin/rounds/{{ rnd.id }}/promote"
+                      onsubmit="return confirm('Создать финальный раунд из «{{ rnd.label }}»?')">
+                  <button class="text-xs px-3 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">🚀 Промоут</button>
+                </form>
+              {% endif %}
+              <form method="post" action="/admin/rounds/{{ rnd.id }}/delete"
+                    onsubmit="return confirm('Удалить раунд «{{ rnd.label }}»?')">
+                <button class="text-xs px-3 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition">🗑</button>
+              </form>
+            </div>
+          </div>
+          {# Edit sub-form #}
+          <div x-show="showEdit" x-cloak class="mt-3 border-t border-gray-100 bg-gray-50 rounded-lg px-4 py-3">
+            <form method="post" action="/admin/rounds/{{ rnd.id }}/edit" class="flex flex-wrap gap-3 items-end">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Название</label>
+                <input name="label" value="{{ rnd.label }}" required
+                       class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Дедлайн</label>
+                <input name="deadline" type="datetime-local"
+                       value="{% if rnd.deadline %}{{ rnd.deadline.strftime('%Y-%m-%dT%H:%M') }}{% endif %}"
+                       class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+              </div>
+              <button type="submit" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 transition">Сохранить</button>
+              <button type="button" @click="showEdit = false" class="text-gray-500 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100 transition">Отмена</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-5 py-3 text-sm text-gray-400">Раундов нет</div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Standalone rounds (legacy) ── #}
+  {% if standalone %}
+  <h2 class="text-lg font-bold text-gray-600 mb-3">Отдельные раунды</h2>
+  <div class="space-y-3">
+    {% for rnd in standalone %}
+    <div x-data="{ showEdit: false }"
+         class="bg-white border {% if rnd.is_active %}border-green-400{% else %}border-gray-200{% endif %} rounded-xl shadow-sm overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+        {% if rnd.round_type.value == 'LONGLIST' %}
+          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">LONGLIST</span>
+        {% else %}
+          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">FINAL</span>
+        {% endif %}
+        <span class="font-semibold text-gray-900">{{ rnd.label }}</span>
+        <span class="text-xs text-gray-400">{{ rnd.year }}</span>
+        {% if rnd.is_active %}
+          <span class="ml-1 text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Активен</span>
+        {% else %}
+          <span class="ml-1 text-xs text-gray-400 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Неактивен</span>
+        {% endif %}
+        {% if rnd.deadline %}
+          <span class="text-xs text-gray-500">📅 {{ rnd.deadline.strftime('%d.%m.%Y %H:%M') }}</span>
+        {% else %}
+          <span class="text-xs text-red-400">⚠ Дедлайн не задан</span>
+        {% endif %}
+        <div class="ml-auto flex flex-wrap gap-2">
+          <button @click="showEdit = !showEdit"
+                  class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">✏ Изменить</button>
+          {% if rnd.is_active %}
+            <form method="post" action="/admin/rounds/{{ rnd.id }}/deactivate">
+              <button class="text-xs px-3 py-1.5 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-800 hover:bg-yellow-200 transition">⏸ Деактивировать</button>
+            </form>
+          {% else %}
+            <form method="post" action="/admin/rounds/{{ rnd.id }}/activate">
+              <button {% if not rnd.deadline %}disabled class="opacity-40 cursor-not-allowed"{% endif %}
+                      class="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition">▶ Активировать</button>
+            </form>
+          {% endif %}
+          <a href="/admin/rounds/{{ rnd.id }}/preview"
+             class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition">👁 Превью</a>
+          {% if rnd.round_type.value == 'LONGLIST' %}
+            <form method="post" action="/admin/rounds/{{ rnd.id }}/promote"
+                  onsubmit="return confirm('Создать финальный раунд из «{{ rnd.label }}»?')">
+              <button class="text-xs px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">🚀 Промоут в финал</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/admin/rounds/{{ rnd.id }}/delete"
+                onsubmit="return confirm('Удалить раунд «{{ rnd.label }}»?')">
+            <button class="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition">🗑 Удалить</button>
+          </form>
+        </div>
+      </div>
       <div x-show="showEdit" x-cloak class="border-t border-gray-100 bg-gray-50 px-5 py-4">
         <form method="post" action="/admin/rounds/{{ rnd.id }}/edit" class="flex flex-wrap gap-3 items-end">
           <div>
@@ -132,20 +275,19 @@
                    value="{% if rnd.deadline %}{{ rnd.deadline.strftime('%Y-%m-%dT%H:%M') }}{% endif %}"
                    class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
           </div>
-          <button type="submit"
-                  class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 transition">Сохранить</button>
-          <button type="button" @click="showEdit = false"
-                  class="text-gray-500 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100 transition">Отмена</button>
+          <button type="submit" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 transition">Сохранить</button>
+          <button type="button" @click="showEdit = false" class="text-gray-500 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100 transition">Отмена</button>
         </form>
       </div>
-
     </div>
     {% endfor %}
   </div>
-  {% else %}
+  {% endif %}
+
+  {% if not contests and not standalone %}
   <div class="text-center py-20 text-gray-400">
     <div class="text-5xl mb-4">📋</div>
-    <p class="text-lg">Раундов пока нет. Создайте первый!</p>
+    <p class="text-lg">Конкурсов пока нет. Создайте первый!</p>
   </div>
   {% endif %}
 

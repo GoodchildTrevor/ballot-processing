@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Шаблоны номинаций{% endblock %}
+{% block content %}
+<div x-data="{ showCreate: false }">
+
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-extrabold text-gray-900">Шаблоны номинаций</h1>
+    <button @click="showCreate = !showCreate"
+            class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+      + Новый шаблон
+    </button>
+  </div>
+
+  {# ── Create form ── #}
+  <div x-show="showCreate" x-cloak
+       class="bg-white border border-gray-200 rounded-xl p-6 mb-8 shadow-sm">
+    <h2 class="font-semibold text-gray-800 mb-4">Создать шаблон</h2>
+    <form method="post" action="/admin/templates"
+          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="sm:col-span-2 lg:col-span-3">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Название номинации</label>
+        <input name="name" required placeholder="Лучший фильм"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div class="sm:col-span-2 lg:col-span-3">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Описание (необязательно)</label>
+        <input name="description" placeholder="Краткое описание"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Тип голосования</label>
+        <select name="type"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <option value="RANK">RANK — Ранжирование</option>
+          <option value="PICK">PICK — Выбор</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Лонг-лист: кол-во номинантов</label>
+        <input name="longlist_nominees_count" type="number" min="1" placeholder="10"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Лонг-лист: pick_min</label>
+        <input name="longlist_pick_min" type="number" min="1" placeholder="1"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Лонг-лист: pick_max</label>
+        <input name="longlist_pick_max" type="number" min="1" placeholder="5"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Финал: промоутить N лучших</label>
+        <input name="final_promotes_count" type="number" min="1" placeholder="5"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
+      <div class="sm:col-span-2 lg:col-span-3 flex gap-3">
+        <button type="submit"
+                class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Создать</button>
+        <button type="button" @click="showCreate = false"
+                class="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100 transition">Отмена</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Templates list ── #}
+  {% if templates %}
+  <div class="space-y-3">
+    {% for tmpl in templates %}
+    <div x-data="{ showEdit: false }"
+         class="bg-white border {% if tmpl.is_archived %}border-gray-200 opacity-60{% else %}border-gray-200{% endif %} rounded-xl shadow-sm overflow-hidden">
+
+      <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+        {# Type badge #}
+        {% if tmpl.type.value == 'RANK' %}
+          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">RANK</span>
+        {% else %}
+          <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">PICK</span>
+        {% endif %}
+
+        <span class="font-semibold text-gray-900">{{ tmpl.name }}</span>
+        {% if tmpl.description %}
+          <span class="text-xs text-gray-400">— {{ tmpl.description }}</span>
+        {% endif %}
+
+        {# Config pills #}
+        <div class="flex flex-wrap gap-1 ml-1">
+          {% if tmpl.longlist_nominees_count %}
+            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">номинантов: {{ tmpl.longlist_nominees_count }}</span>
+          {% endif %}
+          {% if tmpl.longlist_pick_min or tmpl.longlist_pick_max %}
+            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">pick: {{ tmpl.longlist_pick_min or '—' }}–{{ tmpl.longlist_pick_max or '—' }}</span>
+          {% endif %}
+          {% if tmpl.final_promotes_count %}
+            <span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">финал топ-{{ tmpl.final_promotes_count }}</span>
+          {% endif %}
+        </div>
+
+        {% if tmpl.is_archived %}
+          <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Архив</span>
+        {% endif %}
+
+        {# Actions #}
+        <div class="ml-auto flex flex-wrap gap-2">
+          {# Move up/down #}
+          <form method="post" action="/admin/templates/{{ tmpl.id }}/move">
+            <input type="hidden" name="direction" value="up" />
+            <button class="text-xs px-2 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100">↑</button>
+          </form>
+          <form method="post" action="/admin/templates/{{ tmpl.id }}/move">
+            <input type="hidden" name="direction" value="down" />
+            <button class="text-xs px-2 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100">↓</button>
+          </form>
+
+          <button @click="showEdit = !showEdit"
+                  class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">✏ Изменить</button>
+
+          {# Archive toggle #}
+          <form method="post" action="/admin/templates/{{ tmpl.id }}/archive">
+            <button class="text-xs px-3 py-1.5 rounded-lg {% if tmpl.is_archived %}bg-green-50 border border-green-200 text-green-700 hover:bg-green-100{% else %}bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100{% endif %} transition">
+              {% if tmpl.is_archived %}♻ Восстановить{% else %}📦 В архив{% endif %}
+            </button>
+          </form>
+
+          {# Delete #}
+          <form method="post" action="/admin/templates/{{ tmpl.id }}/delete"
+                onsubmit="return confirm('Удалить шаблон {{ tmpl.name }}? Если он используется в конкурсах — удаление будет отклонено.')">
+            <button class="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition">🗑 Удалить</button>
+          </form>
+        </div>
+      </div>
+
+      {# Edit sub-form #}
+      <div x-show="showEdit" x-cloak class="border-t border-gray-100 bg-gray-50 px-5 py-4">
+        <form method="post" action="/admin/templates/{{ tmpl.id }}/edit"
+              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="sm:col-span-2 lg:col-span-3">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Название</label>
+            <input name="name" value="{{ tmpl.name }}" required
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Описание</label>
+            <input name="description" value="{{ tmpl.description or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Тип</label>
+            <select name="type" class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              <option value="RANK" {% if tmpl.type.value == 'RANK' %}selected{% endif %}>RANK</option>
+              <option value="PICK" {% if tmpl.type.value == 'PICK' %}selected{% endif %}>PICK</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Лонг-лист: номинантов</label>
+            <input name="longlist_nominees_count" type="number" min="1" value="{{ tmpl.longlist_nominees_count or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">pick_min</label>
+            <input name="longlist_pick_min" type="number" min="1" value="{{ tmpl.longlist_pick_min or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">pick_max</label>
+            <input name="longlist_pick_max" type="number" min="1" value="{{ tmpl.longlist_pick_max or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Финал топ-N</label>
+            <input name="final_promotes_count" type="number" min="1" value="{{ tmpl.final_promotes_count or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3 flex gap-3">
+            <button type="submit" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 transition">Сохранить</button>
+            <button type="button" @click="showEdit = false" class="text-gray-500 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100 transition">Отмена</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-20 text-gray-400">
+    <div class="text-5xl mb-4">📝</div>
+    <p class="text-lg">Шаблонов пока нет. Создайте первый!</p>
+    <p class="text-sm mt-2">Шаблоны определяют номинации, которые будут созданы при создании нового конкурса.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
