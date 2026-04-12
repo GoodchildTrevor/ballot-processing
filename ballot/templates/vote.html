@@ -23,7 +23,7 @@
 </div>
 {% endif %}
 
-<div class="mb-8">
+<div class="mb-6">
   <h1 class="text-2xl font-extrabold text-gray-900">Голосование</h1>
   {% if round %}
     <p class="text-sm text-gray-500 mt-1">Раунд: <strong>{{ round.label }}</strong> · {{ round.year }}</p>
@@ -31,43 +31,72 @@
 </div>
 
 {% if nominations %}
+
+{# ═══════════════════════════════════════════════ TABLE OF CONTENTS #}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-8 p-5">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Оглавление</h2>
+  <ol class="space-y-1">
+    {% for nom in nominations %}
+    <li>
+      <a href="#nom-{{ nom.id }}"
+         class="flex items-center gap-2 text-sm text-indigo-600 hover:underline group">
+        <span class="text-gray-400 w-5 text-right tabular-nums text-xs">{{ loop.index }}.</span>
+        <span>{{ nom.name }}</span>
+        <span class="text-xs px-1.5 py-0.5 rounded-full
+          {% if nom.type.value == 'PICK' %}bg-purple-100 text-purple-600{% else %}bg-blue-100 text-blue-600{% endif %}">
+          {{ nom.type.value }}
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+    <li class="pt-1 border-t border-gray-100">
+      <a href="#ballot-preview"
+         class="flex items-center gap-2 text-sm text-green-600 hover:underline">
+        <span class="text-gray-400 w-5 text-right tabular-nums text-xs">✓</span>
+        <span>Проверка бюллетеня</span>
+      </a>
+    </li>
+  </ol>
+</div>
+
+{# ═══════════════════════════════════════════════ FORM #}
 <form id="vote-form"
       method="post"
       action="/{{ round.year }}/vote">
 
   {% for nom in nominations %}
-  {% set pick_max = nom.pick_max %}
-  {% set nom_id = nom.id %}
-  <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-8 overflow-hidden">
+  {% set nominees_sorted = nom.nominees | sort(attribute='sort_key') %}
+  <div id="nom-{{ nom.id }}" class="bg-white border border-gray-200 rounded-xl shadow-sm mb-8 overflow-hidden scroll-mt-4">
 
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex flex-wrap items-center gap-3">
+      <span class="text-xs text-gray-400 tabular-nums">{{ loop.index }}.</span>
       <span class="font-semibold text-gray-900">{{ nom.name }}</span>
       <span class="text-xs px-2 py-0.5 rounded-full
         {% if nom.type.value == 'PICK' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
         {{ nom.type.value }}
       </span>
       {% if nom.type.value == 'PICK' %}
-        <span class="text-xs text-gray-400" id="hint-{{ nom.id }}">
-          {% if nom.pick_min and nom.pick_max %}
-            Выберите от {{ nom.pick_min }} до {{ nom.pick_max }}
-          {% elif nom.pick_max %}
-            Выберите до {{ nom.pick_max }}
-          {% else %}
-            Выберите нужное количество
-          {% endif %}
+        <span class="text-xs text-gray-400">
+          {% if nom.pick_min and nom.pick_max %}Выберите от {{ nom.pick_min }} до {{ nom.pick_max }}
+          {% elif nom.pick_max %}Выберите до {{ nom.pick_max }}
+          {% else %}Выберите нужное количество{% endif %}
         </span>
         {% if nom.pick_max %}
           <span class="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" id="counter-{{ nom.id }}">
-            0 / {{ nom.pick_max }}
+            0 / {{ nom.pick_max }}
           </span>
         {% endif %}
       {% else %}
-        <span class="text-xs text-gray-400">Расставьте места (от 1 до {{ nom.nominees | length }})</span>
+        <span class="text-xs text-gray-400">Расставьте места (1–{{ nom.nominees | length }})</span>
       {% endif %}
+      {# per-nomination warning badge #}
+      <span id="warn-{{ nom.id }}"
+            class="hidden ml-auto text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+      </span>
     </div>
 
     <div class="divide-y divide-gray-100">
-      {% for nominee in nom.nominees %}
+      {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
       <div class="px-5 py-3 flex flex-wrap items-center gap-3">
 
         {% if nom.type.value == 'PICK' %}
@@ -81,30 +110,70 @@
           />
           <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-sm text-gray-800">
             {% if nominee.persons_label %}
-              <span class="font-medium">{{ nominee.persons_label }}</span>
-              <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% if nominee.person and nominee.person.url %}
+                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener"
+                   class="font-medium text-indigo-600 hover:underline">{{ nominee.persons_label }}</a>
+              {% else %}
+                <span class="font-medium">{{ nominee.persons_label }}</span>
+              {% endif %}
+              {% if nominee.film.url %}
+                — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener"
+                       class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
+              {% else %}
+                <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% endif %}
             {% elif nominee.item %}
-              <span class="font-medium">{{ nominee.item }}</span>
-              <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% if nominee.item_url %}
+                <a href="{{ nominee.item_url }}" target="_blank" rel="noopener"
+                   class="font-medium text-indigo-600 hover:underline">{{ nominee.item }}</a>
+              {% else %}
+                <span class="font-medium">{{ nominee.item }}</span>
+              {% endif %}
+              {% if nominee.film.url %}
+                — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener"
+                       class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
+              {% else %}
+                <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% endif %}
             {% else %}
-              <span class="font-medium">{{ nominee.film.title }}</span>
+              {% if nominee.film.url %}
+                <a href="{{ nominee.film.url }}" target="_blank" rel="noopener"
+                   class="font-medium text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+              {% else %}
+                <span class="font-medium">{{ nominee.film.title }}</span>
+              {% endif %}
               <span class="text-gray-400"> ({{ nominee.film.year }})</span>
             {% endif %}
           </label>
 
-        {% else %}
+        {% else %}{# RANK #}
           <input type="number"
                  name="rank_{{ nom.id }}_{{ nominee.film_id }}"
                  min="1" max="{{ nom.nominees | length }}"
                  placeholder="—"
-                 class="w-16 border border-gray-300 rounded-lg text-center py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                 class="rank-inp w-16 border border-gray-300 rounded-lg text-center py-1.5 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                 data-nom="{{ nom.id }}"
+                 data-max="{{ nom.nominees | length }}"
                  value="{% if draft and (nom.id | string) in draft.get('ranks', {}) %}{{ draft['ranks'][(nom.id | string)].get(nominee.film_id | string, '') }}{% endif %}"
           />
           <span class="text-sm text-gray-800">
             {% if nominee.person %}
-              <span class="font-medium">{{ nominee.person.name }}</span> —
+              {% if nominee.person.url %}
+                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener"
+                   class="font-medium text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
+              {% else %}
+                <span class="font-medium">{{ nominee.person.name }}</span>
+              {% endif %}
+              —
             {% endif %}
-            {{ nominee.film.title }} <span class="text-gray-400">({{ nominee.film.year }})</span>
+            {% if nominee.film.url %}
+              <a href="{{ nominee.film.url }}" target="_blank" rel="noopener"
+                 class="hover:underline text-gray-700">{{ nominee.film.title }}</a>
+            {% else %}
+              {{ nominee.film.title }}
+            {% endif %}
+            <span class="text-gray-400">({{ nominee.film.year }})</span>
           </span>
         {% endif %}
 
@@ -116,7 +185,7 @@
     <div class="border-t border-dashed border-amber-200 bg-amber-50 px-5 py-4">
       <p class="text-xs font-semibold text-amber-700 mb-3">🥈 Runner-up (второй выбор)</p>
       <div class="space-y-2">
-        {% for nominee in nom.nominees %}
+        {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
         <div class="flex items-center gap-3">
           <input type="radio"
                  name="runnerup_{{ nom.id }}"
@@ -138,7 +207,7 @@
   </div>
   {% endfor %}
 
-  <div class="flex gap-4 mt-6">
+  <div class="flex gap-4 mt-6 mb-12">
     <button type="submit"
             class="bg-indigo-600 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition shadow">
       ✅ Отправить голос
@@ -151,8 +220,21 @@
 
 </form>
 
+{# ═══════════════════════════════════════════════ BALLOT PREVIEW #}
+<div id="ballot-preview" class="bg-white border border-gray-200 rounded-xl shadow-sm mb-10 overflow-hidden scroll-mt-4">
+  <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center justify-between">
+    <h2 class="font-semibold text-gray-900">✅ Проверка бюллетеня</h2>
+    <button type="button" id="export-xlsx-btn"
+            class="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 transition">
+      ↓ Скачать Excel
+    </button>
+  </div>
+  <div id="ballot-body" class="divide-y divide-gray-100 text-sm">
+    {# filled by JS #}
+  </div>
+</div>
+
 {% else %}
-{# ── Empty state: round exists but no nominations assigned yet ── #}
 <div class="flex flex-col items-center justify-center py-24 text-center">
   <svg class="w-16 h-16 text-gray-300 mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
     <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -165,9 +247,38 @@
 </div>
 {% endif %}
 
+{# ═══════════════════════════════════════════════ DATA for JS #}
+{% if nominations %}
+<script>
+const NOM_DATA = [
+  {% for nom in nominations %}
+  {
+    id: {{ nom.id }},
+    name: {{ nom.name | tojson }},
+    type: {{ nom.type.value | tojson }},
+    pick_min: {{ nom.pick_min | tojson }},
+    pick_max: {{ nom.pick_max | tojson }},
+    total: {{ nom.nominees | length }},
+    nominees: [
+      {% for n in nom.nominees | sort(attribute='label_for_sort') %}
+      {
+        id: {{ n.id }},
+        film_id: {{ n.film_id }},
+        label: {{ n.display_label | tojson }},
+        film_url: {{ (n.film.url or '') | tojson }},
+        person_url: {{ (n.person.url if n.person else (n.item_url or '')) | tojson }},
+      },
+      {% endfor %}
+    ],
+  },
+  {% endfor %}
+];
+</script>
+{% endif %}
+
 <script>
 {% if nominations %}
-// ── pick_max enforcement ────────────────────────────────────────────────────
+// ═══ pick_max enforcement ════════════════════════════════════════════════════
 (function() {
   const groups = {};
   document.querySelectorAll('input.pick-cb').forEach(cb => {
@@ -185,39 +296,97 @@
     if (!g) return;
     const checked = g.checkboxes.filter(c => c.checked).length;
     if (g.counter) {
-      const max = g.max;
-      g.counter.textContent = checked + '\u00a0/\u00a0' + max;
+      g.counter.textContent = checked + '\u00a0/\u00a0' + g.max;
       g.counter.className = g.counter.className.replace(/text-\w+-\d+/g, '');
-      if (max && checked >= max) {
-        g.counter.classList.add('text-red-600', 'font-semibold');
-      } else {
-        g.counter.classList.add('text-gray-500');
-      }
+      g.counter.classList.add(g.max && checked >= g.max ? 'text-red-600' : 'text-gray-500');
+      if (g.max && checked >= g.max) g.counter.classList.add('font-semibold');
     }
     if (g.max && checked >= g.max) {
-      g.checkboxes.forEach(cb => {
-        if (!cb.checked) {
-          cb.disabled = true;
-          cb.closest('div').style.opacity = '0.4';
-        }
-      });
+      g.checkboxes.forEach(cb => { if (!cb.checked) { cb.disabled = true; cb.closest('div').style.opacity = '0.4'; } });
     } else {
-      g.checkboxes.forEach(cb => {
-        cb.disabled = false;
-        cb.closest('div').style.opacity = '';
-      });
+      g.checkboxes.forEach(cb => { cb.disabled = false; cb.closest('div').style.opacity = ''; });
     }
+    validateAll();
   }
 
   Object.keys(groups).forEach(nomId => updateGroup(nomId));
   document.querySelectorAll('input.pick-cb').forEach(cb => {
     cb.addEventListener('change', () => updateGroup(cb.dataset.nom));
   });
+
+  window._getPickGroups = () => groups;
 })();
 
-// ── Autosave draft ──────────────────────────────────────────────────────────
-function collectDraft() {
-  const picks = {}, ranks = {}, runnerups = {};
+// ═══ rank duplicate / under-fill warnings ════════════════════════════════════
+(function() {
+  function validateRankGroup(nomId) {
+    const inputs = document.querySelectorAll(`.rank-inp[data-nom="${nomId}"]`);
+    const values = [];
+    inputs.forEach(inp => { if (inp.value) values.push(parseInt(inp.value)); });
+    const max = inputs.length ? parseInt(inputs[0].dataset.max) : 0;
+    const hasDup = values.length !== new Set(values).size;
+    const warn = document.getElementById('warn-' + nomId);
+    if (!warn) return;
+    if (hasDup) {
+      warn.textContent = '⚠️ Одно место указано дважды';
+      warn.classList.remove('hidden');
+    } else if (values.length > 0 && values.length < max) {
+      warn.textContent = `⚠️ Указано ${values.length} из ${max}`;
+      warn.classList.remove('hidden');
+    } else {
+      warn.textContent = '';
+      warn.classList.add('hidden');
+    }
+  }
+
+  document.querySelectorAll('.rank-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      validateRankGroup(inp.dataset.nom);
+      validateAll();
+    });
+  });
+
+  window._validateRankGroup = validateRankGroup;
+
+  // initial pass for draft-restored values
+  const seenRank = new Set();
+  document.querySelectorAll('.rank-inp').forEach(inp => seenRank.add(inp.dataset.nom));
+  seenRank.forEach(id => validateRankGroup(id));
+})();
+
+// ═══ pick under-select warnings ══════════════════════════════════════════════
+function validatePickWarning(nomId, checked, pick_min) {
+  const warn = document.getElementById('warn-' + nomId);
+  if (!warn) return;
+  if (pick_min && checked < pick_min) {
+    warn.textContent = `⚠️ Выбрано ${checked} из мин. ${pick_min}`;
+    warn.classList.remove('hidden');
+  } else {
+    warn.textContent = '';
+    warn.classList.add('hidden');
+  }
+}
+
+NOM_DATA.forEach(nom => {
+  if (nom.type !== 'PICK' || !nom.pick_min) return;
+  const cbs = document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`);
+  function update() {
+    const checked = [...cbs].filter(c => c.checked).length;
+    validatePickWarning(nom.id, checked, nom.pick_min);
+    validateAll();
+  }
+  cbs.forEach(cb => cb.addEventListener('change', update));
+  update();
+});
+
+// ═══ validateAll — refresh ballot preview ════════════════════════════════════
+function validateAll() {
+  renderBallot();
+}
+
+// ═══ ballot preview ══════════════════════════════════════════════════════════
+function collectState() {
+  const picks = {}, ranks = {};
   document.querySelectorAll('input[type=checkbox][name^=pick_]').forEach(cb => {
     const m = cb.name.match(/pick_(\d+)/);
     if (!m) return;
@@ -230,8 +399,120 @@ function collectDraft() {
     if (!m || !inp.value) return;
     const [, nomId, filmId] = m;
     if (!ranks[nomId]) ranks[nomId] = {};
-    ranks[nomId][filmId] = inp.value;
+    ranks[nomId][filmId] = parseInt(inp.value);
   });
+  return { picks, ranks };
+}
+
+function renderBallot() {
+  const { picks, ranks } = collectState();
+  const body = document.getElementById('ballot-body');
+  if (!body) return;
+  let html = '';
+  NOM_DATA.forEach(nom => {
+    html += `<div class="px-5 py-3 border-b border-gray-100 last:border-0">`;
+    html += `<div class="font-semibold text-gray-700 mb-1 text-xs uppercase tracking-wide">${nom.name}</div>`;
+    if (nom.type === 'PICK') {
+      const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
+      if (chosen.length === 0) {
+        html += `<p class="text-gray-400 text-xs italic">Ничего не выбрано</p>`;
+      } else {
+        html += '<ul class="space-y-0.5">';
+        chosen.forEach(nid => {
+          const n = nom.nominees.find(x => x.id == nid);
+          if (!n) return;
+          let entry = n.person_url
+            ? `<a href="${n.person_url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
+            : `<span>${n.label}</span>`;
+          html += `<li class="text-sm text-gray-800">${entry}</li>`;
+        });
+        html += '</ul>';
+      }
+    } else {
+      const nomRanks = ranks[nom.id] || {};
+      const entries = Object.entries(nomRanks).sort((a, b) => a[1] - b[1]);
+      if (entries.length === 0) {
+        html += `<p class="text-gray-400 text-xs italic">Ничего не заполнено</p>`;
+      } else {
+        html += '<ol class="space-y-0.5 list-none">';
+        entries.forEach(([filmId, rank]) => {
+          const n = nom.nominees.find(x => x.film_id == filmId);
+          if (!n) return;
+          let entry = n.film_url
+            ? `<a href="${n.film_url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
+            : `<span>${n.label}</span>`;
+          html += `<li class="text-sm text-gray-800"><span class="inline-block w-5 text-gray-400 tabular-nums text-xs">${rank}.</span> ${entry}</li>`;
+        });
+        html += '</ol>';
+      }
+    }
+    html += '</div>';
+  });
+  body.innerHTML = html;
+}
+
+// initial render + live updates
+renderBallot();
+document.querySelectorAll('#vote-form input').forEach(el => {
+  el.addEventListener('change', renderBallot);
+  el.addEventListener('input', renderBallot);
+});
+
+// ═══ xlsx export ═════════════════════════════════════════════════════════════
+document.getElementById('export-xlsx-btn').addEventListener('click', async function() {
+  const { picks, ranks } = collectState();
+
+  // Build plain-text rows for each nomination
+  const sheetRows = []; // [ [nomination, rank_or_check, label, url] ]
+  NOM_DATA.forEach(nom => {
+    if (nom.type === 'PICK') {
+      const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
+      if (chosen.length === 0) {
+        sheetRows.push([nom.name, '', '(не заполнено)', '']);
+      } else {
+        chosen.forEach(nid => {
+          const n = nom.nominees.find(x => x.id == nid);
+          if (!n) return;
+          sheetRows.push([nom.name, '✓', n.label, n.person_url || n.film_url || '']);
+        });
+      }
+    } else {
+      const nomRanks = ranks[nom.id] || {};
+      const entries = Object.entries(nomRanks).sort((a, b) => a[1] - b[1]);
+      if (entries.length === 0) {
+        sheetRows.push([nom.name, '', '(не заполнено)', '']);
+      } else {
+        entries.forEach(([filmId, rank]) => {
+          const n = nom.nominees.find(x => x.film_id == filmId);
+          if (!n) return;
+          sheetRows.push([nom.name, rank, n.label, n.film_url || '']);
+        });
+      }
+    }
+  });
+
+  // Build minimal xlsx from scratch (no library needed)
+  const header = ['Номинация', 'Место / Выбор', 'Номинант', 'Ссылка'];
+  const allRows = [header, ...sheetRows];
+
+  // Simple CSV → xlsx via server endpoint
+  const resp = await fetch('/{{ round.year }}/ballot-export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows: allRows }),
+  });
+  if (!resp.ok) { alert('Ошибка экспорта'); return; }
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ballot_{{ round.year }}.xlsx';
+  a.click();
+});
+
+// ═══ Autosave draft ══════════════════════════════════════════════════════════
+function collectDraft() {
+  const { picks, ranks } = collectState();
+  const runnerups = {};
   document.querySelectorAll('input[type=radio][name^=runnerup_]:checked').forEach(r => {
     const m = r.name.match(/runnerup_(\d+)/);
     if (m) runnerups[m[1]] = r.value;
@@ -240,16 +521,15 @@ function collectDraft() {
 }
 
 async function saveDraft(silent = true) {
-  const data = collectDraft();
   await fetch('/{{ round.year }}/draft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify(collectDraft()),
   });
   if (!silent) {
     const btn = document.getElementById('save-draft-btn');
     btn.textContent = '\u2713 Сохранено';
-    setTimeout(() => btn.textContent = '\ud83d\udcbe Сохранить черновик', 2000);
+    setTimeout(() => { btn.textContent = '\ud83d\udcbe Сохранить черновик'; }, 2000);
   }
 }
 
@@ -257,7 +537,7 @@ document.getElementById('save-draft-btn').addEventListener('click', () => saveDr
 setInterval(() => saveDraft(true), 60000);
 {% endif %}
 
-// ── Deadline countdown ───────────────────────────────────────────────────────
+// ═══ Deadline countdown ══════════════════════════════════════════════════════
 {% if round.deadline %}
 (function() {
   const deadline = new Date('{{ round.deadline.isoformat() }}');
@@ -269,12 +549,9 @@ setInterval(() => saveDraft(true), 60000);
     const h = Math.floor(diff / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     const s = Math.floor((diff % 60000) / 1000);
-    el.textContent = h > 0
-      ? `${h}ч ${m}м ${s}с`
-      : m > 0 ? `${m}м ${s}с` : `${s}с`;
+    el.textContent = h > 0 ? `${h}ч ${m}м ${s}с` : m > 0 ? `${m}м ${s}с` : `${s}с`;
   }
-  tick();
-  setInterval(tick, 1000);
+  tick(); setInterval(tick, 1000);
 })();
 {% endif %}
 </script>
