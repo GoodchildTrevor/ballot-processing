@@ -1,19 +1,21 @@
-"""Admin router for Round management.
+"""Admin router for Contest + Round management.
 
 Routes
 ------
-GET  /admin/rounds                   – list all rounds
-POST /admin/rounds                   – create a round
-POST /admin/rounds/{id}/edit         – update label / deadline / is_active
-POST /admin/rounds/{id}/delete       – delete (only if no votes)
-GET  /admin/rounds/{id}/preview      – preview / edit draft final round
-POST /admin/rounds/{id}/activate     – set is_active=True (requires deadline)
-POST /admin/rounds/{id}/promote      – auto-create FINAL round from longlist
-POST /admin/rounds/{id}/nominees/{nid}/toggle-shortlist  – flip is_shortlisted
+GET  /admin/rounds                              – list all contests + rounds
+POST /admin/contests                            – create a contest (year + chosen templates)
+POST /admin/contests/{id}/delete               – delete contest (no votes)
+POST /admin/rounds                              – create a standalone round (legacy)
+POST /admin/rounds/{id}/edit                   – update label / deadline
+POST /admin/rounds/{id}/activate               – set is_active=True
+POST /admin/rounds/{id}/deactivate             – set is_active=False
+POST /admin/rounds/{id}/delete                 – delete round
+GET  /admin/rounds/{id}/preview                – preview / edit draft final round
+POST /admin/rounds/{id}/promote                – auto-create FINAL round from longlist
+POST /admin/rounds/{id}/nominees/{nid}/toggle-shortlist
 """
 from __future__ import annotations
 
-import io
 from collections import defaultdict
 from datetime import datetime
 from statistics import mean
@@ -27,14 +29,16 @@ from sqlalchemy.orm import Session, joinedload
 from ballot.auth import require_admin
 from ballot.database import get_db
 from ballot.models import (
+    Contest, ContestNomination, ContestStatus,
     Nomination, NominationType,
     Nominee, Vote, Ranking,
+    NominationTemplate,
     Round, RoundType, RoundParticipation,
     Film,
 )
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(directory="ballot/templates")
+templates_env = Jinja2Templates(directory="ballot/templates")
 
 
 # ---------------------------------------------------------------------------
@@ -51,10 +55,8 @@ def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
 
 
 def _rank_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, float]]:
-    """Return nominees sorted by average rank (lower = better)."""
     rankings = db.query(Ranking).filter(Ranking.nomination_id == nom.id).all()
     scores: dict[int, list[int]] = defaultdict(list)
-    film_to_nominee: dict[int, Nominee] = {n.film_id: n for n in nom.nominees}
     for r in rankings:
         scores[r.film_id].append(r.rank)
     result = []
@@ -67,7 +69,6 @@ def _rank_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, float]]:
 
 
 def _pick_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, int]]:
-    """Return nominees sorted by vote count (higher = better)."""
     votes = db.query(Vote).join(Nominee).filter(
         Nominee.nomination_id == nom.id,
         Vote.is_runner_up == False,  # noqa: E712
@@ -80,20 +81,158 @@ def _pick_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, int]]:
     return result
 
 
+def _dense_rank_cutoff(
+    scored: list[tuple[Nominee, float | int]],
+    target: int,
+) -> list[Nominee]:
+    """Return top-`target` nominees by score using DENSE_RANK logic:
+    if the score at position `target` ties with others, all tied entries
+    are included (may return more than `target`).
+    """
+    if not scored:
+        return []
+    result: list[Nominee] = []
+    boundary_score: float | int | None = None
+    rank = 0
+    prev_score: float | int | None = None
+    for nominee, score in scored:
+        if score != prev_score:
+            rank += 1
+            prev_score = score
+        if rank <= target:
+            result.append(nominee)
+            boundary_score = score
+        elif score == boundary_score:
+            # tie at the cutoff boundary — include all
+            result.append(nominee)
+        else:
+            break
+    return result
+
+
 # ---------------------------------------------------------------------------
-# List
+# List (rounds page — now shows contests + standalone rounds)
 # ---------------------------------------------------------------------------
 
 @router.get("/rounds", response_class=HTMLResponse)
 def list_rounds(request: Request, db: Session = Depends(get_db)):
-    rounds = db.query(Round).order_by(Round.sort_order, Round.id).all()
-    return templates.TemplateResponse(
-        request, "admin/rounds.html", {"rounds": rounds}
+    contests = (
+        db.query(Contest)
+        .options(joinedload(Contest.rounds))
+        .order_by(Contest.year.desc())
+        .all()
+    )
+    # standalone rounds (no contest)
+    standalone = (
+        db.query(Round)
+        .filter(Round.contest_id == None)  # noqa: E711
+        .order_by(Round.sort_order, Round.id)
+        .all()
+    )
+    all_templates = (
+        db.query(NominationTemplate)
+        .filter(NominationTemplate.is_archived == False)  # noqa: E712
+        .order_by(NominationTemplate.sort_order, NominationTemplate.id)
+        .all()
+    )
+    return templates_env.TemplateResponse(
+        request, "admin/rounds.html",
+        {"contests": contests, "standalone": standalone,
+         "all_templates": all_templates},
     )
 
 
 # ---------------------------------------------------------------------------
-# Create
+# Create Contest  (POST /admin/contests)
+# ---------------------------------------------------------------------------
+
+@router.post("/contests")
+def create_contest(
+    request: Request,
+    year: int = Form(...),
+    name: str = Form(...),
+    deadline: Optional[str] = Form(None),
+    template_ids: list[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    """Create a Contest + longlist Round + Nomination instances for each
+    selected NominationTemplate."""
+
+    # 1. Contest
+    contest = Contest(
+        year=year,
+        name=name.strip(),
+        status=ContestStatus.LONGLIST_ACTIVE,
+    )
+    db.add(contest)
+    db.flush()
+
+    # 2. Longlist Round
+    last = db.query(Round).order_by(Round.sort_order.desc()).first()
+    longlist_round = Round(
+        label=f"Лонг-лист {year}",
+        round_type=RoundType.LONGLIST,
+        year=year,
+        deadline=_parse_deadline(deadline),
+        is_active=True,
+        sort_order=(last.sort_order + 1) if last else 0,
+        contest_id=contest.id,
+        tour=1,
+    )
+    db.add(longlist_round)
+    db.flush()
+
+    # 3. ContestNomination + Nomination per selected template
+    tmpl_map = {
+        t.id: t for t in db.query(NominationTemplate)
+        .filter(NominationTemplate.id.in_(template_ids))
+        .all()
+    }
+    for order, tid in enumerate(template_ids):
+        tmpl = tmpl_map.get(tid)
+        if not tmpl:
+            continue
+        cn = ContestNomination(
+            contest_id=contest.id,
+            template_id=tmpl.id,
+            sort_order=order,
+        )
+        db.add(cn)
+        db.flush()
+
+        nom = Nomination(
+            name=tmpl.name,
+            type=tmpl.type,
+            nominees_count=tmpl.longlist_nominees_count,
+            pick_min=tmpl.longlist_pick_min,
+            pick_max=tmpl.longlist_pick_max,
+            year_filter=year,
+            sort_order=order,
+            round_id=longlist_round.id,
+            contest_nomination_id=cn.id,
+            has_runner_up=False,
+        )
+        db.add(nom)
+
+    db.commit()
+    return RedirectResponse(url="/admin/rounds", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Delete Contest
+# ---------------------------------------------------------------------------
+
+@router.post("/contests/{contest_id}/delete")
+def delete_contest(contest_id: int, db: Session = Depends(get_db)):
+    contest = db.get(Contest, contest_id)
+    if contest:
+        db.delete(contest)
+        db.commit()
+    return RedirectResponse(url="/admin/rounds", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Create standalone Round (legacy / manual)
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds")
@@ -113,13 +252,14 @@ def create_round(
         deadline=_parse_deadline(deadline),
         is_active=False,
         sort_order=order,
+        tour=1,
     ))
     db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
 # ---------------------------------------------------------------------------
-# Edit
+# Edit Round
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/edit")
@@ -138,7 +278,7 @@ def edit_round(
 
 
 # ---------------------------------------------------------------------------
-# Delete
+# Delete Round
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/delete")
@@ -151,7 +291,7 @@ def delete_round(round_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Activate (requires deadline set)
+# Activate / Deactivate
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/activate")
@@ -159,6 +299,11 @@ def activate_round(round_id: int, db: Session = Depends(get_db)):
     rnd = db.get(Round, round_id)
     if rnd and rnd.deadline:
         rnd.is_active = True
+        if rnd.contest:
+            rnd.contest.status = (
+                ContestStatus.LONGLIST_ACTIVE if rnd.tour == 1
+                else ContestStatus.FINAL_ACTIVE
+            )
         db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
@@ -168,12 +313,17 @@ def deactivate_round(round_id: int, db: Session = Depends(get_db)):
     rnd = db.get(Round, round_id)
     if rnd:
         rnd.is_active = False
+        if rnd.contest:
+            rnd.contest.status = (
+                ContestStatus.LONGLIST_CLOSED if rnd.tour == 1
+                else ContestStatus.FINAL_CLOSED
+            )
         db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
 # ---------------------------------------------------------------------------
-# Promote: create a FINAL draft from a LONGLIST round
+# Promote: LONGLIST → FINAL
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/promote")
@@ -182,7 +332,6 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
 
-    # Create the FINAL round (inactive, no deadline yet)
     last = db.query(Round).order_by(Round.sort_order.desc()).first()
     final = Round(
         label=f"Финал {longlist.year}",
@@ -191,32 +340,55 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
         deadline=None,
         is_active=False,
         sort_order=(last.sort_order + 1) if last else 0,
+        contest_id=longlist.contest_id,
+        tour=2,
     )
     db.add(final)
     db.flush()
 
+    # Update contest status
+    if longlist.contest:
+        longlist.contest.status = ContestStatus.LONGLIST_CLOSED
+
     nominations = (
         db.query(Nomination)
-        .options(joinedload(Nomination.nominees).joinedload(Nominee.film))
+        .options(
+            joinedload(Nomination.nominees).joinedload(Nominee.film),
+            joinedload(Nomination.nominees).joinedload(Nominee.persons),
+        )
         .filter(Nomination.round_id == longlist.id)
         .order_by(Nomination.sort_order, Nomination.id)
         .all()
     )
 
     for nom in nominations:
+        # Determine target promotee count from template, fallback to all
+        target = None
+        if nom.contest_nomination and nom.contest_nomination.template:
+            target = nom.contest_nomination.template.final_promotes_count
+
         if nom.type == NominationType.RANK:
             scored = _rank_scores(nom, db)
-            # All nominees pass; admin can remove on preview
-            shortlisted = [n for n, _ in scored]
+            if target:
+                shortlisted = _dense_rank_cutoff(scored, target)
+            else:
+                shortlisted = [n for n, _ in scored]
         else:
-            # Top nominees by vote count
             scored_pick = _pick_scores(nom, db)
-            # For PICK: take all that received at least 1 vote; fallback = all
-            shortlisted = [n for n, c in scored_pick if c > 0] or [n for n, _ in scored_pick]
+            if target:
+                shortlisted = _dense_rank_cutoff(
+                    [(n, -c) for n, c in scored_pick],  # negate so lower=better
+                    target,
+                )
+            else:
+                shortlisted = [n for n, c in scored_pick if c > 0] \
+                              or [n for n, _ in scored_pick]
 
-        # Mark is_shortlisted on longlist nominees
         for nominee in shortlisted:
             nominee.is_shortlisted = True
+
+        # Look up source ContestNomination to propagate the link
+        source_cn_id = nom.contest_nomination_id
 
         final_nom = Nomination(
             round_id=final.id,
@@ -224,12 +396,11 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
             sort_order=nom.sort_order,
             year_filter=nom.year_filter,
             type=nom.type,
-            # RANK: keep same nominees_count
             nominees_count=len(shortlisted) if nom.type == NominationType.RANK else None,
-            # FINAL PICK: strictly 1 + runner-up
             pick_min=1 if nom.type == NominationType.PICK else None,
             pick_max=1 if nom.type == NominationType.PICK else None,
-            has_runner_up=True if nom.type == NominationType.PICK else False,
+            has_runner_up=nom.type == NominationType.PICK,
+            contest_nomination_id=source_cn_id,
         )
         db.add(final_nom)
         db.flush()
@@ -269,15 +440,14 @@ def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)
         .all()
     )
     films = db.query(Film).order_by(Film.title).all()
-
-    return templates.TemplateResponse(
+    return templates_env.TemplateResponse(
         request, "admin/round_preview.html",
         {"rnd": rnd, "nominations": nominations, "films": films},
     )
 
 
 # ---------------------------------------------------------------------------
-# Toggle is_shortlisted on a nominee (used in preview)
+# Toggle is_shortlisted on a nominee
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/nominees/{nominee_id}/toggle-shortlist")

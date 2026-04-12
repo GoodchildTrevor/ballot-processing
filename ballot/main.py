@@ -13,6 +13,7 @@ from ballot.routers import (
     admin_results,
     admin_persons,
     admin_rounds,
+    admin_templates,
 )
 
 run_migrations()
@@ -28,6 +29,7 @@ app.include_router(admin_voters.router)
 app.include_router(admin_results.router)
 app.include_router(admin_persons.router)
 app.include_router(admin_rounds.router)
+app.include_router(admin_templates.router)
 
 
 @app.get("/", response_class=HTMLResponse)
