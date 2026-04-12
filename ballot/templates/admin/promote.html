@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Промоут в финал — {{ rnd.label }}{% endblock %}
+{% block content %}
+
+<div class="flex items-start justify-between mb-6 flex-wrap gap-3">
+  <div>
+    <a href="/admin/rounds" class="text-sm text-indigo-600 hover:underline">← Раунды</a>
+    <h1 class="text-2xl font-extrabold text-gray-900 mt-1">
+      Промоут в финал — <span class="text-blue-600">{{ rnd.label }}</span>
+    </h1>
+    <p class="text-sm text-gray-400 mt-0.5">
+      Зелёные позиции отобраны автоматически по DENSE RANK. Снимите или добавьте галочки — затем нажмите «Создать финал».
+    </p>
+  </div>
+</div>
+
+<form method="post" action="/admin/rounds/{{ rnd.id }}/promote/confirm">
+  <div class="space-y-6">
+    {% for item in nominations %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+        <h2 class="font-bold text-gray-900 text-base">{{ item.nom.name }}</h2>
+        <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+          {% if item.nom.type.value == 'RANK' %}bg-amber-100 text-amber-700
+          {% else %}bg-blue-100 text-blue-700{% endif %}">
+          {{ item.nom.type.value }}
+        </span>
+        {% if item.target %}
+        <span class="text-xs text-gray-400">Цель: топ-{{ item.target }}</span>
+        {% endif %}
+        <span class="text-xs text-gray-400 ml-auto" id="count-{{ item.nom.id }}">
+          Выбрано: <span class="font-semibold text-indigo-600">{{ item.rows | selectattr('auto_selected') | list | length }}</span>
+        </span>
+      </div>
+
+      {% if not item.rows %}
+      <p class="px-5 py-4 text-sm text-gray-400">Голосов нет</p>
+      {% else %}
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-400 border-b bg-gray-50">
+          <tr>
+            <th class="px-3 py-2 w-8 text-gray-300 text-left">№</th>
+            <th class="px-3 py-2 w-8 text-left">#</th>
+            <th class="px-5 py-2 text-left">{{ 'Фильм' if item.nom.type.value == 'RANK' else 'Участник' }}</th>
+            <th class="px-5 py-2 text-left">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+            <th class="px-5 py-2 text-left">Проголосовали</th>
+            <th class="px-5 py-2 text-center w-16">✓</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50" id="tbody-{{ item.nom.id }}">
+          {% for row in item.rows %}
+          <tr class="{% if row.auto_selected %}bg-green-50 row-selected{% else %}row-unselected{% endif %}"
+              data-nom="{{ item.nom.id }}">
+            <td class="px-3 py-2 text-gray-300 tabular-nums text-xs">{{ loop.index }}</td>
+            <td class="px-3 py-2 font-bold tabular-nums
+              {% if row.auto_selected %}text-green-600{% else %}text-gray-400{% endif %}">
+              {{ row.position }}
+            </td>
+            <td class="px-5 py-2 font-medium text-gray-800">{{ row.label }}</td>
+            <td class="px-5 py-2 text-gray-600 tabular-nums">{{ row.score }}</td>
+            <td class="px-5 py-2 text-gray-400 text-xs">
+              {% if row.voters %}{{ row.voters }}{% else %}—{% endif %}
+            </td>
+            <td class="px-5 py-2 text-center">
+              <input type="checkbox" name="selected_ids"
+                     value="{{ row.nominee_id }}"
+                     {% if row.auto_selected %}checked{% endif %}
+                     onchange="updateCount('{{ item.nom.id }}')"
+                     class="w-4 h-4 accent-green-600 cursor-pointer">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-8 flex gap-4 items-center">
+    <button type="submit"
+            class="bg-amber-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-amber-700 transition">
+      🏆 Создать финал
+    </button>
+    <a href="/admin/rounds" class="text-sm text-gray-500 hover:underline">Отмена</a>
+  </div>
+</form>
+
+<script>
+function updateCount(nomId) {
+  const tbody = document.getElementById('tbody-' + nomId);
+  const checked = tbody.querySelectorAll('input[type=checkbox]:checked').length;
+  const counter = document.querySelector('#count-' + nomId + ' .font-semibold');
+  if (counter) counter.textContent = checked;
+}
+</script>
+{% endblock %}

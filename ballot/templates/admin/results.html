@@ -55,7 +55,8 @@
     <table class="w-full text-sm">
       <thead class="text-xs text-gray-400 border-b bg-gray-50">
         <tr>
-          <th class="px-5 py-2 text-left w-8">#</th>
+          <th class="px-3 py-2 text-left w-8 text-gray-300">№</th>
+          <th class="px-3 py-2 text-left w-8">#</th>
           <th class="px-5 py-2 text-left">{{ 'Фильм' if item.nom.type.value == 'RANK' else 'Участник' }}</th>
           <th class="px-5 py-2 text-left">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
           <th class="px-5 py-2 text-left">Проголосовали</th>
@@ -64,7 +65,8 @@
       <tbody class="divide-y divide-gray-50">
         {% for row in item.rows %}
         <tr class="{% if row.is_nominee %}bg-green-50{% endif %}">
-          <td class="px-5 py-2 font-bold {% if row.is_nominee %}text-green-600{% else %}text-gray-400{% endif %} tabular-nums">
+          <td class="px-3 py-2 text-gray-300 tabular-nums text-xs">{{ loop.index }}</td>
+          <td class="px-3 py-2 font-bold {% if row.is_nominee %}text-green-600{% else %}text-gray-400{% endif %} tabular-nums">
             {{ row.position }}
           </td>
           <td class="px-5 py-2 font-medium text-gray-800">{{ row.label }}</td>

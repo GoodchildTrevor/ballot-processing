@@ -86,6 +86,17 @@ def _dense_rank_cutoff(
     return result
 
 
+def _nominee_label(nominee: Nominee) -> str:
+    film_part = f"{nominee.film.title} ({nominee.film.year})" if nominee.film else "?"
+    if getattr(nominee, 'persons_label', None):
+        return f"{nominee.persons_label} — {film_part}"
+    if getattr(nominee, 'person', None) and nominee.person:
+        return f"{nominee.person.name} — {film_part}"
+    if getattr(nominee, 'item', None) and nominee.item:
+        return f"{nominee.item} — {film_part}"
+    return nominee.film.title if nominee.film else "?"
+
+
 @router.get("/rounds", response_class=HTMLResponse)
 def list_rounds(request: Request, db: Session = Depends(get_db)):
     contests = (
@@ -106,7 +117,6 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
         .order_by(NominationTemplate.sort_order, NominationTemplate.id)
         .all()
     )
-    # Build a dict {contest_id: set of template_ids already added}
     all_contest_noms = db.query(ContestNomination).all()
     contest_template_ids: dict[int, set[int]] = defaultdict(set)
     for cn in all_contest_noms:
@@ -196,7 +206,6 @@ def add_nominations_to_contest(
     template_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
-    """Add nominations from templates to an existing contest's longlist round."""
     contest = db.get(Contest, contest_id)
     if not contest or not template_ids:
         return RedirectResponse(url="/admin/rounds", status_code=303)
@@ -346,11 +355,140 @@ def deactivate_round(round_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-@router.post("/rounds/{round_id}/promote")
-def promote_to_final(round_id: int, db: Session = Depends(get_db)):
+# ── Promote: GET shows the selection page, POST/confirm creates the final ──
+
+@router.get("/rounds/{round_id}/promote", response_class=HTMLResponse)
+def promote_preview(
+    round_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Show longlist results with checkboxes pre-filled by DENSE RANK cutoff."""
     longlist = db.get(Round, round_id)
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
+
+    nominations = (
+        db.query(Nomination)
+        .options(
+            joinedload(Nomination.nominees).joinedload(Nominee.film),
+            joinedload(Nomination.nominees).joinedload(Nominee.persons),
+            joinedload(Nomination.nominees).joinedload(Nominee.person),
+        )
+        .filter(Nomination.round_id == longlist.id)
+        .order_by(Nomination.sort_order, Nomination.id)
+        .all()
+    )
+
+    items = []
+    for nom in nominations:
+        target = None
+        if nom.contest_nomination and nom.contest_nomination.template:
+            target = nom.contest_nomination.template.final_promotes_count
+
+        if nom.type == NominationType.RANK:
+            scored = _rank_scores(nom, db)  # [(nominee, avg_rank)]
+            auto_ids = {n.id for n in _dense_rank_cutoff(scored, target)} if target else set()
+
+            # build display rows sorted by score desc (lower avg_rank = better)
+            rows_raw = (
+                db.query(Film.title, Film.id.label("film_id"),
+                         __import__('sqlalchemy').func.sum(11 - Ranking.rank).label("score"))
+                .join(Ranking, Ranking.film_id == Film.id)
+                .filter(Ranking.nomination_id == nom.id)
+                .group_by(Film.id)
+                .order_by(__import__('sqlalchemy').func.sum(11 - Ranking.rank).desc())
+                .all()
+            )
+            film_to_nominee = {n.film_id: n for n in nom.nominees}
+            film_voters_map: dict[int, list] = {}
+            for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
+                from ballot.models import Voter
+                voter = db.get(Voter, r.voter_id)
+                if voter:
+                    film_voters_map.setdefault(r.film_id, []).append((voter.name, r.rank))
+
+            rows = []
+            prev_score = None
+            dense_pos = 0
+            row_num = 0
+            for r in rows_raw:
+                row_num += 1
+                if r.score != prev_score:
+                    dense_pos = row_num
+                    prev_score = r.score
+                nominee = film_to_nominee.get(r.film_id)
+                voter_entries = sorted(film_voters_map.get(r.film_id, []), key=lambda x: x[0])
+                voters_str = ", ".join(f"{n} ({rk})" for n, rk in voter_entries)
+                rows.append({
+                    "nominee_id": nominee.id if nominee else None,
+                    "label": r.title,
+                    "score": r.score,
+                    "voters": voters_str,
+                    "position": dense_pos,
+                    "auto_selected": (nominee.id in auto_ids) if nominee else False,
+                })
+
+        else:  # PICK
+            scored_pick = _pick_scores(nom, db)  # [(nominee, vote_count)]
+            if target:
+                auto_ids = {n.id for n in _dense_rank_cutoff(
+                    [(n, -c) for n, c in scored_pick], target
+                )}
+            else:
+                auto_ids = {n.id for n, c in scored_pick if c > 0} \
+                           or {n.id for n, _ in scored_pick}
+
+            rows = []
+            prev_score = None
+            dense_pos = 0
+            row_num = 0
+            nominee_voters: dict[int, list[str]] = {}
+            for v in db.query(__import__('ballot.models', fromlist=['Vote']).Vote).join(Nominee).filter(
+                Nominee.nomination_id == nom.id,
+                __import__('ballot.models', fromlist=['Vote']).Vote.is_runner_up == False,  # noqa
+            ).all():
+                from ballot.models import Voter
+                voter = db.get(Voter, v.voter_id)
+                if voter:
+                    nominee_voters.setdefault(v.nominee_id, []).append(voter.name)
+
+            for nominee, count in scored_pick:
+                row_num += 1
+                if count != prev_score:
+                    dense_pos = row_num
+                    prev_score = count
+                label = _nominee_label(nominee)
+                voters_str = ", ".join(sorted(nominee_voters.get(nominee.id, [])))
+                rows.append({
+                    "nominee_id": nominee.id,
+                    "label": label,
+                    "score": count,
+                    "voters": voters_str,
+                    "position": dense_pos,
+                    "auto_selected": nominee.id in auto_ids,
+                })
+
+        items.append({"nom": nom, "rows": rows, "target": target})
+
+    return templates_env.TemplateResponse(
+        request, "admin/promote.html",
+        {"rnd": longlist, "nominations": items},
+    )
+
+
+@router.post("/rounds/{round_id}/promote/confirm")
+def promote_confirm(
+    round_id: int,
+    selected_ids: list[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    """Create the final round with manually confirmed nominees."""
+    longlist = db.get(Round, round_id)
+    if not longlist or longlist.round_type != RoundType.LONGLIST:
+        return RedirectResponse(url="/admin/rounds", status_code=303)
+
+    selected_set = set(selected_ids)
 
     last = db.query(Round).order_by(Round.sort_order.desc()).first()
     final = Round(
@@ -381,31 +519,10 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     )
 
     for nom in nominations:
-        target = None
-        if nom.contest_nomination and nom.contest_nomination.template:
-            target = nom.contest_nomination.template.final_promotes_count
-
-        if nom.type == NominationType.RANK:
-            scored = _rank_scores(nom, db)
-            if target:
-                shortlisted = _dense_rank_cutoff(scored, target)
-            else:
-                shortlisted = [n for n, _ in scored]
-        else:
-            scored_pick = _pick_scores(nom, db)
-            if target:
-                shortlisted = _dense_rank_cutoff(
-                    [(n, -c) for n, c in scored_pick],
-                    target,
-                )
-            else:
-                shortlisted = [n for n, c in scored_pick if c > 0] \
-                              or [n for n, _ in scored_pick]
+        shortlisted = [n for n in nom.nominees if n.id in selected_set]
 
         for nominee in shortlisted:
             nominee.is_shortlisted = True
-
-        source_cn_id = nom.contest_nomination_id
 
         final_nom = Nomination(
             round_id=final.id,
@@ -417,7 +534,7 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
             pick_min=1 if nom.type == NominationType.PICK else None,
             pick_max=1 if nom.type == NominationType.PICK else None,
             has_runner_up=nom.type == NominationType.PICK,
-            contest_nomination_id=source_cn_id,
+            contest_nomination_id=nom.contest_nomination_id,
         )
         db.add(final_nom)
         db.flush()
