@@ -25,7 +25,7 @@
 
 {% if nominations %}
 
-{# ── Error banner — above slides, always reachable via scroll-to-top ── #}
+{# ── Error banner — above slides ── #}
 <div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
   <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
   <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
@@ -206,13 +206,12 @@
 
   </div>
 
-  {# ── nav: ← | Оглавление · автосейв · Итоги | → ── #}
+  {# ── nav ── #}
   <div class="flex items-center justify-between mt-4 gap-2">
     <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
             class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition shrink-0">
       ← Назад
     </button>
-
     <div class="flex items-center gap-3 text-xs">
       <button type="button" onclick="goToSlide(0)"
               class="text-gray-400 hover:text-indigo-600 border border-gray-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
@@ -224,7 +223,6 @@
         ✓ Итоги
       </button>
     </div>
-
     <button type="button" onclick="goToSlide({{ loop.index + 1 }})"
             class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition shrink-0">
       {% if loop.last %}Проверить бюллетень →{% else %}Далее →{% endif %}
@@ -256,7 +254,8 @@
             class="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
-    <button type="submit"
+    {# type="button" + onclick — не даём браузеру обрабатывать submit, сами валидируем #}
+    <button type="button" onclick="validateAndSubmit()"
             class="bg-indigo-600 text-white px-8 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition shadow">
       ✅ Отправить голос
     </button>
@@ -473,22 +472,22 @@ function collectAllErrors() {
   return e;
 }
 
-// ── Submit ──
-document.getElementById('vote-form').addEventListener('submit', function(e) {
+// ── validateAndSubmit — вызывается прямо с кнопки через onclick ──
+function validateAndSubmit() {
   const errors = collectAllErrors();
   const banner = document.getElementById('error-banner');
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
-    e.preventDefault();
+    // Показываем баннер сначала (visible), затем переключаем слайд и кидаем наверх
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
     banner.classList.remove('hidden');
-    // Switch to final slide (renders ballot preview), then snap to top where banner lives
     goToSlide(TOTAL_SLIDES);
     window.scrollTo({ top: 0, behavior: 'instant' });
   } else {
     banner.classList.add('hidden');
+    document.getElementById('vote-form').submit();
   }
-});
+}
 
 // ── Collect state ──
 function collectState() {
