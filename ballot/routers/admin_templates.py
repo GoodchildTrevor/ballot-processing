@@ -16,6 +16,13 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
+def _int(value: Optional[str]) -> Optional[int]:
+    """Convert form string to int; return None for empty / missing values."""
+    if value is None or value.strip() == "":
+        return None
+    return int(value)
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, db: Session = Depends(get_db)):
     tmps = (
@@ -33,9 +40,9 @@ def create_template(
     name: str = Form(...),
     description: Optional[str] = Form(None),
     type: NominationType = Form(...),
-    longlist_pick_min: Optional[int] = Form(None),
-    longlist_pick_max: Optional[int] = Form(None),
-    final_promotes_count: Optional[int] = Form(None),
+    longlist_pick_min: Optional[str] = Form(None),
+    longlist_pick_max: Optional[str] = Form(None),
+    final_promotes_count: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     last = (
@@ -49,9 +56,9 @@ def create_template(
         description=description.strip() if description else None,
         type=type,
         sort_order=order,
-        longlist_pick_min=longlist_pick_min,
-        longlist_pick_max=longlist_pick_max,
-        final_promotes_count=final_promotes_count,
+        longlist_pick_min=_int(longlist_pick_min),
+        longlist_pick_max=_int(longlist_pick_max),
+        final_promotes_count=_int(final_promotes_count),
     ))
     db.commit()
     return RedirectResponse(url="/admin/templates", status_code=303)
@@ -63,9 +70,9 @@ def edit_template(
     name: str = Form(...),
     description: Optional[str] = Form(None),
     type: NominationType = Form(...),
-    longlist_pick_min: Optional[int] = Form(None),
-    longlist_pick_max: Optional[int] = Form(None),
-    final_promotes_count: Optional[int] = Form(None),
+    longlist_pick_min: Optional[str] = Form(None),
+    longlist_pick_max: Optional[str] = Form(None),
+    final_promotes_count: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     tmpl = db.get(NominationTemplate, template_id)
@@ -73,9 +80,9 @@ def edit_template(
         tmpl.name = name.strip()
         tmpl.description = description.strip() if description else None
         tmpl.type = type
-        tmpl.longlist_pick_min = longlist_pick_min
-        tmpl.longlist_pick_max = longlist_pick_max
-        tmpl.final_promotes_count = final_promotes_count
+        tmpl.longlist_pick_min = _int(longlist_pick_min)
+        tmpl.longlist_pick_max = _int(longlist_pick_max)
+        tmpl.final_promotes_count = _int(final_promotes_count)
         db.commit()
     return RedirectResponse(url="/admin/templates", status_code=303)
 
