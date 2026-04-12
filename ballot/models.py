@@ -31,12 +31,10 @@ class ContestStatus(str, enum.Enum):
 # ---------------------------------------------------------------------------
 
 class Contest(Base):
-    """One contest per year. Owns two rounds (longlist + final) and a set
-    of activated nomination templates."""
     __tablename__ = "contests"
     id     = Column(Integer, primary_key=True)
     year   = Column(Integer, nullable=False, unique=True)
-    name   = Column(String,  nullable=False)          # e.g. "Конкурс 1994"
+    name   = Column(String,  nullable=False)
     status = Column(SAEnum(ContestStatus),
                    nullable=False, default=ContestStatus.DRAFT)
 
@@ -52,36 +50,30 @@ class Contest(Base):
 # ---------------------------------------------------------------------------
 
 class NominationTemplate(Base):
-    """Global reusable nomination category. Admins maintain this list once;
-    each contest picks which templates to activate."""
+    """Global reusable nomination category."""
     __tablename__ = "nomination_templates"
     id          = Column(Integer, primary_key=True)
     name        = Column(String,  nullable=False)
-    description = Column(String,  nullable=True)   # shown to voters in the ballot
+    description = Column(String,  nullable=True)
     type        = Column(SAEnum(NominationType), nullable=False)
     sort_order  = Column(Integer, default=0,  nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)
 
-    # --- longlist parameters (copied into RoundNomination on longlist creation) ---
-    longlist_nominees_count = Column(Integer, nullable=True)   # how many nominees admin adds
-    longlist_pick_min       = Column(Integer, nullable=True)
-    longlist_pick_max       = Column(Integer, nullable=True)
+    # --- longlist voting parameters ---
+    longlist_pick_min = Column(Integer, nullable=True)
+    longlist_pick_max = Column(Integer, nullable=True)
 
-    # --- final parameters ---
-    # Target number of promotees. Actual count may be higher due to DENSE_RANK ties.
-    # NULL means "promote all" (used e.g. for SPECIAL/PICK with no fixed cutoff).
+    # --- how many nominees pass to final (also used as longlist nominees_count) ---
     final_promotes_count = Column(Integer, nullable=True)
 
     contest_nominations = relationship("ContestNomination", back_populates="template")
 
 
 # ---------------------------------------------------------------------------
-# ContestNomination  — which templates are active for a given contest/year
+# ContestNomination
 # ---------------------------------------------------------------------------
 
 class ContestNomination(Base):
-    """Join between Contest and NominationTemplate. Stores the per-contest
-    sort order (inherited from template.sort_order on creation, editable after)."""
     __tablename__ = "contest_nominations"
     id          = Column(Integer, primary_key=True)
     contest_id  = Column(Integer, ForeignKey("contests.id"),             nullable=False)
@@ -90,7 +82,6 @@ class ContestNomination(Base):
 
     contest   = relationship("Contest",            back_populates="contest_nominations")
     template  = relationship("NominationTemplate", back_populates="contest_nominations")
-    # Each ContestNomination produces exactly 1 Nomination per Round tour.
     nominations = relationship("Nomination",       back_populates="contest_nomination")
 
     __table_args__ = (
@@ -105,17 +96,13 @@ class ContestNomination(Base):
 class Round(Base):
     __tablename__ = "rounds"
     id         = Column(Integer, primary_key=True)
-    label      = Column(String, nullable=False)          # e.g. "Лонг-лист 1994"
+    label      = Column(String, nullable=False)
     round_type = Column(SAEnum(RoundType), nullable=False, default=RoundType.LONGLIST)
     year       = Column(Integer, nullable=False)
     deadline   = Column(DateTime, nullable=True)
     is_active  = Column(Boolean, default=False, nullable=False)
     sort_order = Column(Integer, default=0,     nullable=False)
-
-    # --- new: link to parent Contest ---
-    # nullable=True to keep legacy rounds (pre-Contest) alive without a FK violation.
     contest_id = Column(Integer, ForeignKey("contests.id"), nullable=True)
-    # 1 = LONGLIST, 2 = FINAL
     tour       = Column(Integer, default=1, nullable=False)
 
     contest        = relationship("Contest",          back_populates="rounds")
@@ -140,7 +127,6 @@ class Voter(Base):
 
 
 class RoundParticipation(Base):
-    """Tracks per-round voter state (draft, voted_at)."""
     __tablename__ = "round_participations"
     id       = Column(Integer, primary_key=True)
     round_id = Column(Integer, ForeignKey("rounds.id"),  nullable=False)
@@ -180,7 +166,7 @@ class Person(Base):
 
 
 # ---------------------------------------------------------------------------
-# Nomination  (instance of a template within a specific Round)
+# Nomination
 # ---------------------------------------------------------------------------
 
 class Nomination(Base):
@@ -195,9 +181,6 @@ class Nomination(Base):
     sort_order     = Column(Integer, nullable=False, default=0)
     round_id       = Column(Integer, ForeignKey("rounds.id"), nullable=True)
     has_runner_up  = Column(Boolean, default=False, nullable=False)
-
-    # --- new: back-reference to the ContestNomination this row was generated from ---
-    # nullable=True so legacy nominations (created before the template system) are untouched.
     contest_nomination_id = Column(Integer,
                                    ForeignKey("contest_nominations.id"),
                                    nullable=True)
@@ -212,7 +195,6 @@ class Nomination(Base):
 # ---------------------------------------------------------------------------
 
 class NomineePerson(Base):
-    """Many-to-many bridge: one nominee can credit multiple persons."""
     __tablename__ = "nominee_persons"
     id         = Column(Integer, primary_key=True)
     nominee_id = Column(Integer, ForeignKey("nominees.id"), nullable=False)
@@ -268,7 +250,6 @@ class Vote(Base):
     id           = Column(Integer, primary_key=True)
     voter_id     = Column(Integer, ForeignKey("voters.id"),   nullable=False)
     nominee_id   = Column(Integer, ForeignKey("nominees.id"), nullable=False)
-    # True for the runner-up vote in FINAL PICK nominations (used only on tie-break)
     is_runner_up = Column(Boolean, default=False, nullable=False)
 
     voter   = relationship("Voter",   back_populates="votes")

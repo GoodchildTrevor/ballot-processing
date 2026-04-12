@@ -1,19 +1,4 @@
-"""Admin router for Contest + Round management.
-
-Routes
-------
-GET  /admin/rounds                              – list all contests + rounds
-POST /admin/contests                            – create a contest (year + chosen templates)
-POST /admin/contests/{id}/delete               – delete contest (no votes)
-POST /admin/rounds                              – create a standalone round (legacy)
-POST /admin/rounds/{id}/edit                   – update label / deadline
-POST /admin/rounds/{id}/activate               – set is_active=True
-POST /admin/rounds/{id}/deactivate             – set is_active=False
-POST /admin/rounds/{id}/delete                 – delete round
-GET  /admin/rounds/{id}/preview                – preview / edit draft final round
-POST /admin/rounds/{id}/promote                – auto-create FINAL round from longlist
-POST /admin/rounds/{id}/nominees/{nid}/toggle-shortlist
-"""
+"""Admin router for Contest + Round management."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -40,10 +25,6 @@ from ballot.models import (
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates_env = Jinja2Templates(directory="ballot/templates")
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
     if v and v.strip():
@@ -85,10 +66,6 @@ def _dense_rank_cutoff(
     scored: list[tuple[Nominee, float | int]],
     target: int,
 ) -> list[Nominee]:
-    """Return top-`target` nominees by score using DENSE_RANK logic:
-    if the score at position `target` ties with others, all tied entries
-    are included (may return more than `target`).
-    """
     if not scored:
         return []
     result: list[Nominee] = []
@@ -103,16 +80,11 @@ def _dense_rank_cutoff(
             result.append(nominee)
             boundary_score = score
         elif score == boundary_score:
-            # tie at the cutoff boundary — include all
             result.append(nominee)
         else:
             break
     return result
 
-
-# ---------------------------------------------------------------------------
-# List (rounds page — now shows contests + standalone rounds)
-# ---------------------------------------------------------------------------
 
 @router.get("/rounds", response_class=HTMLResponse)
 def list_rounds(request: Request, db: Session = Depends(get_db)):
@@ -122,7 +94,6 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
         .order_by(Contest.year.desc())
         .all()
     )
-    # standalone rounds (no contest)
     standalone = (
         db.query(Round)
         .filter(Round.contest_id == None)  # noqa: E711
@@ -142,10 +113,6 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
     )
 
 
-# ---------------------------------------------------------------------------
-# Create Contest  (POST /admin/contests)
-# ---------------------------------------------------------------------------
-
 @router.post("/contests")
 def create_contest(
     request: Request,
@@ -155,10 +122,6 @@ def create_contest(
     template_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
-    """Create a Contest + longlist Round + Nomination instances for each
-    selected NominationTemplate."""
-
-    # 1. Contest
     contest = Contest(
         year=year,
         name=name.strip(),
@@ -167,7 +130,6 @@ def create_contest(
     db.add(contest)
     db.flush()
 
-    # 2. Longlist Round
     last = db.query(Round).order_by(Round.sort_order.desc()).first()
     longlist_round = Round(
         label=f"Лонг-лист {year}",
@@ -182,7 +144,6 @@ def create_contest(
     db.add(longlist_round)
     db.flush()
 
-    # 3. ContestNomination + Nomination per selected template
     tmpl_map = {
         t.id: t for t in db.query(NominationTemplate)
         .filter(NominationTemplate.id.in_(template_ids))
@@ -203,7 +164,8 @@ def create_contest(
         nom = Nomination(
             name=tmpl.name,
             type=tmpl.type,
-            nominees_count=tmpl.longlist_nominees_count,
+            # final_promotes_count now serves as both nominees_count and promote target
+            nominees_count=tmpl.final_promotes_count,
             pick_min=tmpl.longlist_pick_min,
             pick_max=tmpl.longlist_pick_max,
             year_filter=year,
@@ -218,10 +180,6 @@ def create_contest(
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Delete Contest
-# ---------------------------------------------------------------------------
-
 @router.post("/contests/{contest_id}/delete")
 def delete_contest(contest_id: int, db: Session = Depends(get_db)):
     contest = db.get(Contest, contest_id)
@@ -230,10 +188,6 @@ def delete_contest(contest_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
-
-# ---------------------------------------------------------------------------
-# Create standalone Round (legacy / manual)
-# ---------------------------------------------------------------------------
 
 @router.post("/rounds")
 def create_round(
@@ -258,10 +212,6 @@ def create_round(
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Edit Round
-# ---------------------------------------------------------------------------
-
 @router.post("/rounds/{round_id}/edit")
 def edit_round(
     round_id: int,
@@ -277,10 +227,6 @@ def edit_round(
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Delete Round
-# ---------------------------------------------------------------------------
-
 @router.post("/rounds/{round_id}/delete")
 def delete_round(round_id: int, db: Session = Depends(get_db)):
     rnd = db.get(Round, round_id)
@@ -289,10 +235,6 @@ def delete_round(round_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
-
-# ---------------------------------------------------------------------------
-# Activate / Deactivate
-# ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/activate")
 def activate_round(round_id: int, db: Session = Depends(get_db)):
@@ -322,10 +264,6 @@ def deactivate_round(round_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Promote: LONGLIST → FINAL
-# ---------------------------------------------------------------------------
-
 @router.post("/rounds/{round_id}/promote")
 def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     longlist = db.get(Round, round_id)
@@ -346,7 +284,6 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     db.add(final)
     db.flush()
 
-    # Update contest status
     if longlist.contest:
         longlist.contest.status = ContestStatus.LONGLIST_CLOSED
 
@@ -362,7 +299,6 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     )
 
     for nom in nominations:
-        # Determine target promotee count from template, fallback to all
         target = None
         if nom.contest_nomination and nom.contest_nomination.template:
             target = nom.contest_nomination.template.final_promotes_count
@@ -377,7 +313,7 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
             scored_pick = _pick_scores(nom, db)
             if target:
                 shortlisted = _dense_rank_cutoff(
-                    [(n, -c) for n, c in scored_pick],  # negate so lower=better
+                    [(n, -c) for n, c in scored_pick],
                     target,
                 )
             else:
@@ -387,7 +323,6 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
         for nominee in shortlisted:
             nominee.is_shortlisted = True
 
-        # Look up source ContestNomination to propagate the link
         source_cn_id = nom.contest_nomination_id
 
         final_nom = Nomination(
@@ -419,10 +354,6 @@ def promote_to_final(round_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url=f"/admin/rounds/{final.id}/preview", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Preview / edit draft final round
-# ---------------------------------------------------------------------------
-
 @router.get("/rounds/{round_id}/preview", response_class=HTMLResponse)
 def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)):
     rnd = db.get(Round, round_id)
@@ -445,10 +376,6 @@ def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)
         {"rnd": rnd, "nominations": nominations, "films": films},
     )
 
-
-# ---------------------------------------------------------------------------
-# Toggle is_shortlisted on a nominee
-# ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/nominees/{nominee_id}/toggle-shortlist")
 def toggle_shortlist(

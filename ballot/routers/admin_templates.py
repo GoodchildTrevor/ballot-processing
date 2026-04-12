@@ -1,14 +1,4 @@
-"""Admin router for global NominationTemplate management.
-
-Routes
-------
-GET  /admin/templates              – list all templates
-POST /admin/templates              – create template
-POST /admin/templates/{id}/edit    – update template
-POST /admin/templates/{id}/archive – toggle is_archived
-POST /admin/templates/{id}/delete  – delete (only if unused)
-POST /admin/templates/{id}/move    – reorder (up/down)
-"""
+"""Admin router for global NominationTemplate management."""
 from __future__ import annotations
 
 from typing import Optional
@@ -26,10 +16,6 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-# ---------------------------------------------------------------------------
-# List
-# ---------------------------------------------------------------------------
-
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, db: Session = Depends(get_db)):
     tmps = (
@@ -42,16 +28,11 @@ def list_templates(request: Request, db: Session = Depends(get_db)):
     )
 
 
-# ---------------------------------------------------------------------------
-# Create
-# ---------------------------------------------------------------------------
-
 @router.post("/templates")
 def create_template(
     name: str = Form(...),
     description: Optional[str] = Form(None),
     type: NominationType = Form(...),
-    longlist_nominees_count: Optional[int] = Form(None),
     longlist_pick_min: Optional[int] = Form(None),
     longlist_pick_max: Optional[int] = Form(None),
     final_promotes_count: Optional[int] = Form(None),
@@ -68,7 +49,6 @@ def create_template(
         description=description.strip() if description else None,
         type=type,
         sort_order=order,
-        longlist_nominees_count=longlist_nominees_count,
         longlist_pick_min=longlist_pick_min,
         longlist_pick_max=longlist_pick_max,
         final_promotes_count=final_promotes_count,
@@ -77,17 +57,12 @@ def create_template(
     return RedirectResponse(url="/admin/templates", status_code=303)
 
 
-# ---------------------------------------------------------------------------
-# Edit
-# ---------------------------------------------------------------------------
-
 @router.post("/templates/{template_id}/edit")
 def edit_template(
     template_id: int,
     name: str = Form(...),
     description: Optional[str] = Form(None),
     type: NominationType = Form(...),
-    longlist_nominees_count: Optional[int] = Form(None),
     longlist_pick_min: Optional[int] = Form(None),
     longlist_pick_max: Optional[int] = Form(None),
     final_promotes_count: Optional[int] = Form(None),
@@ -98,17 +73,12 @@ def edit_template(
         tmpl.name = name.strip()
         tmpl.description = description.strip() if description else None
         tmpl.type = type
-        tmpl.longlist_nominees_count = longlist_nominees_count
         tmpl.longlist_pick_min = longlist_pick_min
         tmpl.longlist_pick_max = longlist_pick_max
         tmpl.final_promotes_count = final_promotes_count
         db.commit()
     return RedirectResponse(url="/admin/templates", status_code=303)
 
-
-# ---------------------------------------------------------------------------
-# Archive toggle
-# ---------------------------------------------------------------------------
 
 @router.post("/templates/{template_id}/archive")
 def archive_template(template_id: int, db: Session = Depends(get_db)):
@@ -118,10 +88,6 @@ def archive_template(template_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse(url="/admin/templates", status_code=303)
 
-
-# ---------------------------------------------------------------------------
-# Delete (only if not used in any ContestNomination)
-# ---------------------------------------------------------------------------
 
 @router.post("/templates/{template_id}/delete")
 def delete_template(template_id: int, db: Session = Depends(get_db)):
@@ -137,10 +103,6 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
             db.commit()
     return RedirectResponse(url="/admin/templates", status_code=303)
 
-
-# ---------------------------------------------------------------------------
-# Move (reorder)
-# ---------------------------------------------------------------------------
 
 @router.post("/templates/{template_id}/move")
 def move_template(
