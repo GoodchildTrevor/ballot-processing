@@ -43,16 +43,11 @@ def _nominee_label(nominee) -> str:
 
 
 def get_results(db: Session, round_ids: set[int] | None = None):
-    """Build results list. Each item includes 'round' so the template can group by tour."""
     q = db.query(Nomination)
     if round_ids is not None:
         q = q.filter(Nomination.round_id.in_(round_ids))
-    nominations = (
-        q.order_by(Nomination.round_id, Nomination.sort_order, Nomination.id)
-        .all()
-    )
+    nominations = q.order_by(Nomination.round_id, Nomination.sort_order, Nomination.id).all()
 
-    # Pre-fetch rounds to avoid N+1
     round_cache: dict[int, Round] = {}
     if round_ids:
         for rnd in db.query(Round).filter(Round.id.in_(round_ids)).all():
@@ -61,7 +56,6 @@ def get_results(db: Session, round_ids: set[int] | None = None):
     results = []
     for nom in nominations:
         rnd = round_cache.get(nom.round_id) if nom.round_id else None
-
         if nom.type == NominationType.RANK:
             rows_raw = (
                 db.query(Film.title, func.sum(11 - Ranking.rank).label("score"))
@@ -77,7 +71,6 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 voter = db.get(Voter, r.voter_id)
                 if film and voter:
                     film_voters_map.setdefault(film.title, []).append((voter.name, r.rank))
-
             rows = []
             for r in rows_raw:
                 voter_entries = sorted(film_voters_map.get(r.title, []), key=lambda x: x[0])
@@ -114,11 +107,14 @@ def get_results(db: Session, round_ids: set[int] | None = None):
 def show_results(
     request: Request,
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     contests = db.query(Contest).order_by(Contest.year.desc()).all()
 
     selected_contest = None
+    selected_round = None
+    all_rounds: list[Round] = []
     round_ids: set[int] | None = None
 
     if contests:
@@ -127,25 +123,48 @@ def show_results(
         if not selected_contest:
             selected_contest = contests[0]
 
-        rounds = db.query(Round).filter(Round.contest_id == selected_contest.id).all()
-        round_ids = {r.id for r in rounds}
+        all_rounds = (
+            db.query(Round)
+            .filter(Round.contest_id == selected_contest.id)
+            .order_by(Round.tour)
+            .all()
+        )
+
+        if round_id:
+            selected_round = next((r for r in all_rounds if r.id == round_id), None)
+
+        if selected_round:
+            round_ids = {selected_round.id}
+        elif all_rounds:
+            selected_round = all_rounds[0]
+            round_ids = {selected_round.id}
+        else:
+            round_ids = set()
 
     results = get_results(db, round_ids)
     return templates.TemplateResponse(request, "admin/results.html", {
         "results": results,
         "contests": contests,
         "selected_contest": selected_contest,
+        "selected_round": selected_round,
+        "all_rounds": all_rounds,
     })
 
 
 @router.get("/results/export")
 def export_results(
     contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     round_ids: set[int] | None = None
     filename = "results.xlsx"
-    if contest_id:
+    if round_id:
+        rnd = db.get(Round, round_id)
+        if rnd:
+            round_ids = {rnd.id}
+            filename = f"results_{rnd.year}_{rnd.label}.xlsx".replace(" ", "_")
+    elif contest_id:
         contest = db.get(Contest, contest_id)
         if contest:
             rounds = db.query(Round).filter(Round.contest_id == contest_id).all()

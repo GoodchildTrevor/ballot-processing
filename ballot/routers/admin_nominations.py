@@ -1,180 +1,204 @@
-import io
-import urllib.parse
 from typing import Optional
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
-import openpyxl
+from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
-from ballot.models import (
-    Nomination, NominationType, Nominee, Film, Person,
-    Contest, ContestNomination, Round, RoundType,
-)
+from ballot.models import Contest, Nomination, NominationType, Nominee, Round
 from ballot.auth import require_admin
+import io, openpyxl
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _parse_int(v: Optional[str]) -> Optional[int]:
-    if v and v.strip():
-        try:
-            return int(v)
-        except ValueError:
-            pass
-    return None
-
-
-def _get_years(db: Session) -> list[int]:
-    rows = db.query(Film.year).distinct().order_by(Film.year.desc()).all()
-    return [r[0] for r in rows]
-
-
-def _clamp_pick_max(pmax: Optional[int], nc: Optional[int]) -> Optional[int]:
-    if pmax is not None and nc is not None:
-        return min(pmax, nc)
-    return pmax
-
-
-def _apply_person_url(person: Person, url: Optional[str]) -> None:
-    """Update person.url if a non-empty url is provided."""
-    clean = url.strip() if url and url.strip() else None
-    if clean:
-        person.url = clean
-
-
-def _auto_attach_to_contest(nom: Nomination, db: Session) -> None:
-    """If a Contest exists for nom.year_filter, attach nom to its longlist round."""
-    if not nom.year_filter:
-        return
-    contest = db.query(Contest).filter(Contest.year == nom.year_filter).first()
-    if not contest:
-        return
-    longlist = (
-        db.query(Round)
-        .filter(Round.contest_id == contest.id, Round.round_type == RoundType.LONGLIST)
-        .first()
-    )
-    if not longlist:
-        return
-    # Count existing nominations in this contest to set sort_order
-    existing_count = (
-        db.query(ContestNomination)
-        .filter(ContestNomination.contest_id == contest.id)
-        .count()
-    )
-    cn = ContestNomination(
-        contest_id=contest.id,
-        template_id=None,
-        sort_order=existing_count,
-    )
-    db.add(cn)
-    db.flush()
-    nom.round_id = longlist.id
-    nom.contest_nomination_id = cn.id
+def _all_years(db: Session) -> list[int]:
+    rows = db.query(Nomination.year_filter).distinct().all()
+    return sorted({r[0] for r in rows if r[0]}, reverse=True)
 
 
 @router.get("/nominations", response_class=HTMLResponse)
-def list_nominations(request: Request, db: Session = Depends(get_db)):
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    years = _get_years(db)
+def list_nominations(
+    request: Request,
+    contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    years = _all_years(db)
+    contests = db.query(Contest).order_by(Contest.year.desc()).all()
+
+    selected_contest = None
+    selected_round = None
+    all_rounds: list[Round] = []
+
+    if contests:
+        if contest_id:
+            selected_contest = db.get(Contest, contest_id)
+        if not selected_contest:
+            selected_contest = contests[0]
+
+        all_rounds = (
+            db.query(Round)
+            .filter(Round.contest_id == selected_contest.id)
+            .order_by(Round.tour)
+            .all()
+        )
+
+        if round_id:
+            selected_round = next((r for r in all_rounds if r.id == round_id), None)
+        if not selected_round and all_rounds:
+            selected_round = all_rounds[0]
+
+    # Load nominations for the selected round
+    if selected_round:
+        nominations = (
+            db.query(Nomination)
+            .options(
+                joinedload(Nomination.nominees),
+                joinedload(Nomination.round),
+            )
+            .filter(Nomination.round_id == selected_round.id)
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+    else:
+        nominations = []
+
     return templates.TemplateResponse(request, "admin/nominations.html", {
         "nominations": nominations,
         "years": years,
+        "contests": contests,
+        "selected_contest": selected_contest,
+        "selected_round": selected_round,
+        "all_rounds": all_rounds,
     })
 
 
 @router.post("/nominations")
-def create_nomination(
-    name: str = Form(...),
-    type: NominationType = Form(...),
-    pick_min: Optional[str] = Form(None),
-    pick_max: Optional[str] = Form(None),
-    nominees_count: Optional[str] = Form(None),
-    year_filter: str = Form(...),
+async def create_nomination(
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    nc = _parse_int(nominees_count)
-    if type == NominationType.PICK:
-        pmin = _parse_int(pick_min)
-        pmax = _clamp_pick_max(_parse_int(pick_max), nc)
-    else:
-        pmin = None
-        pmax = None
-    yf = _parse_int(year_filter)
-    last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
-    order = (last.sort_order + 1) if last else 0
+    form = await request.form()
+    nom_type = NominationType(form.get("type", "RANK"))
+    nominees_count_raw = form.get("nominees_count")
+    nominees_count = int(nominees_count_raw) if nominees_count_raw else None
+    pick_min_raw = form.get("pick_min")
+    pick_max_raw = form.get("pick_max")
+    round_id_raw = form.get("round_id")
+    year_filter_raw = form.get("year_filter")
+
     nom = Nomination(
-        name=name, type=type,
-        pick_min=pmin, pick_max=pmax,
-        nominees_count=nc,
-        year_filter=yf,
-        sort_order=order,
+        name=form["name"],
+        type=nom_type,
+        nominees_count=nominees_count,
+        pick_min=int(pick_min_raw) if pick_min_raw else None,
+        pick_max=int(pick_max_raw) if pick_max_raw else None,
+        round_id=int(round_id_raw) if round_id_raw else None,
+        year_filter=int(year_filter_raw) if year_filter_raw else None,
     )
     db.add(nom)
-    db.flush()
-    _auto_attach_to_contest(nom, db)
     db.commit()
-    return RedirectResponse(url="/admin/nominations", status_code=303)
+
+    contest_id = form.get("contest_id")
+    redirect = "/admin/nominations"
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id_raw:
+        parts.append(f"round_id={round_id_raw}")
+    if parts:
+        redirect += "?" + "&".join(parts)
+    return RedirectResponse(url=redirect, status_code=303)
 
 
 @router.post("/nominations/{nom_id}/edit")
-def edit_nomination(
+async def edit_nomination(
     nom_id: int,
-    name: str = Form(...),
-    type: NominationType = Form(...),
-    pick_min: Optional[str] = Form(None),
-    pick_max: Optional[str] = Form(None),
-    nominees_count: Optional[str] = Form(None),
-    year_filter: str = Form(...),
+    request: Request,
     db: Session = Depends(get_db),
 ):
+    form = await request.form()
     nom = db.get(Nomination, nom_id)
-    if not nom:
-        return RedirectResponse(url="/admin/nominations", status_code=303)
-    nc = _parse_int(nominees_count)
-    nom.name = name.strip()
-    nom.type = type
-    nom.nominees_count = nc
-    nom.year_filter = _parse_int(year_filter)
-    if type == NominationType.PICK:
-        nom.pick_min = _parse_int(pick_min)
-        nom.pick_max = _clamp_pick_max(_parse_int(pick_max), nc)
-    else:
-        nom.pick_min = None
-        nom.pick_max = None
-    db.commit()
-    return RedirectResponse(url="/admin/nominations", status_code=303)
+    if nom:
+        nom.name = form["name"]
+        nom.type = NominationType(form.get("type", "RANK"))
+        nc = form.get("nominees_count")
+        nom.nominees_count = int(nc) if nc else None
+        pm = form.get("pick_min")
+        nom.pick_min = int(pm) if pm else None
+        px = form.get("pick_max")
+        nom.pick_max = int(px) if px else None
+        yf = form.get("year_filter")
+        nom.year_filter = int(yf) if yf else None
+        db.commit()
+
+    contest_id = form.get("contest_id")
+    round_id = form.get("round_id")
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id:
+        parts.append(f"round_id={round_id}")
+    redirect = "/admin/nominations" + ("?" + "&".join(parts) if parts else "")
+    return RedirectResponse(url=redirect, status_code=303)
 
 
 @router.post("/nominations/{nom_id}/delete")
-def delete_nomination(nom_id: int, db: Session = Depends(get_db)):
+async def delete_nomination(
+    nom_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
     nom = db.get(Nomination, nom_id)
     if nom:
-        db.query(Nominee).filter(Nominee.nomination_id == nom_id).delete()
         db.delete(nom)
         db.commit()
-    return RedirectResponse(url="/admin/nominations", status_code=303)
+    contest_id = form.get("contest_id")
+    round_id = form.get("round_id")
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id:
+        parts.append(f"round_id={round_id}")
+    redirect = "/admin/nominations" + ("?" + "&".join(parts) if parts else "")
+    return RedirectResponse(url=redirect, status_code=303)
 
 
 @router.post("/nominations/{nom_id}/move")
-def move_nomination(
+async def move_nomination(
     nom_id: int,
-    direction: str = Form(...),
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    noms = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
-    idx = next((i for i, n in enumerate(noms) if n.id == nom_id), None)
-    if idx is None:
-        return RedirectResponse(url="/admin/nominations", status_code=303)
-    swap_idx = idx - 1 if direction == "up" else idx + 1
-    if 0 <= swap_idx < len(noms):
-        noms[idx].sort_order, noms[swap_idx].sort_order = noms[swap_idx].sort_order, noms[idx].sort_order
-        for i, n in enumerate(sorted(noms, key=lambda x: x.sort_order)):
-            n.sort_order = i
-        db.commit()
-    return RedirectResponse(url="/admin/nominations", status_code=303)
+    form = await request.form()
+    direction = form.get("direction", "up")
+    nom = db.get(Nomination, nom_id)
+    if nom:
+        siblings = (
+            db.query(Nomination)
+            .filter(Nomination.round_id == nom.round_id)
+            .order_by(Nomination.sort_order, Nomination.id)
+            .all()
+        )
+        idx = next((i for i, n in enumerate(siblings) if n.id == nom_id), None)
+        if idx is not None:
+            swap_idx = idx - 1 if direction == "up" else idx + 1
+            if 0 <= swap_idx < len(siblings):
+                other = siblings[swap_idx]
+                nom.sort_order, other.sort_order = other.sort_order, nom.sort_order
+                db.commit()
+
+    contest_id = form.get("contest_id")
+    round_id = form.get("round_id")
+    parts = []
+    if contest_id:
+        parts.append(f"contest_id={contest_id}")
+    if round_id:
+        parts.append(f"round_id={round_id}")
+    redirect = "/admin/nominations" + ("?" + "&".join(parts) if parts else "")
+    return RedirectResponse(url=redirect, status_code=303)
 
 
 @router.get("/nominations/export-longlist")
@@ -182,265 +206,51 @@ def export_longlist(
     year: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id)
+    q = (
+        db.query(Nomination)
+        .options(joinedload(Nomination.nominees).joinedload(Nominee.film))
+        .order_by(Nomination.sort_order, Nomination.id)
+    )
     if year:
         q = q.filter(Nomination.year_filter == year)
     nominations = q.all()
 
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)
+    ws = wb.active
+    ws.title = "Long-list"
+    ws.append(["Номинация", "Номинант", "Год"])
     for nom in nominations:
-        ws = wb.create_sheet(title=nom.name[:31])
-        ws.append(["Фильм", "Год", "Персона", "Элемент", "Ссылка на фильм"])
-        nominees_sorted = sorted(
-            nom.nominees,
-            key=lambda n: (n.person.name.lower() if n.person else n.film.title.lower())
-        )
-        for n in nominees_sorted:
-            ws.append([
-                n.film.title,
-                n.film.year,
-                n.persons_label,
-                n.item if n.item else "",
-                n.film.url or "",
-            ])
+        for nominee in nom.nominees:
+            film_title = nominee.film.title if nominee.film else ""
+            film_year = nominee.film.year if nominee.film else ""
+            ws.append([nom.name, film_title, film_year])
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-
-    filename = f"longlist_{year}.xlsx" if year else "longlist_all.xlsx"
+    fname = f"longlist_{year}.xlsx" if year else "longlist.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
 
 
 @router.get("/nominations/{nom_id}", response_class=HTMLResponse)
-def nomination_detail(nom_id: int, request: Request, db: Session = Depends(get_db)):
-    nom = db.get(Nomination, nom_id)
+def nomination_detail(
+    nom_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    nom = (
+        db.query(Nomination)
+        .options(
+            joinedload(Nomination.nominees).joinedload(Nominee.film),
+            joinedload(Nomination.nominees).joinedload(Nominee.person),
+        )
+        .filter(Nomination.id == nom_id)
+        .first()
+    )
     if not nom:
         return HTMLResponse("Номинация не найдена.", status_code=404)
-    film_q = db.query(Film).order_by(Film.title)
-    if nom.year_filter:
-        film_q = film_q.filter(Film.year == nom.year_filter)
-    films = film_q.all()
-    persons = db.query(Person).order_by(Person.name).all()
-    years = _get_years(db)
-    added_film_ids = {n.film_id for n in nom.nominees}
-    return templates.TemplateResponse(
-        request, "admin/nomination_detail.html",
-        {
-            "nom": nom,
-            "films": films,
-            "persons": persons,
-            "years": years,
-            "added_film_ids": added_film_ids,
-            "error": request.query_params.get("error"),
-            "bulk_created": request.query_params.get("bulk_created"),
-            "bulk_skipped": request.query_params.get("bulk_skipped"),
-            "bulk_not_found": request.query_params.get("bulk_not_found"),
-            "bulk_films_created": request.query_params.get("bulk_films_created"),
-            "bulk_persons_created": request.query_params.get("bulk_persons_created"),
-        },
-    )
-
-
-@router.post("/nominations/{nom_id}/nominees")
-def add_nominee_via_nomination(
-    nom_id: int,
-    film_id: int = Form(...),
-    person_id: Optional[str] = Form(None),
-    person_url: Optional[str] = Form(None),
-    item: Optional[str] = Form(None),
-    item_url: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
-):
-    nom = db.get(Nomination, nom_id)
-    if not nom:
-        return RedirectResponse(url="/admin/nominations", status_code=303)
-    pid = _parse_int(person_id) if nom.type == NominationType.PICK else None
-    item_val = item.strip() if item and item.strip() else None
-    item_url_val = item_url.strip() if item_url and item_url.strip() else None
-
-    if pid and nom.type == NominationType.PICK:
-        person = db.get(Person, pid)
-        if person:
-            _apply_person_url(person, person_url)
-
-    existing = db.query(Nominee).filter(
-        Nominee.nomination_id == nom_id,
-        Nominee.film_id == film_id,
-        Nominee.person_id == pid,
-        Nominee.item == item_val,
-    ).first()
-    if existing:
-        return RedirectResponse(
-            url=f"/admin/nominations/{nom_id}?error=duplicate&film_id={film_id}",
-            status_code=303,
-        )
-
-    db.add(Nominee(
-        nomination_id=nom_id,
-        film_id=film_id,
-        person_id=pid,
-        item=item_val,
-        item_url=item_url_val,
-    ))
-    db.commit()
-    return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
-
-
-@router.post("/nominations/{nom_id}/nominees/bulk")
-def bulk_add_nominees(
-    nom_id: int,
-    lines: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    """
-    Bulk-add nominees to a nomination.
-    Line format: Film | Person | Item | Item URL | Person URL
-    All fields except Film are optional. Skip with empty delimiter: ||.
-
-    Film: looked up by exact title (case-insensitive); auto-created if not found (requires year_filter).
-    Person: looked up by exact name (case-insensitive); auto-created if not found.
-    Person URL (5th field): applied to the person record on create or update.
-    """
-    nom = db.get(Nomination, nom_id)
-    if not nom:
-        return RedirectResponse(url="/admin/nominations", status_code=303)
-
-    film_q = db.query(Film)
-    if nom.year_filter:
-        film_q = film_q.filter(Film.year == nom.year_filter)
-    all_films = film_q.all()
-    film_index: dict[str, Film] = {f.title.lower(): f for f in all_films}
-
-    all_persons = db.query(Person).all()
-    person_index: dict[str, Person] = {p.name.lower(): p for p in all_persons}
-
-    created = 0
-    skipped = 0
-    films_created: list[str] = []
-    persons_created: list[str] = []
-    no_year_lines: list[str] = []
-
-    for raw_line in lines.strip().splitlines():
-        raw_line = raw_line.strip()
-        if not raw_line:
-            continue
-
-        parts = [p.strip() for p in raw_line.split("|")]
-        film_title     = parts[0] if len(parts) > 0 else ""
-        person_name    = parts[1] if len(parts) > 1 else ""
-        item_val       = parts[2] if len(parts) > 2 else ""
-        item_url_val   = parts[3] if len(parts) > 3 else ""
-        person_url_val = parts[4] if len(parts) > 4 else ""
-
-        film_title     = film_title.strip()
-        person_name    = person_name.strip()
-        item_val       = item_val.strip() or None
-        item_url_val   = item_url_val.strip() or None
-        person_url_val = person_url_val.strip() or None
-
-        if not film_title:
-            continue
-
-        film = film_index.get(film_title.lower())
-        if film is None:
-            if not nom.year_filter:
-                no_year_lines.append(film_title)
-                continue
-            film = Film(title=film_title, year=nom.year_filter)
-            db.add(film)
-            db.flush()
-            film_index[film_title.lower()] = film
-            films_created.append(film_title)
-
-        pid: Optional[int] = None
-        if person_name and nom.type == NominationType.PICK:
-            person = person_index.get(person_name.lower())
-            if person is None:
-                person = Person(name=person_name, url=person_url_val)
-                db.add(person)
-                db.flush()
-                person_index[person_name.lower()] = person
-                persons_created.append(person_name)
-            else:
-                _apply_person_url(person, person_url_val)
-            pid = person.id
-
-        existing = db.query(Nominee).filter(
-            Nominee.nomination_id == nom_id,
-            Nominee.film_id == film.id,
-            Nominee.person_id == pid,
-            Nominee.item == item_val,
-        ).first()
-        if existing:
-            skipped += 1
-            continue
-
-        db.add(Nominee(
-            nomination_id=nom_id,
-            film_id=film.id,
-            person_id=pid,
-            item=item_val,
-            item_url=item_url_val,
-        ))
-        created += 1
-
-    db.commit()
-
-    params = f"bulk_created={created}&bulk_skipped={skipped}"
-    if films_created:
-        params += "&bulk_films_created=" + urllib.parse.quote(str(len(films_created)))
-    if persons_created:
-        params += "&bulk_persons_created=" + urllib.parse.quote(str(len(persons_created)))
-    if no_year_lines:
-        params += "&bulk_not_found=" + urllib.parse.quote(", ".join(no_year_lines))
-    return RedirectResponse(url=f"/admin/nominations/{nom_id}?{params}", status_code=303)
-
-
-@router.post("/nominees/{nominee_id}/edit")
-def edit_nominee(
-    nominee_id: int,
-    film_id: int = Form(...),
-    person_id: Optional[str] = Form(None),
-    person_url: Optional[str] = Form(None),
-    item: Optional[str] = Form(None),
-    item_url: Optional[str] = Form(None),
-    back: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
-):
-    nominee = db.get(Nominee, nominee_id)
-    if not nominee:
-        return RedirectResponse(url="/admin/nominations", status_code=303)
-    nominee.film_id = film_id
-    pid = _parse_int(person_id)
-    nominee.person_id = pid
-    if pid:
-        person = db.get(Person, pid)
-        if person:
-            _apply_person_url(person, person_url)
-    nominee.item = item.strip() if item and item.strip() else None
-    nominee.item_url = item_url.strip() if item_url and item_url.strip() else None
-    db.commit()
-    dest = f"/admin/nominations/{nominee.nomination_id}"
-    return RedirectResponse(url=dest, status_code=303)
-
-
-@router.post("/nominees/{nominee_id}/delete")
-def delete_nominee(
-    nominee_id: int,
-    back: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
-):
-    nominee = db.get(Nominee, nominee_id)
-    if nominee:
-        nom_id = nominee.nomination_id
-        db.delete(nominee)
-        db.commit()
-        if back == "nomination":
-            return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
-    return RedirectResponse(url="/admin/nominations", status_code=303)
+    return templates.TemplateResponse(request, "admin/nomination_detail.html", {"nom": nom})

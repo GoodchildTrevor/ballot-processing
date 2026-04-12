@@ -3,14 +3,72 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Номинации</h1>
 
-<div class="bg-white shadow rounded-xl p-6 mb-8" x-data="{ type: 'RANK' }">
-  <h2 class="text-base font-semibold mb-4 text-gray-700">Создать номинацию</h2>
-  <form method="post" action="/admin/nominations" class="flex flex-wrap gap-3 items-end"
-        id="create-nom-form">
+{# Contest selector #}
+{% if contests %}
+<div class="mb-5 flex items-center gap-3">
+  <label class="text-sm font-medium text-gray-500 whitespace-nowrap">Конкурс:</label>
+  <select class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+          onchange="window.location.href = '/admin/nominations?contest_id=' + this.value">
+    {% for c in contests %}
+    <option value="{{ c.id }}" {% if selected_contest and c.id == selected_contest.id %}selected{% endif %}>
+      {{ c.name }} ({{ c.year }})
+    </option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+{% if not selected_contest %}
+<p class="text-gray-400">Нет конкурсов. <a href="/admin/rounds" class="underline text-indigo-500">Создайте конкурс</a>.</p>
+{% else %}
+
+{# Round tabs #}
+{% if all_rounds | length > 1 %}
+<div class="flex gap-2 mb-6">
+  {% for rnd in all_rounds %}
+  {% set is_active = selected_round and selected_round.id == rnd.id %}
+  <a href="/admin/nominations?contest_id={{ selected_contest.id }}&round_id={{ rnd.id }}"
+     class="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl border-2 transition
+       {% if is_active %}
+         {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600 shadow-sm
+         {% else %}bg-amber-500 text-white border-amber-500 shadow-sm{% endif %}
+       {% else %}
+         {% if rnd.tour == 1 %}bg-white text-blue-600 border-blue-200 hover:bg-blue-50
+         {% else %}bg-white text-amber-600 border-amber-200 hover:bg-amber-50{% endif %}
+       {% endif %}">
+    <span class="text-base leading-none">{% if rnd.tour == 1 %}①{% else %}②{% endif %}</span>
+    <span>{{ rnd.tour }} тур</span>
+    <span class="font-normal opacity-75 text-xs">&mdash; {{ rnd.label }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% elif all_rounds | length == 1 %}
+{% set rnd = all_rounds[0] %}
+<div class="flex items-center gap-3 mb-5">
+  <div class="w-1 h-7 rounded-full {% if rnd.tour == 1 %}bg-blue-500{% else %}bg-amber-500{% endif %} flex-shrink-0"></div>
+  <span class="text-sm font-extrabold {% if rnd.tour == 1 %}text-blue-700{% else %}text-amber-700{% endif %} uppercase tracking-wider">
+    {{ rnd.tour }} тур &mdash; {{ rnd.label }}
+  </span>
+  <div class="flex-1 h-px {% if rnd.tour == 1 %}bg-blue-100{% else %}bg-amber-100{% endif %}"></div>
+</div>
+{% endif %}
+
+{# Create nomination form #}
+<div class="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm" x-data="{ type: 'RANK', open: false }">
+  <button type="button" @click="open = !open"
+          class="flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-indigo-600 transition">
+    <span x-text="open ? '− Скрыть' : '+ Создать номинацию'"></span>
+  </button>
+  <form method="post" action="/admin/nominations" x-show="open" x-cloak
+        class="mt-4 flex flex-wrap gap-3 items-end">
+    <input type="hidden" name="contest_id" value="{{ selected_contest.id }}" />
+    {% if selected_round %}
+    <input type="hidden" name="round_id" value="{{ selected_round.id }}" />
+    {% endif %}
     <div>
       <label class="block text-xs text-gray-500 mb-1">Название</label>
       <input type="text" name="name" required
-             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-56 focus:ring-indigo-400 focus:outline-none" />
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-52 focus:ring-indigo-400 focus:outline-none" />
     </div>
     <div>
       <label class="block text-xs text-gray-500 mb-1">Тип</label>
@@ -20,303 +78,215 @@
         <option value="PICK">PICK (выбрать N)</option>
       </select>
     </div>
-
     <div x-show="type === 'RANK'" x-cloak>
       <label class="block text-xs text-gray-500 mb-1">Мест в рейтинге</label>
       <input type="number" name="nominees_count" min="1" placeholder="10"
              class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none" />
     </div>
-
     <div x-show="type === 'PICK'" x-cloak class="flex gap-2 items-end">
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Кол-во номинантов</label>
+        <label class="block text-xs text-gray-500 mb-1">Номинантов</label>
         <input type="number" name="nominees_count" id="create-nc" min="1" placeholder="15"
                class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24 focus:ring-indigo-400 focus:outline-none"
                oninput="syncPickMax('create-pick-max','create-nc')" />
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Мин выбор</label>
+        <label class="block text-xs text-gray-500 mb-1">Мин</label>
         <input type="number" name="pick_min" min="1" placeholder="1"
                class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-20 focus:ring-indigo-400 focus:outline-none" />
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Макс выбор</label>
+        <label class="block text-xs text-gray-500 mb-1">Макс</label>
         <input type="number" name="pick_max" id="create-pick-max" min="1" placeholder="10"
                class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-20 focus:ring-indigo-400 focus:outline-none"
                oninput="clampToMax(this)" />
       </div>
     </div>
-
     <div>
-      <label class="block text-xs text-gray-500 mb-1">Год номинации</label>
-      <select name="year_filter" required
+      <label class="block text-xs text-gray-500 mb-1">Год</label>
+      <select name="year_filter"
               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-        <option value="" disabled selected>— выбрать —</option>
+        <option value="">—</option>
         {% for y in years %}
         <option value="{{ y }}">{{ y }}</option>
         {% endfor %}
       </select>
     </div>
-
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
   </form>
 </div>
 
-{# Year filter pills + export button share the same Alpine component so export can read activeYear #}
-<div x-data="nominationsFilter()">
-
-  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-    {# Pills #}
-    <div class="flex flex-wrap gap-1">
-      <button type="button" @click="setYear(null)"
-              :class="activeYear === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3 py-1 rounded-full text-xs font-medium transition">
-        Все годы
-      </button>
-      {% for y in years %}
-      <button type="button" @click="setYear({{ y }})"
-              :class="activeYear === {{ y }} ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-              class="px-3 py-1 rounded-full text-xs font-medium transition">
-        {{ y }}
-      </button>
-      {% endfor %}
-    </div>
-
-    {# Export button #}
-    <a :href="activeYear ? '/admin/nominations/export-longlist?year=' + activeYear : '/admin/nominations/export-longlist'"
-       class="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
-      ↓ Скачать лонг-листы (Excel)
-      <span x-show="activeYear !== null"
-            x-text="'(' + activeYear + ')'"
-            class="opacity-80 text-xs"></span>
-    </a>
-  </div>
-
-  <div class="bg-white shadow rounded-xl p-6">
-    <table class="w-full text-sm">
-      <thead class="text-left text-gray-500 border-b">
-        <tr>
-          <th class="pb-2 pr-2 w-16">Порядок</th>
-          <th class="pb-2 pr-4">Название</th>
-          <th class="pb-2 pr-4">Тип</th>
-          <th class="pb-2 pr-4">Параметры</th>
-          <th class="pb-2 pr-4">Год</th>
-          <th class="pb-2 pr-4">Лонг-лист</th>
-          <th class="pb-2"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {%- set ns = namespace(last_year=None, last_tour=None) %}
-        {% for nom in nominations %}
-
-        {# ── Tour / year divider ── #}
-        {%- set tour = nom.round.tour if nom.round else None %}
-        {%- set yr   = nom.year_filter %}
-        {%- if yr != ns.last_year or tour != ns.last_tour %}
-          {%- set ns.last_year = yr %}
-          {%- set ns.last_tour = tour %}
-          <tr class="nomination-row"
-              :class="activeYear !== null && activeYear !== {{ yr or 'null' }} ? 'hidden' : ''"
-              data-year="{{ yr or '' }}">
-            <td colspan="7" class="pt-6 pb-2 px-0">
-              {%- if tour == 1 %}
-              {# ── 1 тур: синяя полоса #}
-              <div class="flex items-center gap-3">
-                <div class="w-1 h-8 rounded-full bg-blue-500 flex-shrink-0"></div>
-                <div>
-                  {% if yr %}<span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ yr }}</span>{% endif %}
-                  <span class="text-sm font-extrabold text-blue-700 uppercase tracking-wider">1 тур — Лонг-лист</span>
-                </div>
-                <div class="flex-1 h-px bg-blue-200"></div>
-              </div>
-              {%- elif tour == 2 %}
-              {# ── 2 тур: янтарная полоса #}
-              <div class="flex items-center gap-3">
-                <div class="w-1 h-8 rounded-full bg-amber-500 flex-shrink-0"></div>
-                <div>
-                  {% if yr %}<span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ yr }}</span>{% endif %}
-                  <span class="text-sm font-extrabold text-amber-700 uppercase tracking-wider">2 тур — Финал</span>
-                </div>
-                <div class="flex-1 h-px bg-amber-200"></div>
-              </div>
-              {%- else %}
-              {# ── без тура: обычный год #}
-              <div class="flex items-center gap-3">
-                {% if yr %}<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ yr }}</span>{% endif %}
-                <div class="flex-1 h-px bg-gray-100"></div>
-              </div>
-              {%- endif %}
-            </td>
-          </tr>
-        {%- endif %}
-
-        <tr class="border-b last:border-0 align-top nomination-row
-            {% if nom.round and nom.round.tour == 1 %}bg-blue-50/30{% elif nom.round and nom.round.tour == 2 %}bg-amber-50/30{% endif %}"
-            data-year="{{ nom.year_filter or '' }}"
-            :class="activeYear !== null && activeYear !== {{ nom.year_filter or 'null' }} ? 'hidden' : ''"
-            x-data="{ editing: false, nomType: '{{ nom.type.value }}' }">
-
-          {# Move buttons #}
-          <td class="py-2 pr-2">
-            <div class="flex flex-col gap-0.5">
-              {% if not loop.first %}
-              <form method="post" action="/admin/nominations/{{ nom.id }}/move">
-                <input type="hidden" name="direction" value="up" />
-                <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none">▲</button>
-              </form>
-              {% endif %}
-              {% if not loop.last %}
-              <form method="post" action="/admin/nominations/{{ nom.id }}/move">
-                <input type="hidden" name="direction" value="down" />
-                <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none">▼</button>
-              </form>
-              {% endif %}
-            </div>
-          </td>
-
-          {# Name / inline edit form #}
-          <td class="py-2 pr-4" x-bind:colspan="editing ? 5 : 1">
-            <template x-if="!editing">
-              <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
-            </template>
-            <template x-if="editing">
-              <form method="post" action="/admin/nominations/{{ nom.id }}/edit"
-                    class="flex flex-wrap gap-2 items-end py-1">
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Название</label>
-                  <input type="text" name="name" value="{{ nom.name }}" required
-                         class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-44 focus:ring-indigo-400 focus:outline-none" />
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Тип</label>
-                  <select name="type" x-model="nomType"
-                          class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none">
-                    <option value="RANK">RANK</option>
-                    <option value="PICK">PICK</option>
-                  </select>
-                </div>
-                <template x-if="nomType === 'RANK'">
-                  <div>
-                    <label class="block text-xs text-gray-400 mb-0.5">Мест</label>
-                    <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}" placeholder="10"
-                           class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
-                  </div>
-                </template>
-                <template x-if="nomType === 'PICK'">
-                  <div class="flex gap-2 items-end">
-                    <div>
-                      <label class="block text-xs text-gray-400 mb-0.5">Номинантов</label>
-                      <input type="number" name="nominees_count" id="edit-nc-{{ nom.id }}" min="1"
-                             value="{{ nom.nominees_count or '' }}" placeholder="15"
-                             class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none"
-                             :oninput="`syncPickMax('edit-pm-{{ nom.id }}','edit-nc-{{ nom.id }}')`" />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-400 mb-0.5">Мин</label>
-                      <input type="number" name="pick_min" min="1" value="{{ nom.pick_min or '' }}"
-                             class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-400 mb-0.5">Макс</label>
-                      <input type="number" name="pick_max" id="edit-pm-{{ nom.id }}" min="1"
-                             value="{{ nom.pick_max or '' }}"
-                             max="{{ nom.nominees_count or '' }}"
-                             class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none"
-                             :oninput="`clampToMax(document.getElementById('edit-pm-{{ nom.id }}'))`" />
-                    </div>
-                  </div>
-                </template>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Год</label>
-                  <select name="year_filter" required
-                          class="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none">
-                    {% for y in years %}
-                    <option value="{{ y }}" {% if nom.year_filter == y %}selected{% endif %}>{{ y }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="flex gap-2 items-end">
-                  <button type="submit"
-                          class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs transition">Сохранить</button>
-                  <button type="button" @click="editing = false"
-                          class="text-xs text-gray-400 hover:underline px-1">Отмена</button>
-                </div>
-              </form>
-            </template>
-          </td>
-
-          <td class="py-2 pr-4" x-show="!editing">
-            <span class="px-2 py-0.5 rounded text-xs font-semibold
-              {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
-              {{ nom.type.value }}
-            </span>
-          </td>
-
-          <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">
-            {% if nom.type.value == 'RANK' %}
-              {% if nom.nominees_count %}Топ {{ nom.nominees_count }}{% else %}<span class="text-gray-300">—</span>{% endif %}
-            {% else %}
-              {{ nom.pick_min or 1 }}–{{ nom.pick_max or '?' }}
-              {% if nom.nominees_count %}
-                <span class="text-gray-400">/ {{ nom.nominees_count }}</span>
-              {% endif %}
-            {% endif %}
-          </td>
-
-          <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
-
-          <td class="py-2 pr-4 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
-
-          <td class="py-2 text-right whitespace-nowrap">
-            <button type="button" @click="editing = !editing"
-                    class="text-xs text-indigo-500 hover:underline mr-2"
-                    x-text="editing ? '✕' : 'Редактировать'"></button>
-            <form method="post" action="/admin/nominations/{{ nom.id }}/delete" class="inline"
-                  @submit.prevent="confirm('Удалить «{{ nom.name }}»?') && $el.submit()">
-              <button class="text-xs text-red-500 hover:underline">Удалить</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
+{# Nominations table #}
+{% if not nominations %}
+<div class="text-center py-16 text-gray-400">
+  <div class="text-4xl mb-3">📄</div>
+  <p>Номинаций нет{% if selected_round %} в «{{ selected_round.label }}»{% endif %}</p>
 </div>
+{% else %}
+<div class="bg-white shadow rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-left text-gray-500 border-b bg-gray-50">
+      <tr>
+        <th class="pb-2 px-3 py-3 w-16">Порядок</th>
+        <th class="pb-2 px-3 py-3">Название</th>
+        <th class="pb-2 px-3 py-3">Тип</th>
+        <th class="pb-2 px-3 py-3">Параметры</th>
+        <th class="pb-2 px-3 py-3">Год</th>
+        <th class="pb-2 px-3 py-3">Лонг-лист</th>
+        <th class="pb-2 px-3 py-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for nom in nominations %}
+      <tr class="border-b last:border-0 align-top hover:bg-gray-50"
+          x-data="{ editing: false, nomType: '{{ nom.type.value }}' }">
+
+        <td class="py-2 px-3">
+          <div class="flex flex-col gap-0.5">
+            {% if not loop.first %}
+            <form method="post" action="/admin/nominations/{{ nom.id }}/move">
+              <input type="hidden" name="direction" value="up" />
+              <input type="hidden" name="contest_id" value="{{ selected_contest.id }}" />
+              {% if selected_round %}<input type="hidden" name="round_id" value="{{ selected_round.id }}" />{% endif %}
+              <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none">▲</button>
+            </form>
+            {% endif %}
+            {% if not loop.last %}
+            <form method="post" action="/admin/nominations/{{ nom.id }}/move">
+              <input type="hidden" name="direction" value="down" />
+              <input type="hidden" name="contest_id" value="{{ selected_contest.id }}" />
+              {% if selected_round %}<input type="hidden" name="round_id" value="{{ selected_round.id }}" />{% endif %}
+              <button class="text-gray-400 hover:text-indigo-600 text-xs leading-none">▼</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+
+        <td class="py-2 px-3" x-bind:colspan="editing ? 5 : 1">
+          <template x-if="!editing">
+            <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
+          </template>
+          <template x-if="editing">
+            <form method="post" action="/admin/nominations/{{ nom.id }}/edit"
+                  class="flex flex-wrap gap-2 items-end py-1">
+              <input type="hidden" name="contest_id" value="{{ selected_contest.id }}" />
+              {% if selected_round %}<input type="hidden" name="round_id" value="{{ selected_round.id }}" />{% endif %}
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Название</label>
+                <input type="text" name="name" value="{{ nom.name }}" required
+                       class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-44 focus:ring-indigo-400 focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Тип</label>
+                <select name="type" x-model="nomType"
+                        class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none">
+                  <option value="RANK">RANK</option>
+                  <option value="PICK">PICK</option>
+                </select>
+              </div>
+              <template x-if="nomType === 'RANK'">
+                <div>
+                  <label class="block text-xs text-gray-400 mb-0.5">Мест</label>
+                  <input type="number" name="nominees_count" min="1" value="{{ nom.nominees_count or '' }}"
+                         class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none" />
+                </div>
+              </template>
+              <template x-if="nomType === 'PICK'">
+                <div class="flex gap-2 items-end">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Номинантов</label>
+                    <input type="number" name="nominees_count" id="edit-nc-{{ nom.id }}" min="1"
+                           value="{{ nom.nominees_count or '' }}"
+                           class="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Мин</label>
+                    <input type="number" name="pick_min" min="1" value="{{ nom.pick_min or '' }}"
+                           class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-0.5">Макс</label>
+                    <input type="number" name="pick_max" min="1" value="{{ nom.pick_max or '' }}"
+                           class="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                  </div>
+                </div>
+              </template>
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Год</label>
+                <select name="year_filter"
+                        class="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+                  <option value="">—</option>
+                  {% for y in years %}
+                  <option value="{{ y }}" {% if nom.year_filter == y %}selected{% endif %}>{{ y }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="flex gap-2 items-end">
+                <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs">Сохранить</button>
+                <button type="button" @click="editing = false"
+                        class="text-xs text-gray-400 hover:underline px-1">Отмена</button>
+              </div>
+            </form>
+          </template>
+        </td>
+
+        <td class="py-2 px-3" x-show="!editing">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {{ 'bg-yellow-100 text-yellow-700' if nom.type.value == 'RANK' else 'bg-blue-100 text-blue-700' }}">
+            {{ nom.type.value }}
+          </span>
+        </td>
+
+        <td class="py-2 px-3 text-gray-500 text-xs" x-show="!editing">
+          {% if nom.type.value == 'RANK' %}
+            {% if nom.nominees_count %}Топ {{ nom.nominees_count }}{% else %}<span class="text-gray-300">—</span>{% endif %}
+          {% else %}
+            {{ nom.pick_min or 1 }}–{{ nom.pick_max or '?' }}
+            {% if nom.nominees_count %}<span class="text-gray-400"> / {{ nom.nominees_count }}</span>{% endif %}
+          {% endif %}
+        </td>
+
+        <td class="py-2 px-3 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
+
+        <td class="py-2 px-3 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
+
+        <td class="py-2 px-3 text-right whitespace-nowrap">
+          <button type="button" @click="editing = !editing"
+                  class="text-xs text-indigo-500 hover:underline mr-2"
+                  x-text="editing ? '✕' : 'Редактировать'"></button>
+          <form method="post" action="/admin/nominations/{{ nom.id }}/delete" class="inline"
+                @submit.prevent="confirm('Удалить «{{ nom.name }}»?') && $el.submit()">
+            <input type="hidden" name="contest_id" value="{{ selected_contest.id }}" />
+            {% if selected_round %}<input type="hidden" name="round_id" value="{{ selected_round.id }}" />{% endif %}
+            <button class="text-xs text-red-500 hover:underline">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
 
 <script>
 function clampToMax(el) {
   if (!el) return;
   const max = parseInt(el.getAttribute('max'));
-  if (!isNaN(max) && parseInt(el.value) > max) {
-    el.value = max;
-  }
+  if (!isNaN(max) && parseInt(el.value) > max) el.value = max;
 }
-
 function syncPickMax(pickMaxId, ncId) {
   const nc = document.getElementById(ncId);
   const pm = document.getElementById(pickMaxId);
   if (!nc || !pm) return;
-  const ncVal = parseInt(nc.value);
-  if (!isNaN(ncVal) && ncVal > 0) {
-    pm.setAttribute('max', ncVal);
-    if (parseInt(pm.value) > ncVal) pm.value = ncVal;
+  const v = parseInt(nc.value);
+  if (!isNaN(v) && v > 0) {
+    pm.setAttribute('max', v);
+    if (parseInt(pm.value) > v) pm.value = v;
   } else {
     pm.removeAttribute('max');
   }
-}
-
-const NOM_SS_KEY = 'nominations_year_v1';
-function nominationsFilter() {
-  let saved = null;
-  try { const v = sessionStorage.getItem(NOM_SS_KEY); if (v !== null) saved = JSON.parse(v); } catch(_) {}
-  return {
-    activeYear: saved,
-    setYear(y) {
-      this.activeYear = y;
-      try { sessionStorage.setItem(NOM_SS_KEY, JSON.stringify(y)); } catch(_) {}
-    }
-  };
 }
 </script>
 {% endblock %}

@@ -3,8 +3,8 @@
 {% block content %}
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Результаты</h1>
-  {% if selected_contest %}
-  <a href="/admin/results/export?contest_id={{ selected_contest.id }}"
+  {% if selected_contest and selected_round %}
+  <a href="/admin/results/export?contest_id={{ selected_contest.id }}&round_id={{ selected_round.id }}"
      class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-2">
     ⬇ Скачать .xlsx
   </a>
@@ -13,10 +13,9 @@
 
 {# Contest selector #}
 {% if contests %}
-<div class="mb-6 flex items-center gap-3">
+<div class="mb-5 flex items-center gap-3">
   <label class="text-sm font-medium text-gray-500 whitespace-nowrap">Конкурс:</label>
-  <select id="contest-select"
-          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+  <select class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
           onchange="window.location.href = '/admin/results?contest_id=' + this.value">
     {% for c in contests %}
     <option value="{{ c.id }}" {% if selected_contest and c.id == selected_contest.id %}selected{% endif %}>
@@ -29,44 +28,53 @@
 
 {% if not selected_contest %}
 <p class="text-gray-400">Нет конкурсов. <a href="/admin/rounds" class="underline text-indigo-500">Создайте конкурс</a>.</p>
-{% elif not results %}
-<div class="text-center py-20 text-gray-400">
-  <div class="text-4xl mb-3">📊</div>
-  <p>Нет данных для «{{ selected_contest.name }}»</p>
-</div>
 {% else %}
 
-{%- set ns = namespace(last_tour=None) %}
-<div class="space-y-6">
+{# Round tabs #}
+{% if all_rounds | length > 1 %}
+<div class="flex gap-2 mb-6">
+  {% for rnd in all_rounds %}
+  {% set is_active = selected_round and selected_round.id == rnd.id %}
+  <a href="/admin/results?contest_id={{ selected_contest.id }}&round_id={{ rnd.id }}"
+     class="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl border-2 transition
+       {% if is_active %}
+         {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600 shadow-sm
+         {% else %}bg-amber-500 text-white border-amber-500 shadow-sm{% endif %}
+       {% else %}
+         {% if rnd.tour == 1 %}bg-white text-blue-600 border-blue-200 hover:bg-blue-50
+         {% else %}bg-white text-amber-600 border-amber-200 hover:bg-amber-50{% endif %}
+       {% endif %}">
+    <span class="text-base leading-none">{% if rnd.tour == 1 %}①{% else %}②{% endif %}</span>
+    <span>{{ rnd.tour }} тур</span>
+    <span class="font-normal opacity-75 text-xs">&mdash; {{ rnd.label }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% elif all_rounds | length == 1 %}
+{% set rnd = all_rounds[0] %}
+<div class="flex items-center gap-3 mb-5">
+  <div class="w-1 h-7 rounded-full {% if rnd.tour == 1 %}bg-blue-500{% else %}bg-amber-500{% endif %} flex-shrink-0"></div>
+  <span class="text-sm font-extrabold {% if rnd.tour == 1 %}text-blue-700{% else %}text-amber-700{% endif %} uppercase tracking-wider">
+    {{ rnd.tour }} тур &mdash; {{ rnd.label }}
+  </span>
+  <div class="flex-1 h-px {% if rnd.tour == 1 %}bg-blue-100{% else %}bg-amber-100{% endif %}"></div>
+</div>
+{% endif %}
+
+{% if not results %}
+<div class="text-center py-20 text-gray-400">
+  <div class="text-4xl mb-3">📊</div>
+  <p>Нет данных
+    {% if selected_round %}для «{{ selected_round.label }}»{% endif %}
+  </p>
+</div>
+{% else %}
+<div class="space-y-4">
   {% for item in results %}
-
-  {%- set tour = item.round.tour if item.round is defined and item.round else None %}
-  {%- if tour and tour != ns.last_tour %}
-    {%- set ns.last_tour = tour %}
-    {%- if tour == 1 %}
-    <div class="flex items-center gap-3 mt-6 mb-2">
-      <div class="w-1.5 h-10 rounded-full bg-blue-500 flex-shrink-0"></div>
-      <div>
-        <span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ selected_contest.year }}</span>
-        <span class="text-base font-extrabold text-blue-700 uppercase tracking-wider">1 тур — Лонг-лист</span>
-      </div>
-      <div class="flex-1 h-px bg-blue-200"></div>
-    </div>
-    {%- else %}
-    <div class="flex items-center gap-3 mt-6 mb-2">
-      <div class="w-1.5 h-10 rounded-full bg-amber-500 flex-shrink-0"></div>
-      <div>
-        <span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ selected_contest.year }}</span>
-        <span class="text-base font-extrabold text-amber-700 uppercase tracking-wider">2 тур — Финал</span>
-      </div>
-      <div class="flex-1 h-px bg-amber-200"></div>
-    </div>
-    {%- endif %}
-  {%- endif %}
-
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
     <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3
-      {% if tour == 1 %}border-l-4 border-l-blue-400{% elif tour == 2 %}border-l-4 border-l-amber-400{% endif %}">
+      {% if item.round and item.round.tour == 1 %}border-l-4 border-l-blue-400
+      {% elif item.round and item.round.tour == 2 %}border-l-4 border-l-amber-400{% endif %}">
       <h2 class="font-bold text-gray-900 text-base">{{ item.nom.name }}</h2>
       <span class="text-xs font-semibold px-2 py-0.5 rounded-full
         {% if item.nom.type.value == 'RANK' %}bg-amber-100 text-amber-700
@@ -109,7 +117,7 @@
             {% elif row.voters %}
               {{ row.voters }}
             {% else %}
-              —
+              &mdash;
             {% endif %}
           </td>
         </tr>
@@ -120,5 +128,6 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}
