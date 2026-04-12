@@ -106,10 +106,21 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
         .order_by(NominationTemplate.sort_order, NominationTemplate.id)
         .all()
     )
+    # Build a dict {contest_id: set of template_ids already added}
+    all_contest_noms = db.query(ContestNomination).all()
+    contest_template_ids: dict[int, set[int]] = defaultdict(set)
+    for cn in all_contest_noms:
+        if cn.template_id is not None:
+            contest_template_ids[cn.contest_id].add(cn.template_id)
+
     return templates_env.TemplateResponse(
         request, "admin/rounds.html",
-        {"contests": contests, "standalone": standalone,
-         "all_templates": all_templates},
+        {
+            "contests": contests,
+            "standalone": standalone,
+            "all_templates": all_templates,
+            "contest_template_ids": dict(contest_template_ids),
+        },
     )
 
 
@@ -190,7 +201,6 @@ def add_nominations_to_contest(
     if not contest or not template_ids:
         return RedirectResponse(url="/admin/rounds", status_code=303)
 
-    # Find the longlist round for this contest
     longlist_round = (
         db.query(Round)
         .filter(Round.contest_id == contest_id, Round.round_type == RoundType.LONGLIST)
@@ -199,14 +209,12 @@ def add_nominations_to_contest(
     if not longlist_round:
         return RedirectResponse(url="/admin/rounds", status_code=303)
 
-    # Determine starting sort_order (after existing nominations)
     existing_count = (
         db.query(Nomination)
         .filter(Nomination.round_id == longlist_round.id)
         .count()
     )
 
-    # Skip templates already added to this contest
     existing_template_ids = {
         cn.template_id
         for cn in db.query(ContestNomination)
