@@ -254,7 +254,6 @@
             class="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
-    {# type="button" + onclick — не даём браузеру обрабатывать submit, сами валидируем #}
     <button type="button" onclick="validateAndSubmit()"
             class="bg-indigo-600 text-white px-8 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition shadow">
       ✅ Отправить голос
@@ -478,7 +477,6 @@ function validateAndSubmit() {
   const banner = document.getElementById('error-banner');
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
-    // Показываем баннер сначала (visible), затем переключаем слайд и кидаем наверх
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
     banner.classList.remove('hidden');
     goToSlide(TOTAL_SLIDES);
@@ -564,7 +562,7 @@ function renderBallot() {
   body.innerHTML = html;
 }
 
-// ── XLSX export ──
+// ── XLSX export — rows now carry urls for hyperlinks ──
 document.getElementById('export-xlsx-btn').addEventListener('click', async function() {
   const { picks, ranks } = collectState();
   const nominations = NOM_DATA.map(nom => {
@@ -573,24 +571,28 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
       header = ['Номинант', 'Выбор'];
       const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
       if (chosen.length === 0) {
-        rows = [['(пропущено)', '']];
+        rows = [{ cols: ['(пропущено)', ''], urls: [null, null] }];
       } else {
         rows = chosen.map(nid => {
           const n = nom.nominees.find(x => x.id == nid);
-          return n ? [n.label, '✓'] : [];
-        }).filter(r => r.length);
+          if (!n) return null;
+          const url = n.person_url || n.film_url || null;
+          return { cols: [n.label, '✔'], urls: [url, null] };
+        }).filter(Boolean);
       }
     } else {
       header = ['Место', 'Фильм'];
       const nomRanks = ranks[nom.id] || {};
       const entries = Object.entries(nomRanks).sort((a, b) => a[1] - b[1]);
       if (entries.length === 0) {
-        rows = [['', '(пропущено)']];
+        rows = [{ cols: ['', '(пропущено)'], urls: [null, null] }];
       } else {
         rows = entries.map(([filmId, rank]) => {
           const n = nom.nominees.find(x => x.film_id == filmId);
-          return n ? [rank, n.label] : [];
-        }).filter(r => r.length);
+          if (!n) return null;
+          const url = n.film_url || null;
+          return { cols: [rank, n.label], urls: [null, url] };
+        }).filter(Boolean);
       }
     }
     return { name: nom.name, type: nom.type, header, rows };

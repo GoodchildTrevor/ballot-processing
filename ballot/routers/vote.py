@@ -39,7 +39,6 @@ def _content_disposition(filename: str) -> str:
 
 def _auto_width(ws):
     for col in ws.columns:
-        # skip merged cells — they have no column_letter attribute
         first = next((c for c in col if not isinstance(c, MergedCell)), None)
         if first is None:
             continue
@@ -48,23 +47,38 @@ def _auto_width(ws):
 
 
 def _sheet_title(name: str) -> str:
-    """Truncate and sanitise nomination name for xlsx sheet title (max 31 chars)."""
     for ch in r'\/:*?[]':
         name = name.replace(ch, '')
     return name[:31]
 
 
+def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, link_font: Font):
+    """Write label into cell; if url provided, make it a hyperlink."""
+    cell = ws.cell(row=row, column=col, value=label)
+    if url:
+        cell.hyperlink = url
+        cell.font = link_font
+    return cell
+
+
 def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
     """Build xlsx where each nomination is a separate sheet.
-    nominations_data: list of dicts with keys: name, type, header, rows
-      rows: list of [col1, col2, ...]
+
+    nominations_data: list of dicts:
+      name   : str
+      type   : str
+      header : list[str]
+      rows   : list of dicts with keys:
+                 cols  – list of cell values
+                 urls  – parallel list of url|None for each col (optional)
     """
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)  # remove default sheet
+    wb.remove(wb.active)
 
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="4F46E5")  # indigo
+    header_font  = Font(bold=True, color="FFFFFF")
+    header_fill  = PatternFill("solid", fgColor="4F46E5")
     header_align = Alignment(horizontal="center")
+    link_font    = Font(color="1155CC", underline="single")
 
     seen_titles: dict[str, int] = {}
     for nom in nominations_data:
@@ -78,24 +92,33 @@ def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
 
         ws = wb.create_sheet(title=title)
 
-        # nomination name as a big header in row 1
         ws.append([nom["name"]])
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(len(nom["header"]), 1))
+        ws.merge_cells(start_row=1, start_column=1, end_row=1,
+                       end_column=max(len(nom["header"]), 1))
         ws.cell(1, 1).font = Font(bold=True, size=13)
         ws.cell(1, 1).alignment = Alignment(horizontal="left")
         ws.append([])  # blank row
 
-        # column headers
         ws.append(nom["header"])
-        for i, _ in enumerate(nom["header"], start=1):
+        for i in range(1, len(nom["header"]) + 1):
             cell = ws.cell(3, i)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_align
 
-        # data rows
+        data_row = 4
         for row in nom["rows"]:
-            ws.append(row)
+            # Support both old format (list) and new format (dict with cols/urls)
+            if isinstance(row, dict):
+                cols = row.get("cols", [])
+                urls = row.get("urls", [None] * len(cols))
+            else:
+                cols = row
+                urls = [None] * len(cols)
+
+            for col_idx, (val, url) in enumerate(zip(cols, urls), start=1):
+                _write_cell_with_link(ws, data_row, col_idx, val, url or None, link_font)
+            data_row += 1
 
         _auto_width(ws)
 
@@ -234,13 +257,13 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 # ---------------------------------------------------------------------------
 # POST /{year}/ballot-export   (client-side data → xlsx with sheets per nom)
+# Each row in the payload: { cols: [...], urls: [...] } or plain array (legacy)
 # ---------------------------------------------------------------------------
 
 @router.post("/{year}/ballot-export")
 async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
     body: dict[str, Any] = await request.json()
-    # nominations: [{name, type, header:[...], rows:[[...], ...]}, ...]
     nominations_data: list[dict] = body.get("nominations", [])
 
     buf = _build_xlsx_per_nomination(nominations_data)
@@ -424,21 +447,33 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
                         or (n.item and f"{n.item} ({n.film.title})")
                         or n.film.title
                     )
+                    url = (
+                        (n.person.url if n.person else None)
+                        or getattr(n, 'item_url', None)
+                        or (n.film.url if n.film else None)
+                    )
                     vote_label = "runner-up" if pick_votes[n.id] else "✔"
-                    rows.append([label, vote_label])
+                    rows.append({"cols": [label, vote_label], "urls": [url, None]})
             if not rows:
-                rows = [["— пропущено", ""]]
+                rows = [{"cols": ["— пропущено", ""], "urls": [None, None]}]
         else:
             header = ["Место", "Фильм"]
             ranked = [
-                (rankings[(nom.id, n.film_id)], n.film.title)
+                (
+                    rankings[(nom.id, n.film_id)],
+                    n.film.title,
+                    n.film.url if n.film else None,
+                )
                 for n in nom.nominees
                 if (nom.id, n.film_id) in rankings
             ]
             if ranked:
-                rows = [[rank, title] for rank, title in sorted(ranked)]
+                rows = [
+                    {"cols": [rank, title], "urls": [None, url]}
+                    for rank, title, url in sorted(ranked)
+                ]
             else:
-                rows = [["", "— пропущено"]]
+                rows = [{"cols": ["", "— пропущено"], "urls": [None, None]}]
 
         nominations_data.append({
             "name": nom.name,
