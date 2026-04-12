@@ -5,7 +5,6 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
-import sqlalchemy
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -21,6 +20,7 @@ from ballot.models import (
     Round, RoundType, RoundParticipation,
     Film, Voter,
 )
+from ballot.routers.admin_results import get_results
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates_env = Jinja2Templates(directory="ballot/templates")
@@ -33,43 +33,6 @@ def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
         except ValueError:
             pass
     return None
-
-
-def _pick_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, int]]:
-    votes = db.query(Vote).join(Nominee).filter(
-        Nominee.nomination_id == nom.id,
-        Vote.is_runner_up == False,  # noqa: E712
-    ).all()
-    counts: dict[int, int] = defaultdict(int)
-    for v in votes:
-        counts[v.nominee_id] += 1
-    result = [(n, counts.get(n.id, 0)) for n in nom.nominees]
-    result.sort(key=lambda x: x[1], reverse=True)
-    return result
-
-
-def _dense_rank_cutoff(
-    scored: list[tuple[Nominee, float | int]],
-    target: int,
-) -> list[Nominee]:
-    if not scored:
-        return []
-    result: list[Nominee] = []
-    boundary_score: float | int | None = None
-    rank = 0
-    prev_score: float | int | None = None
-    for nominee, score in scored:
-        if score != prev_score:
-            rank += 1
-            prev_score = score
-        if rank <= target:
-            result.append(nominee)
-            boundary_score = score
-        elif score == boundary_score:
-            result.append(nominee)
-        else:
-            break
-    return result
 
 
 def _nominee_label(nominee: Nominee) -> str:
@@ -349,142 +312,59 @@ def promote_preview(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Show longlist results with checkboxes pre-filled by DENSE RANK cutoff."""
+    """Show longlist results with checkboxes pre-filled using the exact same
+    logic as the results page (get_results + is_nominee flag)."""
     longlist = db.get(Round, round_id)
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
 
-    nominations = (
-        db.query(Nomination)
+    # Reuse identical logic from results page
+    results = get_results(db, round_ids={longlist.id})
+
+    # For each nomination we need nominee_id per label so the form can
+    # submit nominee PKs. Build label -> nominee_id map per nomination.
+    nominations_by_id = {
+        nom.id: nom
+        for nom in db.query(Nomination)
         .options(
             joinedload(Nomination.nominees).joinedload(Nominee.film),
-            joinedload(Nomination.nominees).joinedload(Nominee.persons),
             joinedload(Nomination.nominees).joinedload(Nominee.person),
+            joinedload(Nomination.nominees).joinedload(Nominee.persons),
         )
         .filter(Nomination.round_id == longlist.id)
-        .order_by(Nomination.sort_order, Nomination.id)
         .all()
-    )
+    }
 
     items = []
-    for nom in nominations:
-        target = None
-        if nom.contest_nomination and nom.contest_nomination.template:
-            target = nom.contest_nomination.template.final_promotes_count
+    for item in results:
+        nom = item["nom"]
+        nom_obj = nominations_by_id.get(nom.id, nom)
 
-        if nom.type == NominationType.RANK:
-            # Build rows_raw sorted by score DESC (score = sum(11 - rank))
-            rows_raw = (
-                db.query(
-                    Film.title,
-                    Film.id.label("film_id"),
-                    sqlalchemy.func.sum(11 - Ranking.rank).label("score"),
-                )
-                .join(Ranking, Ranking.film_id == Film.id)
-                .filter(Ranking.nomination_id == nom.id)
-                .group_by(Film.id)
-                .order_by(sqlalchemy.func.sum(11 - Ranking.rank).desc())
-                .all()
-            )
+        # Build label -> nominee map
+        label_to_nominee: dict[str, Nominee] = {}
+        for n in nom_obj.nominees:
+            label_to_nominee[_nominee_label(n)] = n
+            # RANK nominations: label is just film title
+            if n.film:
+                label_to_nominee[n.film.title] = n
 
-            film_to_nominee = {n.film_id: n for n in nom.nominees}
+        target = nom.nominees_count  # already set from template at longlist creation
 
-            # voter info per film: {film_id: [(voter_name, rank), ...]}
-            film_voters_map: dict[int, list] = {}
-            for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
-                voter = db.get(Voter, r.voter_id)
-                if voter:
-                    film_voters_map.setdefault(r.film_id, []).append((voter.name, r.rank))
+        rows = []
+        for i, row in enumerate(item["rows"]):
+            nominee = label_to_nominee.get(row["label"])
+            rows.append({
+                "nominee_id": nominee.id if nominee else None,
+                "label": row["label"],
+                "score": row["score"],
+                "voters": row["voters"],
+                "position": row["position"],
+                "row_num": i + 1,
+                # auto_selected = exactly what results page marks green
+                "auto_selected": row["is_nominee"],
+            })
 
-            # Compute auto_ids directly from rows_raw using DENSE RANK on score
-            # so the cutoff is identical to what's shown on screen.
-            auto_ids: set[int] = set()
-            if target:
-                prev_score_val = None
-                dense_rank_val = 0
-                boundary: int | None = None
-                for r in rows_raw:
-                    if r.score != prev_score_val:
-                        dense_rank_val += 1
-                        prev_score_val = r.score
-                    if dense_rank_val <= target:
-                        nominee = film_to_nominee.get(r.film_id)
-                        if nominee:
-                            auto_ids.add(nominee.id)
-                        boundary = r.score
-                    elif r.score == boundary:
-                        nominee = film_to_nominee.get(r.film_id)
-                        if nominee:
-                            auto_ids.add(nominee.id)
-                    else:
-                        break
-
-            rows = []
-            prev_score = None
-            dense_pos = 0
-            row_num = 0
-            for r in rows_raw:
-                row_num += 1
-                if r.score != prev_score:
-                    dense_pos = row_num
-                    prev_score = r.score
-                nominee = film_to_nominee.get(r.film_id)
-                voter_entries = sorted(film_voters_map.get(r.film_id, []), key=lambda x: x[0])
-                voters_str = ", ".join(f"{n} ({rk})" for n, rk in voter_entries)
-                rows.append({
-                    "nominee_id": nominee.id if nominee else None,
-                    "label": r.title,
-                    "score": r.score,
-                    "voters": voters_str,
-                    "position": dense_pos,
-                    "row_num": row_num,
-                    "auto_selected": (nominee.id in auto_ids) if nominee else False,
-                })
-
-        else:  # PICK
-            scored_pick = _pick_scores(nom, db)  # [(nominee, vote_count)]
-
-            # Compute auto_ids via DENSE RANK cutoff on vote counts
-            auto_ids = set()
-            if target:
-                auto_ids = {n.id for n in _dense_rank_cutoff(
-                    [(n, -c) for n, c in scored_pick], target
-                )}
-            else:
-                auto_ids = {n.id for n, c in scored_pick if c > 0} \
-                           or {n.id for n, _ in scored_pick}
-
-            nominee_voters: dict[int, list[str]] = {}
-            for v in db.query(Vote).join(Nominee).filter(
-                Nominee.nomination_id == nom.id,
-                Vote.is_runner_up == False,  # noqa: E712
-            ).all():
-                voter = db.get(Voter, v.voter_id)
-                if voter:
-                    nominee_voters.setdefault(v.nominee_id, []).append(voter.name)
-
-            rows = []
-            prev_score = None
-            dense_pos = 0
-            row_num = 0
-            for nominee, count in scored_pick:
-                row_num += 1
-                if count != prev_score:
-                    dense_pos = row_num
-                    prev_score = count
-                label = _nominee_label(nominee)
-                voters_str = ", ".join(sorted(nominee_voters.get(nominee.id, [])))
-                rows.append({
-                    "nominee_id": nominee.id,
-                    "label": label,
-                    "score": count,
-                    "voters": voters_str,
-                    "position": dense_pos,
-                    "row_num": row_num,
-                    "auto_selected": nominee.id in auto_ids,
-                })
-
-        items.append({"nom": nom, "rows": rows, "target": target})
+        items.append({"nom": nom_obj, "rows": rows, "target": target})
 
     return templates_env.TemplateResponse(
         request, "admin/promote.html",
