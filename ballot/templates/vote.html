@@ -25,12 +25,6 @@
 
 {% if nominations %}
 
-{# ── Error banner ── #}
-<div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
-  <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
-  <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
-</div>
-
 <div id="slides">
 
 {# ══ SLIDE 0 — TABLE OF CONTENTS ══ #}
@@ -99,11 +93,9 @@
           </span>
         {% endif %}
       {% else %}
-        {# RANK hint depends on round type #}
         {% if is_final %}
           <span class="text-sm text-gray-400">Расставьте все места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
         {% else %}
-          {# LONGLIST: nominees_count = how many pass to final #}
           {% if nom.nominees_count %}
             <span class="text-sm text-gray-400">Выберите топ‑{{ nom.nominees_count }} из {{ nom.nominees|length }} · проставьте места 1–{{ nom.nominees_count }}</span>
           {% else %}
@@ -238,6 +230,13 @@
 
 {# ══ SLIDE N+1 — PREVIEW + SUBMIT ══ #}
 <div class="slide hidden" data-slide="{{ nominations|length + 1 }}">
+
+  {# ── Error banner — inside the final slide so it's always visible ── #}
+  <div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
+    <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
+    <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
+  </div>
+
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center justify-between">
       <h2 class="font-bold text-lg text-gray-900">✅ Проверка бюллетеня</h2>
@@ -287,7 +286,7 @@ const NOM_DATA = [
     type: {{ nom.type.value | tojson }},
     pick_min: {{ nom.pick_min | tojson }},
     pick_max: {{ nom.pick_max | tojson }},
-    nominees_count: {{ nom.nominees_count | tojson }},  {# how many pass to final (LONGLIST RANK) #}
+    nominees_count: {{ nom.nominees_count | tojson }},
     total: {{ nom.nominees | length }},
     nominees: [
       {% for n in nom.nominees | sort(attribute='label_for_sort') %}
@@ -359,8 +358,6 @@ goToSlide(0);
 })();
 
 // ── RANK inline warning ──
-// In LONGLIST: max = nominees_count (top-N), only dups and overcount are errors.
-// In FINAL: max = total, all must be filled.
 function rankMax(nom) {
   return (!IS_FINAL && nom.nominees_count) ? nom.nominees_count : nom.total;
 }
@@ -459,7 +456,6 @@ function getRankErrors(nom, vals) {
   const max = rankMax(nom);
   if (vals.length !== new Set(vals).size) e.push(`«${nom.name}»: одно место указано дважды`);
   if (vals.some(v => v > max)) e.push(`«${nom.name}»: место не может быть больше ${max}`);
-  // In FINAL, all positions must be filled
   if (IS_FINAL && vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
   return e;
 }
@@ -485,10 +481,12 @@ document.getElementById('vote-form').addEventListener('submit', function(e) {
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
     e.preventDefault();
+    // First go to final slide and render ballot, then show banner
+    goToSlide(TOTAL_SLIDES);
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
     banner.classList.remove('hidden');
-    goToSlide(TOTAL_SLIDES);
-    banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Small timeout to let the slide render before scrolling
+    setTimeout(() => banner.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   } else {
     banner.classList.add('hidden');
   }
@@ -519,10 +517,15 @@ function renderBallot() {
   if (!body) return;
   let html = '';
   NOM_DATA.forEach(nom => {
+    const errors = nom.type === 'PICK'
+      ? getPickErrors(nom, picks[nom.id] ? Object.keys(picks[nom.id]).length : 0)
+      : getRankErrors(nom, Object.values(ranks[nom.id] || {}).map(Number));
+    const hasError = errors.length > 0;
     const editBtn = `<button type="button" onclick="goToSlide(${nom.slideIndex})"
       class="ml-auto text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-400 rounded-lg px-2 py-0.5 transition whitespace-nowrap">
       ✏️ Изменить</button>`;
-    html += `<div class="px-5 py-4"><div class="flex items-center gap-2 mb-2">
+    const borderCls = hasError ? 'border-l-4 border-red-400 pl-3' : '';
+    html += `<div class="px-5 py-4 ${borderCls}"><div class="flex items-center gap-2 mb-2">
       <span class="font-semibold text-gray-800 text-base">${nom.name}</span>${editBtn}</div>`;
     if (nom.type === 'PICK') {
       const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
@@ -549,10 +552,16 @@ function renderBallot() {
           const n = nom.nominees.find(x => x.film_id == filmId);
           if (!n) return;
           const url = n.film_url;
-          html += `<li class="text-base text-gray-800"><span class="inline-block w-6 text-gray-400 tabular-nums text-sm">${rank}.</span> ${url ? `<a href="${url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>` : n.label}</li>`;
+          // highlight duplicate ranks in red
+          const dupRank = entries.filter(([, r]) => r === rank).length > 1;
+          const rankCls = dupRank ? 'text-red-500 font-bold' : 'text-gray-400';
+          html += `<li class="text-base text-gray-800"><span class="inline-block w-6 tabular-nums text-sm ${rankCls}">${rank}.</span> ${url ? `<a href="${url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>` : n.label}</li>`;
         });
         html += '</ol>';
       }
+    }
+    if (hasError) {
+      html += `<p class="mt-1 text-xs text-red-500">${errors.join(' · ')}</p>`;
     }
     html += '</div>';
   });
