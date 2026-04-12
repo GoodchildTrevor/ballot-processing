@@ -3,13 +3,6 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Номинации</h1>
 
-<div class="flex justify-end mb-4">
-  <a href="/admin/nominations/export-longlist"
-     class="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
-    ↓ Скачать лонг-листы (Excel)
-  </a>
-</div>
-
 <div class="bg-white shadow rounded-xl p-6 mb-8" x-data="{ type: 'RANK' }">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Создать номинацию</h2>
   <form method="post" action="/admin/nominations" class="flex flex-wrap gap-3 items-end"
@@ -69,22 +62,37 @@
   </form>
 </div>
 
-{# Year filter pills #}
-<div class="flex flex-wrap gap-1 mb-4" x-data="nominationsFilter()">
-  <button type="button" @click="setYear(null)"
-          :class="activeYear === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-          class="px-3 py-1 rounded-full text-xs font-medium transition">
-    Все годы
-  </button>
-  {% for y in years %}
-  <button type="button" @click="setYear({{ y }})"
-          :class="activeYear === {{ y }} ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-          class="px-3 py-1 rounded-full text-xs font-medium transition">
-    {{ y }}
-  </button>
-  {% endfor %}
+{# Year filter pills + export button share the same Alpine component so export can read activeYear #}
+<div x-data="nominationsFilter()">
 
-  <div class="bg-white shadow rounded-xl p-6 w-full mt-4">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    {# Pills #}
+    <div class="flex flex-wrap gap-1">
+      <button type="button" @click="setYear(null)"
+              :class="activeYear === null ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3 py-1 rounded-full text-xs font-medium transition">
+        Все годы
+      </button>
+      {% for y in years %}
+      <button type="button" @click="setYear({{ y }})"
+              :class="activeYear === {{ y }} ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-3 py-1 rounded-full text-xs font-medium transition">
+        {{ y }}
+      </button>
+      {% endfor %}
+    </div>
+
+    {# Export button — dynamically appends ?year=N when a year pill is active #}
+    <a :href="activeYear ? '/admin/nominations/export-longlist?year=' + activeYear : '/admin/nominations/export-longlist'"
+       class="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
+      ↓ Скачать лонг-листы (Excel)
+      <span x-show="activeYear !== null"
+            x-text="'(' + activeYear + ')'"
+            class="opacity-80 text-xs"></span>
+    </a>
+  </div>
+
+  <div class="bg-white shadow rounded-xl p-6">
     <table class="w-full text-sm">
       <thead class="text-left text-gray-500 border-b">
         <tr>
@@ -229,6 +237,7 @@
       </tbody>
     </table>
   </div>
+
 </div>
 
 <script>
