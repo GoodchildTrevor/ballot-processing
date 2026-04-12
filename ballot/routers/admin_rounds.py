@@ -164,7 +164,6 @@ def create_contest(
         nom = Nomination(
             name=tmpl.name,
             type=tmpl.type,
-            # final_promotes_count now serves as both nominees_count and promote target
             nominees_count=tmpl.final_promotes_count,
             pick_min=tmpl.longlist_pick_min,
             pick_max=tmpl.longlist_pick_max,
@@ -175,6 +174,81 @@ def create_contest(
             has_runner_up=False,
         )
         db.add(nom)
+
+    db.commit()
+    return RedirectResponse(url="/admin/rounds", status_code=303)
+
+
+@router.post("/contests/{contest_id}/add-nominations")
+def add_nominations_to_contest(
+    contest_id: int,
+    template_ids: list[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    """Add nominations from templates to an existing contest's longlist round."""
+    contest = db.get(Contest, contest_id)
+    if not contest or not template_ids:
+        return RedirectResponse(url="/admin/rounds", status_code=303)
+
+    # Find the longlist round for this contest
+    longlist_round = (
+        db.query(Round)
+        .filter(Round.contest_id == contest_id, Round.round_type == RoundType.LONGLIST)
+        .first()
+    )
+    if not longlist_round:
+        return RedirectResponse(url="/admin/rounds", status_code=303)
+
+    # Determine starting sort_order (after existing nominations)
+    existing_count = (
+        db.query(Nomination)
+        .filter(Nomination.round_id == longlist_round.id)
+        .count()
+    )
+
+    # Skip templates already added to this contest
+    existing_template_ids = {
+        cn.template_id
+        for cn in db.query(ContestNomination)
+        .filter(ContestNomination.contest_id == contest_id)
+        .all()
+    }
+
+    tmpl_map = {
+        t.id: t for t in db.query(NominationTemplate)
+        .filter(NominationTemplate.id.in_(template_ids))
+        .all()
+    }
+
+    added = 0
+    for tid in template_ids:
+        if tid in existing_template_ids:
+            continue
+        tmpl = tmpl_map.get(tid)
+        if not tmpl:
+            continue
+        cn = ContestNomination(
+            contest_id=contest.id,
+            template_id=tmpl.id,
+            sort_order=existing_count + added,
+        )
+        db.add(cn)
+        db.flush()
+
+        nom = Nomination(
+            name=tmpl.name,
+            type=tmpl.type,
+            nominees_count=tmpl.final_promotes_count,
+            pick_min=tmpl.longlist_pick_min,
+            pick_max=tmpl.longlist_pick_max,
+            year_filter=contest.year,
+            sort_order=existing_count + added,
+            round_id=longlist_round.id,
+            contest_nomination_id=cn.id,
+            has_runner_up=False,
+        )
+        db.add(nom)
+        added += 1
 
     db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
