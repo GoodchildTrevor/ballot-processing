@@ -7,7 +7,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import openpyxl
 from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Film, Person
+from ballot.models import (
+    Nomination, NominationType, Nominee, Film, Person,
+    Contest, ContestNomination, Round, RoundType,
+)
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -41,6 +44,37 @@ def _apply_person_url(person: Person, url: Optional[str]) -> None:
         person.url = clean
 
 
+def _auto_attach_to_contest(nom: Nomination, db: Session) -> None:
+    """If a Contest exists for nom.year_filter, attach nom to its longlist round."""
+    if not nom.year_filter:
+        return
+    contest = db.query(Contest).filter(Contest.year == nom.year_filter).first()
+    if not contest:
+        return
+    longlist = (
+        db.query(Round)
+        .filter(Round.contest_id == contest.id, Round.round_type == RoundType.LONGLIST)
+        .first()
+    )
+    if not longlist:
+        return
+    # Count existing nominations in this contest to set sort_order
+    existing_count = (
+        db.query(ContestNomination)
+        .filter(ContestNomination.contest_id == contest.id)
+        .count()
+    )
+    cn = ContestNomination(
+        contest_id=contest.id,
+        template_id=None,
+        sort_order=existing_count,
+    )
+    db.add(cn)
+    db.flush()
+    nom.round_id = longlist.id
+    nom.contest_nomination_id = cn.id
+
+
 @router.get("/nominations", response_class=HTMLResponse)
 def list_nominations(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
@@ -71,13 +105,16 @@ def create_nomination(
     yf = _parse_int(year_filter)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
-    db.add(Nomination(
+    nom = Nomination(
         name=name, type=type,
         pick_min=pmin, pick_max=pmax,
         nominees_count=nc,
         year_filter=yf,
         sort_order=order,
-    ))
+    )
+    db.add(nom)
+    db.flush()
+    _auto_attach_to_contest(nom, db)
     db.commit()
     return RedirectResponse(url="/admin/nominations", status_code=303)
 
