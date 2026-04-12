@@ -73,6 +73,7 @@
 
 {# ══ SLIDES 1…N — NOMINATIONS ══ #}
 <form id="vote-form" method="post" action="/{{ round.year }}/vote">
+{% set is_final = (round.round_type.value == 'FINAL') %}
 {% for nom in nominations %}
 <div class="slide hidden" data-slide="{{ loop.index }}" data-nom-id="{{ nom.id }}">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -98,7 +99,17 @@
           </span>
         {% endif %}
       {% else %}
-        <span class="text-sm text-gray-400">Расставьте места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
+        {# RANK hint depends on round type #}
+        {% if is_final %}
+          <span class="text-sm text-gray-400">Расставьте все места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
+        {% else %}
+          {# LONGLIST: nominees_count = how many pass to final #}
+          {% if nom.nominees_count %}
+            <span class="text-sm text-gray-400">Выберите топ‑{{ nom.nominees_count }} из {{ nom.nominees|length }} · проставьте места 1–{{ nom.nominees_count }}</span>
+          {% else %}
+            <span class="text-sm text-gray-400">Расставьте места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
+          {% endif %}
+        {% endif %}
       {% endif %}
       <span id="warn-{{ nom.id }}"
             class="hidden ml-auto text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5"></span>
@@ -149,9 +160,13 @@
         {% else %}
           <input type="number"
                  name="rank_{{ nom.id }}_{{ nominee.film_id }}"
-                 min="1" max="{{ nom.nominees|length }}" placeholder="—"
+                 min="1"
+                 max="{{ nom.nominees_count if (not is_final and nom.nominees_count) else nom.nominees|length }}"
+                 placeholder="—"
                  class="rank-inp w-16 border border-gray-300 rounded-lg text-center py-1.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                 data-nom="{{ nom.id }}" data-max="{{ nom.nominees|length }}"
+                 data-nom="{{ nom.id }}"
+                 data-max="{{ nom.nominees_count if (not is_final and nom.nominees_count) else nom.nominees|length }}"
+                 data-full="{{ nom.nominees|length }}"
                  value="{% if draft and (nom.id|string) in draft.get('ranks',{}) %}{{ draft['ranks'][(nom.id|string)].get(nominee.film_id|string, '') }}{% endif %}" />
           <span class="text-base text-gray-800">
             {% if nominee.person %}
@@ -193,15 +208,27 @@
 
   </div>
 
-  {# nav — no draft button, autosave is silent #}
-  <div class="flex items-center justify-between mt-4">
+  {# ── nav: ← | Оглавление · автосейв · Итоги | → ── #}
+  <div class="flex items-center justify-between mt-4 gap-2">
     <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
-            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
+            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition shrink-0">
       ← Назад
     </button>
-    <span id="autosave-indicator" class="text-xs text-gray-300">автосохранение</span>
+
+    <div class="flex items-center gap-3 text-xs">
+      <button type="button" onclick="goToSlide(0)"
+              class="text-gray-400 hover:text-indigo-600 border border-gray-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        ☰ Оглавление
+      </button>
+      <span id="autosave-indicator" class="text-gray-300 whitespace-nowrap">автосохранение</span>
+      <button type="button" onclick="goToSlide({{ nominations|length + 1 }})"
+              class="text-gray-400 hover:text-green-600 border border-gray-200 hover:border-green-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        ✓ Итоги
+      </button>
+    </div>
+
     <button type="button" onclick="goToSlide({{ loop.index + 1 }})"
-            class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition">
+            class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition shrink-0">
       {% if loop.last %}Проверить бюллетень →{% else %}Далее →{% endif %}
     </button>
   </div>
@@ -222,9 +249,13 @@
     <div id="ballot-body" class="divide-y divide-gray-100 text-base"></div>
   </div>
 
-  <div class="flex items-center justify-between mt-2">
+  <div class="flex items-center justify-between mt-2 gap-2">
+    <button type="button" onclick="goToSlide(0)"
+            class="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
+      ☰ Оглавление
+    </button>
     <button type="button" onclick="goToSlide({{ nominations|length }})"
-            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
+            class="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
     <button type="submit"
@@ -246,6 +277,7 @@
 
 {% if nominations %}
 <script>
+const IS_FINAL = {{ 'true' if round.round_type.value == 'FINAL' else 'false' }};
 const NOM_DATA = [
   {% for nom in nominations %}
   {
@@ -255,6 +287,7 @@ const NOM_DATA = [
     type: {{ nom.type.value | tojson }},
     pick_min: {{ nom.pick_min | tojson }},
     pick_max: {{ nom.pick_max | tojson }},
+    nominees_count: {{ nom.nominees_count | tojson }},  {# how many pass to final (LONGLIST RANK) #}
     total: {{ nom.nominees | length }},
     nominees: [
       {% for n in nom.nominees | sort(attribute='label_for_sort') %}
@@ -326,16 +359,31 @@ goToSlide(0);
 })();
 
 // ── RANK inline warning ──
+// In LONGLIST: max = nominees_count (top-N), only dups and overcount are errors.
+// In FINAL: max = total, all must be filled.
+function rankMax(nom) {
+  return (!IS_FINAL && nom.nominees_count) ? nom.nominees_count : nom.total;
+}
+
 function validateRankNom(nomId) {
+  const nom = NOM_DATA.find(n => n.id == nomId);
+  if (!nom) return;
   const inputs = document.querySelectorAll(`.rank-inp[data-nom="${nomId}"]`);
   const values = [...inputs].filter(i => i.value !== '').map(i => parseInt(i.value));
-  const max = inputs.length ? parseInt(inputs[0].dataset.max) : 0;
+  const max = rankMax(nom);
   const hasDup = values.length !== new Set(values).size;
+  const hasOverflow = values.some(v => v > max);
   const warn = document.getElementById('warn-' + nomId);
   if (!warn) return;
-  if (hasDup) { warn.textContent = '⚠️ Одно место указано дважды'; warn.classList.remove('hidden'); }
-  else if (values.length > 0 && values.length < max) { warn.textContent = `⚠️ Указано ${values.length} из ${max}`; warn.classList.remove('hidden'); }
-  else { warn.textContent = ''; warn.classList.add('hidden'); }
+  if (hasDup) {
+    warn.textContent = '⚠️ Одно место указано дважды'; warn.classList.remove('hidden');
+  } else if (hasOverflow) {
+    warn.textContent = `⚠️ Место не может быть больше ${max}`; warn.classList.remove('hidden');
+  } else if (IS_FINAL && values.length > 0 && values.length < nom.total) {
+    warn.textContent = `⚠️ Указано ${values.length} из ${nom.total}`; warn.classList.remove('hidden');
+  } else {
+    warn.textContent = ''; warn.classList.add('hidden');
+  }
 }
 document.querySelectorAll('.rank-inp').forEach(inp =>
   inp.addEventListener('input', () => { validateRankNom(inp.dataset.nom); updateToc(); })
@@ -383,7 +431,8 @@ function getNomStatus(nom) {
     const vals = [...inputs].map(i => i.value !== '' ? parseInt(i.value) : null).filter(v => v !== null);
     if (getRankErrors(nom, vals).length) return { icon: '❌', cls: 'text-red-400' };
     if (vals.length === 0) return { icon: '—', cls: 'text-gray-300' };
-    return { icon: `✔ ${vals.length}/${nom.total}`, cls: 'text-green-500' };
+    const max = rankMax(nom);
+    return { icon: `✔ ${vals.length}/${max}`, cls: 'text-green-500' };
   }
 }
 function updateToc() {
@@ -407,8 +456,11 @@ function getPickErrors(nom, checked) {
 function getRankErrors(nom, vals) {
   if (vals.length === 0) return [];
   const e = [];
+  const max = rankMax(nom);
   if (vals.length !== new Set(vals).size) e.push(`«${nom.name}»: одно место указано дважды`);
-  if (vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
+  if (vals.some(v => v > max)) e.push(`«${nom.name}»: место не может быть больше ${max}`);
+  // In FINAL, all positions must be filled
+  if (IS_FINAL && vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
   return e;
 }
 function collectAllErrors() {
@@ -552,7 +604,7 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
   a.click();
 });
 
-// ── Autosave draft (silent, no button) ──
+// ── Autosave draft (silent) ──
 function collectDraft() {
   const { picks, ranks } = collectState();
   const runnerups = {};
@@ -583,7 +635,6 @@ async function saveDraft() {
   }
 }
 
-// autosave on change (debounced 3s) + every 60s
 document.querySelectorAll('#vote-form input').forEach(el => {
   el.addEventListener('change', () => {
     clearTimeout(draftTimer);
