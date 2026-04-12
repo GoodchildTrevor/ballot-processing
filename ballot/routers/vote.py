@@ -6,6 +6,7 @@ URL scheme
 /{year}/vote              GET  – ballot page for the active round of a given year
 /{year}/vote              POST – submit ballot for that round
 /{year}/draft             POST – autosave draft for that round
+/{year}/ballot-export     POST – download ballot as xlsx (client-side rows)
 /rounds/{round_id}/vote   GET  – ballot page by round id (kept for compat)
 /rounds/{round_id}/vote   POST – submit ballot by round id (kept for compat)
 /rounds/{round_id}/draft  POST – autosave draft by round id
@@ -16,13 +17,14 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 import openpyxl
+from openpyxl.styles import Font
 
 from ballot.auth import require_voter
 from ballot.database import get_db
@@ -39,20 +41,6 @@ templates = Jinja2Templates(directory="ballot/templates")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _nominee_sort_key(nominee) -> str:
-    if nominee.person:
-        return (nominee.person.name or "").lower()
-    if nominee.item:
-        return (nominee.item or "").lower()
-    return (nominee.film.title if nominee.film else "").lower()
-
-
-def _sort_nominations(nominations):
-    for nom in nominations:
-        nom.nominees = sorted(nom.nominees, key=_nominee_sort_key)
-    return nominations
-
 
 def _get_or_create_participation(
     db: Session, round_id: int, voter_id: int
@@ -93,7 +81,6 @@ def _find_active_round_for_year(db: Session, year: int) -> Round | None:
 def _render_vote_page(request, db, rnd, voter):
     """Shared render logic for both URL schemes."""
     nominations = _nominations_for_round(db, rnd.id)
-    _sort_nominations(nominations)
     participation = _get_or_create_participation(db, rnd.id, voter.id)
     db.commit()
     draft = participation.draft or {}
@@ -198,17 +185,53 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 
 # ---------------------------------------------------------------------------
+# POST /{year}/ballot-export  – client-side rows → xlsx download
+# ---------------------------------------------------------------------------
+
+@router.post("/{year}/ballot-export")
+async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
+    """Accept JSON {rows: [[col, ...], ...]} and return an xlsx file."""
+    voter: Voter = request.state.voter
+    body: dict[str, Any] = await request.json()
+    rows: list[list] = body.get("rows", [])
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Бюллетень"
+
+    for i, row in enumerate(rows):
+        ws.append(row)
+        if i == 0:  # header row — bold
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+
+    # auto-width
+    for col in ws.columns:
+        max_len = max((len(str(c.value or "")) for c in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe_voter = voter.name.replace(" ", "_")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 f"attachment; filename=ballot_{year}_{safe_voter}.xlsx"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /rounds/{round_id}/vote  – compat
 # ---------------------------------------------------------------------------
 
 @router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
 def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
-    voter: Voter = request.state.voter
     rnd = db.get(Round, round_id)
     err = _check_round_open(request, rnd)
     if err:
         return err
-    # Redirect to canonical year URL
     return RedirectResponse(url=f"/{rnd.year}/vote", status_code=301)
 
 
@@ -218,16 +241,15 @@ def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/rounds/{round_id}/draft")
 async def save_draft(round_id: int, request: Request, db: Session = Depends(get_db)):
-    voter: Voter = request.state.voter
     body = await request.json()
-    p = _get_or_create_participation(db, round_id, voter.id)
+    p = _get_or_create_participation(db, round_id, request.state.voter.id)
     p.draft = body
     db.commit()
     return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
-# POST /rounds/{round_id}/vote  – compat (redirects to year-based)
+# POST /rounds/{round_id}/vote  – compat
 # ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/vote")
@@ -252,7 +274,6 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
         n.id for nom in nominations for n in nom.nominees
     }
 
-    # Delete previous votes/rankings for this round's nominations only
     for nom in nominations:
         if nom.type == NominationType.RANK:
             db.query(Ranking).filter(
@@ -361,6 +382,8 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
     ws = wb.active
     ws.title = "Бюллетень"
     ws.append(["Номинация", "Тип", "Номинант", "Голос / Место"])
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
 
     nominee_ids = {n.id for nom in nominations for n in nom.nominees}
     pick_votes = {

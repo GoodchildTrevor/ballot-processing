@@ -240,6 +240,29 @@ class Nominee(Base):
     def persons_label(self) -> str:
         return ", ".join(p.name for p in self.all_persons)
 
+    @property
+    def label_for_sort(self) -> str:
+        """Alphabetic sort key: person name > item > film title."""
+        persons = self.all_persons
+        if persons:
+            return persons[0].name.lower()
+        if self.item:
+            return self.item.lower()
+        return (self.film.title if self.film else "").lower()
+
+    @property
+    def display_label(self) -> str:
+        """Human-readable label for JS ballot preview."""
+        persons = self.all_persons
+        film_title = self.film.title if self.film else ""
+        film_year = self.film.year if self.film else ""
+        if persons:
+            names = ", ".join(p.name for p in persons)
+            return f"{names} — {film_title} ({film_year})"
+        if self.item:
+            return f"{self.item} — {film_title} ({film_year})"
+        return f"{film_title} ({film_year})"
+
 
 # ---------------------------------------------------------------------------
 # Vote / Ranking
