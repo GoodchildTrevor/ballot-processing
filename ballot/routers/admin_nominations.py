@@ -1,7 +1,7 @@
 import io
 import urllib.parse
 from typing import Optional
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -178,8 +178,15 @@ def move_nomination(
 
 
 @router.get("/nominations/export-longlist")
-def export_longlist(db: Session = Depends(get_db)):
-    nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
+def export_longlist(
+    year: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id)
+    if year:
+        q = q.filter(Nomination.year_filter == year)
+    nominations = q.all()
+
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for nom in nominations:
@@ -197,13 +204,16 @@ def export_longlist(db: Session = Depends(get_db)):
                 n.item if n.item else "",
                 n.film.url or "",
             ])
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+
+    filename = f"longlist_{year}.xlsx" if year else "longlist_all.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=longlist.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
