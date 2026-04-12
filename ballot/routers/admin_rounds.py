@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
-from statistics import mean
 from typing import Optional
 
+import sqlalchemy
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -19,7 +19,7 @@ from ballot.models import (
     Nominee, Vote, Ranking,
     NominationTemplate,
     Round, RoundType, RoundParticipation,
-    Film,
+    Film, Voter,
 )
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -33,20 +33,6 @@ def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
         except ValueError:
             pass
     return None
-
-
-def _rank_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, float]]:
-    rankings = db.query(Ranking).filter(Ranking.nomination_id == nom.id).all()
-    scores: dict[int, list[int]] = defaultdict(list)
-    for r in rankings:
-        scores[r.film_id].append(r.rank)
-    result = []
-    for nominee in nom.nominees:
-        s = scores.get(nominee.film_id)
-        avg = mean(s) if s else float("inf")
-        result.append((nominee, avg))
-    result.sort(key=lambda x: x[1])
-    return result
 
 
 def _pick_scores(nom: Nomination, db: Session) -> list[tuple[Nominee, int]]:
@@ -387,26 +373,51 @@ def promote_preview(
             target = nom.contest_nomination.template.final_promotes_count
 
         if nom.type == NominationType.RANK:
-            scored = _rank_scores(nom, db)  # [(nominee, avg_rank)]
-            auto_ids = {n.id for n in _dense_rank_cutoff(scored, target)} if target else set()
-
-            # build display rows sorted by score desc (lower avg_rank = better)
+            # Build rows_raw sorted by score DESC (score = sum(11 - rank))
             rows_raw = (
-                db.query(Film.title, Film.id.label("film_id"),
-                         __import__('sqlalchemy').func.sum(11 - Ranking.rank).label("score"))
+                db.query(
+                    Film.title,
+                    Film.id.label("film_id"),
+                    sqlalchemy.func.sum(11 - Ranking.rank).label("score"),
+                )
                 .join(Ranking, Ranking.film_id == Film.id)
                 .filter(Ranking.nomination_id == nom.id)
                 .group_by(Film.id)
-                .order_by(__import__('sqlalchemy').func.sum(11 - Ranking.rank).desc())
+                .order_by(sqlalchemy.func.sum(11 - Ranking.rank).desc())
                 .all()
             )
+
             film_to_nominee = {n.film_id: n for n in nom.nominees}
+
+            # voter info per film: {film_id: [(voter_name, rank), ...]}
             film_voters_map: dict[int, list] = {}
             for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
-                from ballot.models import Voter
                 voter = db.get(Voter, r.voter_id)
                 if voter:
                     film_voters_map.setdefault(r.film_id, []).append((voter.name, r.rank))
+
+            # Compute auto_ids directly from rows_raw using DENSE RANK on score
+            # so the cutoff is identical to what's shown on screen.
+            auto_ids: set[int] = set()
+            if target:
+                prev_score_val = None
+                dense_rank_val = 0
+                boundary: int | None = None
+                for r in rows_raw:
+                    if r.score != prev_score_val:
+                        dense_rank_val += 1
+                        prev_score_val = r.score
+                    if dense_rank_val <= target:
+                        nominee = film_to_nominee.get(r.film_id)
+                        if nominee:
+                            auto_ids.add(nominee.id)
+                        boundary = r.score
+                    elif r.score == boundary:
+                        nominee = film_to_nominee.get(r.film_id)
+                        if nominee:
+                            auto_ids.add(nominee.id)
+                    else:
+                        break
 
             rows = []
             prev_score = None
@@ -426,11 +437,15 @@ def promote_preview(
                     "score": r.score,
                     "voters": voters_str,
                     "position": dense_pos,
+                    "row_num": row_num,
                     "auto_selected": (nominee.id in auto_ids) if nominee else False,
                 })
 
         else:  # PICK
             scored_pick = _pick_scores(nom, db)  # [(nominee, vote_count)]
+
+            # Compute auto_ids via DENSE RANK cutoff on vote counts
+            auto_ids = set()
             if target:
                 auto_ids = {n.id for n in _dense_rank_cutoff(
                     [(n, -c) for n, c in scored_pick], target
@@ -439,20 +454,19 @@ def promote_preview(
                 auto_ids = {n.id for n, c in scored_pick if c > 0} \
                            or {n.id for n, _ in scored_pick}
 
-            rows = []
-            prev_score = None
-            dense_pos = 0
-            row_num = 0
             nominee_voters: dict[int, list[str]] = {}
-            for v in db.query(__import__('ballot.models', fromlist=['Vote']).Vote).join(Nominee).filter(
+            for v in db.query(Vote).join(Nominee).filter(
                 Nominee.nomination_id == nom.id,
-                __import__('ballot.models', fromlist=['Vote']).Vote.is_runner_up == False,  # noqa
+                Vote.is_runner_up == False,  # noqa: E712
             ).all():
-                from ballot.models import Voter
                 voter = db.get(Voter, v.voter_id)
                 if voter:
                     nominee_voters.setdefault(v.nominee_id, []).append(voter.name)
 
+            rows = []
+            prev_score = None
+            dense_pos = 0
+            row_num = 0
             for nominee, count in scored_pick:
                 row_num += 1
                 if count != prev_score:
@@ -466,6 +480,7 @@ def promote_preview(
                     "score": count,
                     "voters": voters_str,
                     "position": dense_pos,
+                    "row_num": row_num,
                     "auto_selected": nominee.id in auto_ids,
                 })
 
