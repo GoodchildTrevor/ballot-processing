@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 import openpyxl
+from openpyxl.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
@@ -38,8 +39,12 @@ def _content_disposition(filename: str) -> str:
 
 def _auto_width(ws):
     for col in ws.columns:
-        max_len = max((len(str(c.value or "")) for c in col), default=10)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 80)
+        # skip merged cells — they have no column_letter attribute
+        first = next((c for c in col if not isinstance(c, MergedCell)), None)
+        if first is None:
+            continue
+        max_len = max((len(str(c.value or "")) for c in col if not isinstance(c, MergedCell)), default=10)
+        ws.column_dimensions[first.column_letter].width = min(max_len + 4, 80)
 
 
 def _sheet_title(name: str) -> str:
