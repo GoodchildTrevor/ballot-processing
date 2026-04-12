@@ -107,19 +107,18 @@ _MIGRATIONS = [
     )
     """,
 
-    # nomination_templates table
+    # nomination_templates table (without longlist_nominees_count)
     """
     CREATE TABLE IF NOT EXISTS nomination_templates (
-        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-        name                    TEXT    NOT NULL,
-        description             TEXT,
-        type                    TEXT    NOT NULL,
-        sort_order              INTEGER NOT NULL DEFAULT 0,
-        is_archived             INTEGER NOT NULL DEFAULT 0,
-        longlist_nominees_count INTEGER,
-        longlist_pick_min       INTEGER,
-        longlist_pick_max       INTEGER,
-        final_promotes_count    INTEGER
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                 TEXT    NOT NULL,
+        description          TEXT,
+        type                 TEXT    NOT NULL,
+        sort_order           INTEGER NOT NULL DEFAULT 0,
+        is_archived          INTEGER NOT NULL DEFAULT 0,
+        longlist_pick_min    INTEGER,
+        longlist_pick_max    INTEGER,
+        final_promotes_count INTEGER
     )
     """,
 
@@ -140,6 +139,12 @@ _MIGRATIONS = [
 
     # nominations.contest_nomination_id
     "ALTER TABLE nominations ADD COLUMN contest_nomination_id INTEGER REFERENCES contest_nominations(id)",
+
+    # ================================================================
+    # Drop redundant longlist_nominees_count (added 2026-04-12)
+    # SQLite >= 3.35.0 supports DROP COLUMN
+    # ================================================================
+    "ALTER TABLE nomination_templates DROP COLUMN longlist_nominees_count",
 ]
 
 
@@ -150,5 +155,5 @@ def run_migrations():
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception:
-                # Column/table already exists — safe to ignore
+                # Column/table already exists or doesn't exist — safe to ignore
                 pass
