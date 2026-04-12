@@ -118,24 +118,40 @@
           <tr class="nomination-row"
               :class="activeYear !== null && activeYear !== {{ yr or 'null' }} ? 'hidden' : ''"
               data-year="{{ yr or '' }}">
-            <td colspan="7" class="pt-5 pb-1 px-0">
+            <td colspan="7" class="pt-6 pb-2 px-0">
+              {%- if tour == 1 %}
+              {# ── 1 тур: синяя полоса #}
               <div class="flex items-center gap-3">
-                {% if yr %}
-                <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ yr }}</span>
-                {% endif %}
-                {% if tour %}
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full
-                  {% if tour == 1 %}bg-blue-100 text-blue-700{% else %}bg-amber-100 text-amber-700{% endif %}">
-                  {{ tour }} тур
-                </span>
-                {% endif %}
+                <div class="w-1 h-8 rounded-full bg-blue-500 flex-shrink-0"></div>
+                <div>
+                  {% if yr %}<span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ yr }}</span>{% endif %}
+                  <span class="text-sm font-extrabold text-blue-700 uppercase tracking-wider">1 тур — Лонг-лист</span>
+                </div>
+                <div class="flex-1 h-px bg-blue-200"></div>
+              </div>
+              {%- elif tour == 2 %}
+              {# ── 2 тур: янтарная полоса #}
+              <div class="flex items-center gap-3">
+                <div class="w-1 h-8 rounded-full bg-amber-500 flex-shrink-0"></div>
+                <div>
+                  {% if yr %}<span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ yr }}</span>{% endif %}
+                  <span class="text-sm font-extrabold text-amber-700 uppercase tracking-wider">2 тур — Финал</span>
+                </div>
+                <div class="flex-1 h-px bg-amber-200"></div>
+              </div>
+              {%- else %}
+              {# ── без тура: обычный год #}
+              <div class="flex items-center gap-3">
+                {% if yr %}<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ yr }}</span>{% endif %}
                 <div class="flex-1 h-px bg-gray-100"></div>
               </div>
+              {%- endif %}
             </td>
           </tr>
         {%- endif %}
 
-        <tr class="border-b last:border-0 align-top nomination-row"
+        <tr class="border-b last:border-0 align-top nomination-row
+            {% if nom.round and nom.round.tour == 1 %}bg-blue-50/30{% elif nom.round and nom.round.tour == 2 %}bg-amber-50/30{% endif %}"
             data-year="{{ nom.year_filter or '' }}"
             :class="activeYear !== null && activeYear !== {{ nom.year_filter or 'null' }} ? 'hidden' : ''"
             x-data="{ editing: false, nomType: '{{ nom.type.value }}' }">

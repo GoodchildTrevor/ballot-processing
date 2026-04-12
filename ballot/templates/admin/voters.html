@@ -27,18 +27,30 @@
 
 {# Round tabs (1 тур / 2 тур) #}
 {% if selected_contest.rounds | length > 1 %}
-<div class="flex gap-2 mb-5" x-data="{}">
+<div class="flex gap-2 mb-5">
   {% for rnd in selected_contest.rounds | sort(attribute='tour') %}
   <a href="/admin/voters?contest_id={{ selected_contest.id }}&round_id={{ rnd.id }}"
-     class="text-xs font-semibold px-3 py-1.5 rounded-full border transition
+     class="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl border-2 transition
        {% if selected_round and selected_round.id == rnd.id %}
-         {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600{% else %}bg-amber-500 text-white border-amber-500{% endif %}
+         {% if rnd.tour == 1 %}bg-blue-600 text-white border-blue-600 shadow-sm{% else %}bg-amber-500 text-white border-amber-500 shadow-sm{% endif %}
        {% else %}
-         bg-white text-gray-600 border-gray-300 hover:bg-gray-50
+         {% if rnd.tour == 1 %}bg-white text-blue-600 border-blue-200 hover:bg-blue-50{% else %}bg-white text-amber-600 border-amber-200 hover:bg-amber-50{% endif %}
        {% endif %}">
-    {{ rnd.tour }} тур — {{ rnd.label }}
+    <span class="text-base leading-none">{% if rnd.tour == 1 %}①{% else %}②{% endif %}</span>
+    <span>{{ rnd.tour }} тур</span>
+    <span class="font-normal opacity-75 text-xs">{{ rnd.label }}</span>
   </a>
   {% endfor %}
+</div>
+{% elif selected_contest.rounds | length == 1 %}
+{# Single round — still show a header so user knows which tour they're on #}
+{% set rnd = selected_contest.rounds[0] %}
+<div class="flex items-center gap-3 mb-5">
+  <div class="w-1 h-7 rounded-full {% if rnd.tour == 1 %}bg-blue-500{% else %}bg-amber-500{% endif %} flex-shrink-0"></div>
+  <span class="text-sm font-extrabold {% if rnd.tour == 1 %}text-blue-700{% else %}text-amber-700{% endif %} uppercase tracking-wider">
+    {{ rnd.tour }} тур — {{ rnd.label }}
+  </span>
+  <div class="flex-1 h-px {% if rnd.tour == 1 %}bg-blue-100{% else %}bg-amber-100{% endif %}"></div>
 </div>
 {% endif %}
 

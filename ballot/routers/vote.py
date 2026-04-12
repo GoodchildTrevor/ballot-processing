@@ -164,21 +164,22 @@ def _find_latest_active_round(db: Session) -> Round | None:
     """Return the most relevant active round across all years.
 
     Priority:
-    1. FINAL round (any year) — most recent year first
+    1. FINAL round — most recent year first
     2. LONGLIST round — most recent year first
     """
     active = (
         db.query(Round)
         .filter(Round.is_active == True)  # noqa: E712
-        .order_by(Round.year.desc(), Round.sort_order)
+        .order_by(Round.year.desc())
         .all()
     )
     if not active:
         return None
-    # prefer FINAL
+    # prefer FINAL of the most recent year that has a FINAL
     for rnd in active:
         if rnd.round_type == RoundType.FINAL:
             return rnd
+    # fallback: most recent LONGLIST
     return active[0]
 
 

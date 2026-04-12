@@ -43,17 +43,30 @@
   {%- set tour = item.round.tour if item.round is defined and item.round else None %}
   {%- if tour and tour != ns.last_tour %}
     {%- set ns.last_tour = tour %}
-    <div class="flex items-center gap-3 mt-4 mb-1">
-      <span class="text-sm font-bold uppercase tracking-widest
-        {% if tour == 1 %}text-blue-600{% else %}text-amber-600{% endif %}">
-        {{ tour }} тур
-      </span>
-      <div class="flex-1 h-px {% if tour == 1 %}bg-blue-100{% else %}bg-amber-100{% endif %}"></div>
+    {%- if tour == 1 %}
+    <div class="flex items-center gap-3 mt-6 mb-2">
+      <div class="w-1.5 h-10 rounded-full bg-blue-500 flex-shrink-0"></div>
+      <div>
+        <span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ selected_contest.year }}</span>
+        <span class="text-base font-extrabold text-blue-700 uppercase tracking-wider">1 тур — Лонг-лист</span>
+      </div>
+      <div class="flex-1 h-px bg-blue-200"></div>
     </div>
+    {%- else %}
+    <div class="flex items-center gap-3 mt-6 mb-2">
+      <div class="w-1.5 h-10 rounded-full bg-amber-500 flex-shrink-0"></div>
+      <div>
+        <span class="block text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">{{ selected_contest.year }}</span>
+        <span class="text-base font-extrabold text-amber-700 uppercase tracking-wider">2 тур — Финал</span>
+      </div>
+      <div class="flex-1 h-px bg-amber-200"></div>
+    </div>
+    {%- endif %}
   {%- endif %}
 
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-    <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3
+      {% if tour == 1 %}border-l-4 border-l-blue-400{% elif tour == 2 %}border-l-4 border-l-amber-400{% endif %}">
       <h2 class="font-bold text-gray-900 text-base">{{ item.nom.name }}</h2>
       <span class="text-xs font-semibold px-2 py-0.5 rounded-full
         {% if item.nom.type.value == 'RANK' %}bg-amber-100 text-amber-700
