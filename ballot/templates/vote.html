@@ -3,7 +3,7 @@
 
 {% block nav %}
 <nav class="bg-indigo-700 text-white px-6 py-3 flex items-center gap-4 text-sm font-medium">
-  <span class="font-bold text-base">🎬 Кинопремия</span>
+  <span class="font-bold text-base">🎥 Кинопремия</span>
   {% if round %}
     <span class="opacity-70">{{ round.label }}</span>
     {% if round.deadline %}
@@ -30,9 +30,10 @@
   {% endif %}
 </div>
 
+{% if nominations %}
 <form id="vote-form"
       method="post"
-      action="/rounds/{{ round.id }}/vote">
+      action="/{{ round.year }}/vote">
 
   {% for nom in nominations %}
   {% set pick_max = nom.pick_max %}
@@ -57,7 +58,7 @@
         </span>
         {% if nom.pick_max %}
           <span class="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" id="counter-{{ nom.id }}">
-            0 / {{ nom.pick_max }}
+            0 / {{ nom.pick_max }}
           </span>
         {% endif %}
       {% else %}
@@ -150,15 +151,28 @@
 
 </form>
 
+{% else %}
+{# ── Empty state: round exists but no nominations assigned yet ── #}
+<div class="flex flex-col items-center justify-center py-24 text-center">
+  <svg class="w-16 h-16 text-gray-300 mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+  </svg>
+  <h2 class="text-xl font-bold text-gray-700 mb-2">Бюллетень ещё не готов</h2>
+  <p class="text-gray-400 text-sm max-w-xs">
+    Номинации для раунда <strong>{{ round.label }}</strong> пока не назначены.
+    Загляните позже или уточните у организатора.
+  </p>
+</div>
+{% endif %}
+
 <script>
+{% if nominations %}
 // ── pick_max enforcement ────────────────────────────────────────────────────
 (function() {
-  // Map: nomId -> { max, checkboxes[] }
   const groups = {};
   document.querySelectorAll('input.pick-cb').forEach(cb => {
     const nomId = cb.dataset.nom;
     if (!groups[nomId]) {
-      // Find pick_max from counter element (if exists)
       const counter = document.getElementById('counter-' + nomId);
       const max = counter ? parseInt(counter.textContent.split('/')[1]) : null;
       groups[nomId] = { max, checkboxes: [], counter };
@@ -170,7 +184,6 @@
     const g = groups[nomId];
     if (!g) return;
     const checked = g.checkboxes.filter(c => c.checked).length;
-    // Update counter
     if (g.counter) {
       const max = g.max;
       g.counter.textContent = checked + '\u00a0/\u00a0' + max;
@@ -181,7 +194,6 @@
         g.counter.classList.add('text-gray-500');
       }
     }
-    // Disable unchecked boxes if limit reached
     if (g.max && checked >= g.max) {
       g.checkboxes.forEach(cb => {
         if (!cb.checked) {
@@ -197,10 +209,7 @@
     }
   }
 
-  // Init all groups
   Object.keys(groups).forEach(nomId => updateGroup(nomId));
-
-  // Listen for changes
   document.querySelectorAll('input.pick-cb').forEach(cb => {
     cb.addEventListener('change', () => updateGroup(cb.dataset.nom));
   });
@@ -232,20 +241,21 @@ function collectDraft() {
 
 async function saveDraft(silent = true) {
   const data = collectDraft();
-  await fetch('/rounds/{{ round.id }}/draft', {
+  await fetch('/{{ round.year }}/draft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   if (!silent) {
     const btn = document.getElementById('save-draft-btn');
-    btn.textContent = '✓ Сохранено';
-    setTimeout(() => btn.textContent = '💾 Сохранить черновик', 2000);
+    btn.textContent = '\u2713 Сохранено';
+    setTimeout(() => btn.textContent = '\ud83d\udcbe Сохранить черновик', 2000);
   }
 }
 
 document.getElementById('save-draft-btn').addEventListener('click', () => saveDraft(false));
 setInterval(() => saveDraft(true), 60000);
+{% endif %}
 
 // ── Deadline countdown ───────────────────────────────────────────────────────
 {% if round.deadline %}
