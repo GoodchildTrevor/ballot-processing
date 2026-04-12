@@ -65,17 +65,6 @@
       </select>
     </div>
 
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">Раунд</label>
-      <select name="round_id"
-              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none">
-        <option value="">— не привязан —</option>
-        {% for r in rounds %}
-        <option value="{{ r.id }}">{{ r.label }} ({{ r.year }})</option>
-        {% endfor %}
-      </select>
-    </div>
-
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
   </form>
 </div>
@@ -104,7 +93,6 @@
           <th class="pb-2 pr-4">Тип</th>
           <th class="pb-2 pr-4">Параметры</th>
           <th class="pb-2 pr-4">Год</th>
-          <th class="pb-2 pr-4">Раунд</th>
           <th class="pb-2 pr-4">Лонг-лист</th>
           <th class="pb-2"></th>
         </tr>
@@ -135,7 +123,7 @@
           </td>
 
           {# Name / inline edit form #}
-          <td class="py-2 pr-4" x-bind:colspan="editing ? 6 : 1">
+          <td class="py-2 pr-4" x-bind:colspan="editing ? 5 : 1">
             <template x-if="!editing">
               <a href="/admin/nominations/{{ nom.id }}" class="text-indigo-600 hover:underline font-medium">{{ nom.name }}</a>
             </template>
@@ -195,18 +183,6 @@
                     {% endfor %}
                   </select>
                 </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-0.5">Раунд</label>
-                  <select name="round_id"
-                          class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-indigo-400 focus:outline-none">
-                    <option value="" {% if not nom.round_id %}selected{% endif %}>—</option>
-                    {% for r in rounds %}
-                    <option value="{{ r.id }}" {% if nom.round_id == r.id %}selected{% endif %}>
-                      {{ r.label }} ({{ r.year }})
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
                 <div class="flex gap-2 items-end">
                   <button type="submit"
                           class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs transition">Сохранить</button>
@@ -236,16 +212,6 @@
           </td>
 
           <td class="py-2 pr-4 text-gray-500 text-xs" x-show="!editing">{{ nom.year_filter or '—' }}</td>
-
-          <td class="py-2 pr-4 text-xs" x-show="!editing">
-            {% if nom.round %}
-              <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
-                {{ nom.round.label }}
-              </span>
-            {% else %}
-              <span class="text-gray-300">—</span>
-            {% endif %}
-          </td>
 
           <td class="py-2 pr-4 tabular-nums" x-show="!editing">{{ nom.nominees | length }}</td>
 

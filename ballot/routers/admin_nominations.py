@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import openpyxl
 from ballot.database import get_db
-from ballot.models import Nomination, NominationType, Nominee, Film, Person, Round
+from ballot.models import Nomination, NominationType, Nominee, Film, Person
 from ballot.auth import require_admin
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -45,11 +45,9 @@ def _apply_person_url(person: Person, url: Optional[str]) -> None:
 def list_nominations(request: Request, db: Session = Depends(get_db)):
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     years = _get_years(db)
-    rounds = db.query(Round).order_by(Round.sort_order, Round.id).all()
     return templates.TemplateResponse(request, "admin/nominations.html", {
         "nominations": nominations,
         "years": years,
-        "rounds": rounds,
     })
 
 
@@ -61,7 +59,6 @@ def create_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
-    round_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nc = _parse_int(nominees_count)
@@ -72,7 +69,6 @@ def create_nomination(
         pmin = None
         pmax = None
     yf = _parse_int(year_filter)
-    rid = _parse_int(round_id)
     last = db.query(Nomination).order_by(Nomination.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
     db.add(Nomination(
@@ -80,7 +76,6 @@ def create_nomination(
         pick_min=pmin, pick_max=pmax,
         nominees_count=nc,
         year_filter=yf,
-        round_id=rid,
         sort_order=order,
     ))
     db.commit()
@@ -96,7 +91,6 @@ def edit_nomination(
     pick_max: Optional[str] = Form(None),
     nominees_count: Optional[str] = Form(None),
     year_filter: str = Form(...),
-    round_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     nom = db.get(Nomination, nom_id)
@@ -107,7 +101,6 @@ def edit_nomination(
     nom.type = type
     nom.nominees_count = nc
     nom.year_filter = _parse_int(year_filter)
-    nom.round_id = _parse_int(round_id)
     if type == NominationType.PICK:
         nom.pick_min = _parse_int(pick_min)
         nom.pick_max = _clamp_pick_max(_parse_int(pick_max), nc)
@@ -224,7 +217,6 @@ def add_nominee_via_nomination(
     item_val = item.strip() if item and item.strip() else None
     item_url_val = item_url.strip() if item_url and item_url.strip() else None
 
-    # Update person URL if provided
     if pid and nom.type == NominationType.PICK:
         person = db.get(Person, pid)
         if person:
@@ -293,10 +285,10 @@ def bulk_add_nominees(
             continue
 
         parts = [p.strip() for p in raw_line.split("|")]
-        film_title    = parts[0] if len(parts) > 0 else ""
-        person_name   = parts[1] if len(parts) > 1 else ""
-        item_val      = parts[2] if len(parts) > 2 else ""
-        item_url_val  = parts[3] if len(parts) > 3 else ""
+        film_title     = parts[0] if len(parts) > 0 else ""
+        person_name    = parts[1] if len(parts) > 1 else ""
+        item_val       = parts[2] if len(parts) > 2 else ""
+        item_url_val   = parts[3] if len(parts) > 3 else ""
         person_url_val = parts[4] if len(parts) > 4 else ""
 
         film_title     = film_title.strip()
@@ -308,7 +300,6 @@ def bulk_add_nominees(
         if not film_title:
             continue
 
-        # --- Film lookup / auto-create ---
         film = film_index.get(film_title.lower())
         if film is None:
             if not nom.year_filter:
@@ -320,7 +311,6 @@ def bulk_add_nominees(
             film_index[film_title.lower()] = film
             films_created.append(film_title)
 
-        # --- Person lookup / auto-create (PICK only) ---
         pid: Optional[int] = None
         if person_name and nom.type == NominationType.PICK:
             person = person_index.get(person_name.lower())
@@ -331,11 +321,9 @@ def bulk_add_nominees(
                 person_index[person_name.lower()] = person
                 persons_created.append(person_name)
             else:
-                # Update URL if provided and person doesn't have one yet
                 _apply_person_url(person, person_url_val)
             pid = person.id
 
-        # --- Duplicate check ---
         existing = db.query(Nominee).filter(
             Nominee.nomination_id == nom_id,
             Nominee.film_id == film.id,
@@ -384,7 +372,6 @@ def edit_nominee(
     nominee.film_id = film_id
     pid = _parse_int(person_id)
     nominee.person_id = pid
-    # Update person URL if person selected and URL provided
     if pid:
         person = db.get(Person, pid)
         if person:
