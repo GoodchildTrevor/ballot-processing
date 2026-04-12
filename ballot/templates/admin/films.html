@@ -85,13 +85,13 @@
       year: {{ film.year }},
       url: {{ film.url | tojson if film.url else 'null' }},
       nom_count: {{ film.nominees | length }},
-      shortlist_count: {{ film.nominees | selectattr('nomination.nominees_count') | list | length }},
+      shortlist_count: {{ film.nominees | selectattr('nomination.round') | selectattr('nomination.round.round_type', 'equalto', 'FINAL') | list | length }},
       noms: [
         {% for n in film.nominees %}
         {
           nom_name: {{ n.nomination.name | tojson }},
           person: {{ n.person.name | tojson if n.person else 'null' }},
-          is_shortlist: {{ 'true' if n.nomination.nominees_count else 'false' }}
+          is_shortlist: {{ 'true' if (n.nomination.round and n.nomination.round.round_type == 'FINAL') else 'false' }}
         }{% if not loop.last %},{% endif %}
         {% endfor %}
       ]
