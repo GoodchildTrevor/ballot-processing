@@ -1,14 +1,14 @@
 """Add Contest, NominationTemplate, ContestNomination; extend Round and Nomination.
 
 Revision ID: 0004
-Revises:     0003
+Revises:     0003_voter_draft
 Create Date: 2026-04-12
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = '0004'
-down_revision = '0003'
+down_revision = '0003_voter_draft'
 branch_labels = None
 depends_on = None
 
