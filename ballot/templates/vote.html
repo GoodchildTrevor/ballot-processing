@@ -17,7 +17,7 @@
 
 {% block content %}
 {% if draft_restored %}
-<div id="draft-banner" class="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
+<div id="draft-banner" class="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-base flex items-center gap-2">
   💾 Найден незавершённый черновик — данные восстановлены.
   <button onclick="this.parentElement.remove()" class="ml-auto text-amber-500 hover:text-amber-700">✕</button>
 </div>
@@ -26,9 +26,9 @@
 {% if nominations %}
 
 {# ── Error banner (hidden until submit attempt) ── #}
-<div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-sm">
+<div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
   <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
-  <ul id="error-list" class="list-disc list-inside space-y-0.5"></ul>
+  <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
 </div>
 
 {# ── Slide container ── #}
@@ -37,20 +37,20 @@
 {# ════════════════════════════════ SLIDE 0 — TABLE OF CONTENTS ════ #}
 <div class="slide" data-slide="0">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6 max-w-xl mx-auto">
-    <h1 class="text-xl font-extrabold text-gray-900 mb-1">Голосование</h1>
+    <h1 class="text-2xl font-extrabold text-gray-900 mb-1">Голосование</h1>
     {% if round %}
-      <p class="text-sm text-gray-500 mb-5">{{ round.label }} · {{ round.year }}</p>
+      <p class="text-base text-gray-500 mb-5">{{ round.label }} · {{ round.year }}</p>
     {% endif %}
     <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Оглавление</h2>
-    <ol class="space-y-1.5">
+    <ol class="space-y-2">
       {% for nom in nominations %}
       <li>
         <button type="button"
                 onclick="goToSlide({{ loop.index }})"
-                class="w-full text-left flex items-center gap-2 text-sm text-indigo-600 hover:underline group">
-          <span class="text-gray-400 w-5 text-right tabular-nums text-xs">{{ loop.index }}.</span>
+                class="w-full text-left flex items-center gap-2 text-base text-indigo-600 hover:underline group">
+          <span class="text-gray-400 w-5 text-right tabular-nums text-sm">{{ loop.index }}.</span>
           <span class="flex-1">{{ nom.name }}</span>
-          <span class="toc-status-{{ nom.id }} text-xs text-gray-300">—</span>
+          <span class="toc-status-{{ nom.id }} text-sm text-gray-300">—</span>
           <span class="text-xs px-1.5 py-0.5 rounded-full
             {% if nom.type.value == 'PICK' %}bg-purple-100 text-purple-600{% else %}bg-blue-100 text-blue-600{% endif %}">
             {{ nom.type.value }}
@@ -61,14 +61,14 @@
       <li class="pt-2 border-t border-gray-100 mt-2">
         <button type="button"
                 onclick="goToSlide({{ nominations|length + 1 }})"
-                class="w-full text-left flex items-center gap-2 text-sm text-green-600 hover:underline">
-          <span class="text-gray-400 w-5 text-right tabular-nums text-xs">✓</span>
+                class="w-full text-left flex items-center gap-2 text-base text-green-600 hover:underline">
+          <span class="text-gray-400 w-5 text-right tabular-nums text-sm">✓</span>
           <span>Проверка бюллетеня</span>
         </button>
       </li>
     </ol>
     <button type="button" onclick="goToSlide(1)"
-            class="mt-6 w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">
+            class="mt-6 w-full bg-indigo-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-indigo-700 transition">
       Начать голосование →
     </button>
   </div>
@@ -82,14 +82,14 @@
 
     {# header #}
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex flex-wrap items-center gap-3">
-      <span class="text-xs text-gray-400 tabular-nums">{{ loop.index }} / {{ nominations|length }}</span>
-      <span class="font-semibold text-gray-900">{{ nom.name }}</span>
+      <span class="text-sm text-gray-400 tabular-nums">{{ loop.index }} / {{ nominations|length }}</span>
+      <span class="font-bold text-lg text-gray-900">{{ nom.name }}</span>
       <span class="text-xs px-2 py-0.5 rounded-full
         {% if nom.type.value == 'PICK' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
         {{ nom.type.value }}
       </span>
       {% if nom.type.value == 'PICK' %}
-        <span class="text-xs text-gray-400">
+        <span class="text-sm text-gray-400">
           {% if nom.pick_min and nom.pick_max %}от {{ nom.pick_min }} до {{ nom.pick_max }}
           {% elif nom.pick_min %}мин. {{ nom.pick_min }}
           {% elif nom.pick_max %}макс. {{ nom.pick_max }}
@@ -97,38 +97,38 @@
           · или оставьте пустым (пропуск)
         </span>
         {% if nom.pick_max %}
-          <span class="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" id="counter-{{ nom.id }}">
+          <span class="text-sm font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" id="counter-{{ nom.id }}">
             0 / {{ nom.pick_max }}
           </span>
         {% endif %}
       {% else %}
-        <span class="text-xs text-gray-400">Расставьте места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
+        <span class="text-sm text-gray-400">Расставьте места 1–{{ nom.nominees|length }} · или оставьте пустым (пропуск)</span>
       {% endif %}
       {# inline warning #}
       <span id="warn-{{ nom.id }}"
-            class="hidden ml-auto text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5"></span>
+            class="hidden ml-auto text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5"></span>
     </div>
 
     {# nominees list #}
     <div class="divide-y divide-gray-100">
       {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
-      <div class="px-5 py-3 flex flex-wrap items-center gap-3">
+      <div class="px-5 py-3.5 flex flex-wrap items-center gap-3">
 
         {% if nom.type.value == 'PICK' %}
           <input type="checkbox"
                  name="pick_{{ nom.id }}"
                  value="{{ nominee.id }}"
                  id="pick_{{ nom.id }}_{{ nominee.id }}"
-                 class="w-4 h-4 text-indigo-600 rounded pick-cb"
+                 class="w-5 h-5 text-indigo-600 rounded pick-cb"
                  data-nom="{{ nom.id }}"
                  {% if draft and (nom.id|string) in draft.get('picks',{}) and (nominee.id|string) in draft['picks'][(nom.id|string)] %}checked{% endif %}
           />
-          <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-sm text-gray-800">
+          <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-800">
             {% if nominee.persons_label %}
               {% if nominee.person and nominee.person.url %}
-                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline">{{ nominee.persons_label }}</a>
+                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.persons_label }}</a>
               {% else %}
-                <span class="font-medium">{{ nominee.persons_label }}</span>
+                <span class="font-semibold">{{ nominee.persons_label }}</span>
               {% endif %}
               {% if nominee.film.url %}
                 — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
@@ -137,9 +137,9 @@
               {% endif %}
             {% elif nominee.item %}
               {% if nominee.item_url %}
-                <a href="{{ nominee.item_url }}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline">{{ nominee.item }}</a>
+                <a href="{{ nominee.item_url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.item }}</a>
               {% else %}
-                <span class="font-medium">{{ nominee.item }}</span>
+                <span class="font-semibold">{{ nominee.item }}</span>
               {% endif %}
               {% if nominee.film.url %}
                 — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
@@ -148,9 +148,9 @@
               {% endif %}
             {% else %}
               {% if nominee.film.url %}
-                <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+                <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
               {% else %}
-                <span class="font-medium">{{ nominee.film.title }}</span>
+                <span class="font-semibold">{{ nominee.film.title }}</span>
               {% endif %}
               <span class="text-gray-400"> ({{ nominee.film.year }})</span>
             {% endif %}
@@ -161,17 +161,17 @@
                  name="rank_{{ nom.id }}_{{ nominee.film_id }}"
                  min="1" max="{{ nom.nominees|length }}"
                  placeholder="—"
-                 class="rank-inp w-16 border border-gray-300 rounded-lg text-center py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                 class="rank-inp w-16 border border-gray-300 rounded-lg text-center py-1.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
                  data-nom="{{ nom.id }}"
                  data-max="{{ nom.nominees|length }}"
                  value="{% if draft and (nom.id|string) in draft.get('ranks',{}) %}{{ draft['ranks'][(nom.id|string)].get(nominee.film_id|string, '') }}{% endif %}"
           />
-          <span class="text-sm text-gray-800">
+          <span class="text-base text-gray-800">
             {% if nominee.person %}
               {% if nominee.person.url %}
-                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
+                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
               {% else %}
-                <span class="font-medium">{{ nominee.person.name }}</span>
+                <span class="font-semibold">{{ nominee.person.name }}</span>
               {% endif %}
               —
             {% endif %}
@@ -188,14 +188,14 @@
 
     {% if nom.type.value == 'PICK' and nom.has_runner_up %}
     <div class="border-t border-dashed border-amber-200 bg-amber-50 px-5 py-4">
-      <p class="text-xs font-semibold text-amber-700 mb-3">🥈 Runner-up (второй выбор)</p>
+      <p class="text-sm font-semibold text-amber-700 mb-3">🥈 Runner-up (второй выбор)</p>
       <div class="space-y-2">
         {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
         <div class="flex items-center gap-3">
           <input type="radio" name="runnerup_{{ nom.id }}" value="{{ nominee.id }}"
                  id="ru_{{ nom.id }}_{{ nominee.id }}" class="w-4 h-4 text-amber-500"
                  {% if draft and draft.get('runnerups',{}).get(nom.id|string) == (nominee.id|string) %}checked{% endif %} />
-          <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="text-sm text-gray-700 cursor-pointer">
+          <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="text-base text-gray-700 cursor-pointer">
             {% if nominee.persons_label %}{{ nominee.persons_label }} — {% endif %}
             {{ nominee.film.title }} ({{ nominee.film.year }})
           </label>
@@ -210,16 +210,16 @@
   {# navigation buttons for this slide #}
   <div class="flex items-center justify-between mt-4">
     <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
-            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
+            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
     <button type="button"
             onclick="saveDraft(false).then(() => {})"
-            class="border border-gray-200 text-gray-400 px-3 py-2 rounded-xl text-xs hover:bg-gray-50 transition" id="draft-btn-{{ loop.index }}">
+            class="border border-gray-200 text-gray-400 px-4 py-2 rounded-xl text-sm hover:bg-gray-50 transition" id="draft-btn-{{ loop.index }}">
       💾 Черновик
     </button>
     <button type="button" onclick="goToSlide({{ loop.index + 1 }})"
-            class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">
+            class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition">
       {% if loop.last %}Проверить бюллетень →{% else %}Далее →{% endif %}
     </button>
   </div>
@@ -231,22 +231,23 @@
 <div class="slide hidden" data-slide="{{ nominations|length + 1 }}">
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-      <h2 class="font-semibold text-gray-900">✅ Проверка бюллетеня</h2>
+      <h2 class="font-bold text-lg text-gray-900">✅ Проверка бюллетеня</h2>
       <button type="button" id="export-xlsx-btn"
-              class="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 transition">
+              class="inline-flex items-center gap-1 bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-green-700 transition">
         ↓ Скачать Excel
       </button>
     </div>
-    <div id="ballot-body" class="divide-y divide-gray-100 text-sm">{# filled by JS #}</div>
+    {# preview body — rendered by JS, each nom row has an edit button #}
+    <div id="ballot-body" class="divide-y divide-gray-100 text-base"></div>
   </div>
 
   <div class="flex items-center justify-between mt-2">
     <button type="button" onclick="goToSlide({{ nominations|length }})"
-            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
+            class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition">
       ← Назад
     </button>
     <button type="submit"
-            class="bg-indigo-600 text-white px-8 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition shadow">
+            class="bg-indigo-600 text-white px-8 py-2.5 rounded-xl text-base font-semibold hover:bg-indigo-700 transition shadow">
       ✅ Отправить голос
     </button>
   </div>
@@ -262,7 +263,7 @@
     <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
   </svg>
   <h2 class="text-xl font-bold text-gray-700 mb-2">Бюллетень ещё не готов</h2>
-  <p class="text-gray-400 text-sm max-w-xs">Номинации для раунда <strong>{{ round.label }}</strong> пока не назначены.</p>
+  <p class="text-gray-400 text-base max-w-xs">Номинации для раунда <strong>{{ round.label }}</strong> пока не назначены.</p>
 </div>
 {% endif %}
 
@@ -273,6 +274,7 @@ const NOM_DATA = [
   {% for nom in nominations %}
   {
     id: {{ nom.id }},
+    slideIndex: {{ loop.index }},
     name: {{ nom.name | tojson }},
     type: {{ nom.type.value | tojson }},
     pick_min: {{ nom.pick_min | tojson }},
@@ -342,7 +344,6 @@ goToSlide(0);
       g.counter.classList.toggle('text-gray-500', !(g.max && checked >= g.max));
       g.counter.classList.toggle('font-semibold', !!(g.max && checked >= g.max));
     }
-    // disable unchecked when max reached
     if (g.max && checked >= g.max) {
       g.checkboxes.forEach(cb => {
         if (!cb.checked) { cb.disabled = true; cb.closest('div').style.opacity = '0.4'; }
@@ -393,7 +394,6 @@ document.querySelectorAll('.rank-inp').forEach(inp => {
   });
 });
 
-// initial (draft-restored values)
 [...new Set([...document.querySelectorAll('.rank-inp')].map(i => i.dataset.nom))]
   .forEach(validateRankNom);
 
@@ -407,7 +407,6 @@ NOM_DATA.forEach(nom => {
     const checked = [...cbs].filter(c => c.checked).length;
     const warn = document.getElementById('warn-' + nom.id);
     if (!warn) return;
-    // 0 is always ok (skip); only warn if between 1 and pick_min-1
     if (checked > 0 && checked < nom.pick_min) {
       warn.textContent = `⚠️ Выбрано ${checked}, нужно ≥ ${nom.pick_min}`;
       warn.classList.remove('hidden');
@@ -422,7 +421,7 @@ NOM_DATA.forEach(nom => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// VALIDATE NOM (unified, used by pick groups)
+// VALIDATE NOM
 // ═══════════════════════════════════════════════════════════════════
 function validateNom(nomId) {
   const nom = NOM_DATA.find(n => n.id == nomId);
@@ -469,7 +468,7 @@ function updateToc() {
     if (!el) return;
     const { icon, cls } = getNomStatus(nom);
     el.textContent = icon;
-    el.className = `toc-status-${nom.id} text-xs ${cls}`;
+    el.className = `toc-status-${nom.id} text-sm ${cls}`;
   });
 }
 
@@ -478,7 +477,7 @@ function updateToc() {
 // ═══════════════════════════════════════════════════════════════════
 function getPickErrors(nom, checked) {
   const errors = [];
-  if (checked === 0) return []; // skip
+  if (checked === 0) return [];
   if (nom.pick_min && checked < nom.pick_min)
     errors.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
   if (nom.pick_max && checked > nom.pick_max)
@@ -488,7 +487,7 @@ function getPickErrors(nom, checked) {
 
 function getRankErrors(nom, vals) {
   const errors = [];
-  if (vals.length === 0) return []; // skip
+  if (vals.length === 0) return [];
   const hasDup = vals.length !== new Set(vals).size;
   if (hasDup)
     errors.push(`«${nom.name}»: одно место указано дважды`);
@@ -524,7 +523,6 @@ document.getElementById('vote-form').addEventListener('submit', function(e) {
     e.preventDefault();
     list.innerHTML = errors.map(err => `<li>${err}</li>`).join('');
     banner.classList.remove('hidden');
-    // jump to preview slide where banner is visible
     goToSlide(TOTAL_SLIDES);
     banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else {
@@ -533,7 +531,7 @@ document.getElementById('vote-form').addEventListener('submit', function(e) {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// BALLOT PREVIEW
+// BALLOT PREVIEW  —  with edit buttons
 // ═══════════════════════════════════════════════════════════════════
 function collectState() {
   const picks = {}, ranks = {};
@@ -560,14 +558,24 @@ function renderBallot() {
   if (!body) return;
   let html = '';
   NOM_DATA.forEach(nom => {
-    html += `<div class="px-5 py-3">`;
-    html += `<div class="font-semibold text-gray-700 mb-1 text-xs uppercase tracking-wide">${nom.name}</div>`;
+    const editBtn = `<button type="button"
+      onclick="goToSlide(${nom.slideIndex})"
+      class="ml-auto text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-400 rounded-lg px-2 py-0.5 transition whitespace-nowrap">
+      ✏️ Изменить
+    </button>`;
+
+    html += `<div class="px-5 py-4">`;
+    html += `<div class="flex items-center gap-2 mb-2">
+      <span class="font-semibold text-gray-800 text-base">${nom.name}</span>
+      ${editBtn}
+    </div>`;
+
     if (nom.type === 'PICK') {
       const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
       if (chosen.length === 0) {
-        html += `<p class="text-gray-400 text-xs italic">Пропущено</p>`;
+        html += `<p class="text-gray-400 text-sm italic">Пропущено</p>`;
       } else {
-        html += '<ul class="space-y-0.5">';
+        html += '<ul class="space-y-1">';
         chosen.forEach(nid => {
           const n = nom.nominees.find(x => x.id == nid);
           if (!n) return;
@@ -575,7 +583,7 @@ function renderBallot() {
           const entry = linkUrl
             ? `<a href="${linkUrl}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
             : `<span>${n.label}</span>`;
-          html += `<li class="text-sm text-gray-800">${entry}</li>`;
+          html += `<li class="text-base text-gray-800">${entry}</li>`;
         });
         html += '</ul>';
       }
@@ -583,9 +591,9 @@ function renderBallot() {
       const nomRanks = ranks[nom.id] || {};
       const entries = Object.entries(nomRanks).sort((a, b) => a[1] - b[1]);
       if (entries.length === 0) {
-        html += `<p class="text-gray-400 text-xs italic">Пропущено</p>`;
+        html += `<p class="text-gray-400 text-sm italic">Пропущено</p>`;
       } else {
-        html += '<ol class="space-y-0.5 list-none">';
+        html += '<ol class="space-y-1 list-none">';
         entries.forEach(([filmId, rank]) => {
           const n = nom.nominees.find(x => x.film_id == filmId);
           if (!n) return;
@@ -593,7 +601,7 @@ function renderBallot() {
           const entry = linkUrl
             ? `<a href="${linkUrl}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">${n.label}</a>`
             : `<span>${n.label}</span>`;
-          html += `<li class="text-sm text-gray-800"><span class="inline-block w-5 text-gray-400 tabular-nums text-xs">${rank}.</span> ${entry}</li>`;
+          html += `<li class="text-base text-gray-800"><span class="inline-block w-6 text-gray-400 tabular-nums text-sm">${rank}.</span> ${entry}</li>`;
         });
         html += '</ol>';
       }
@@ -682,7 +690,6 @@ document.querySelectorAll('[id^=draft-btn-]').forEach(btn => {
 });
 setInterval(() => saveDraft(true), 60000);
 
-// live autosave on any change
 document.querySelectorAll('#vote-form input').forEach(el => {
   el.addEventListener('change', () => {
     clearTimeout(draftTimer);
@@ -690,7 +697,6 @@ document.querySelectorAll('#vote-form input').forEach(el => {
   });
 });
 
-// initial TOC update
 updateToc();
 </script>
 
