@@ -92,6 +92,54 @@ _MIGRATIONS = [
 
     # votes.is_runner_up
     "ALTER TABLE votes ADD COLUMN is_runner_up INTEGER NOT NULL DEFAULT 0",
+
+    # ================================================================
+    # Contest + NominationTemplate system (added 2026-04-12)
+    # ================================================================
+
+    # contests table
+    """
+    CREATE TABLE IF NOT EXISTS contests (
+        id     INTEGER PRIMARY KEY AUTOINCREMENT,
+        year   INTEGER NOT NULL UNIQUE,
+        name   TEXT    NOT NULL,
+        status TEXT    NOT NULL DEFAULT 'DRAFT'
+    )
+    """,
+
+    # nomination_templates table
+    """
+    CREATE TABLE IF NOT EXISTS nomination_templates (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                    TEXT    NOT NULL,
+        description             TEXT,
+        type                    TEXT    NOT NULL,
+        sort_order              INTEGER NOT NULL DEFAULT 0,
+        is_archived             INTEGER NOT NULL DEFAULT 0,
+        longlist_nominees_count INTEGER,
+        longlist_pick_min       INTEGER,
+        longlist_pick_max       INTEGER,
+        final_promotes_count    INTEGER
+    )
+    """,
+
+    # contest_nominations join table
+    """
+    CREATE TABLE IF NOT EXISTS contest_nominations (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        contest_id  INTEGER NOT NULL REFERENCES contests(id),
+        template_id INTEGER NOT NULL REFERENCES nomination_templates(id),
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(contest_id, template_id)
+    )
+    """,
+
+    # rounds.contest_id + rounds.tour
+    "ALTER TABLE rounds ADD COLUMN contest_id INTEGER REFERENCES contests(id)",
+    "ALTER TABLE rounds ADD COLUMN tour INTEGER NOT NULL DEFAULT 1",
+
+    # nominations.contest_nomination_id
+    "ALTER TABLE nominations ADD COLUMN contest_nomination_id INTEGER REFERENCES contest_nominations(id)",
 ]
 
 
