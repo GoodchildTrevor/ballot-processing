@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Голос принят{% endblock %}
+
+{# override nav so the admin navbar doesn't bleed through on voter pages #}
+{% block nav %}
+<nav class="bg-indigo-700 text-white px-6 py-3 flex items-center gap-4 text-sm font-medium">
+  <span class="font-bold text-base">🎥 Кинопремия</span>
+</nav>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-lg mx-auto mt-24 text-center px-4">
   <div class="text-6xl mb-6">🎉</div>

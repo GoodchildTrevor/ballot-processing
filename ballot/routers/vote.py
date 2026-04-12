@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -41,6 +42,15 @@ templates = Jinja2Templates(directory="ballot/templates")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _content_disposition(filename: str) -> str:
+    """Return a Content-Disposition header value safe for non-ASCII filenames.
+    Uses RFC 5987 encoding so Cyrillic characters don\'t cause latin-1 errors.
+    """
+    ascii_name = filename.encode("ascii", "ignore").decode()
+    encoded_name = quote(filename, safe="")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8\'\'{encoded_name}"
+
 
 def _get_or_create_participation(
     db: Session, round_id: int, voter_id: int
@@ -69,7 +79,6 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
 
 
 def _find_active_round_for_year(db: Session, year: int) -> Round | None:
-    """Return the active round for a given year, preferring FINAL over LONGLIST."""
     return (
         db.query(Round)
         .filter(Round.year == year, Round.is_active == True)  # noqa: E712
@@ -79,7 +88,6 @@ def _find_active_round_for_year(db: Session, year: int) -> Round | None:
 
 
 def _render_vote_page(request, db, rnd, voter):
-    """Shared render logic for both URL schemes."""
     nominations = _nominations_for_round(db, rnd.id)
     participation = _get_or_create_participation(db, rnd.id, voter.id)
     db.commit()
@@ -95,7 +103,6 @@ def _render_vote_page(request, db, rnd, voter):
 
 
 def _check_round_open(request, rnd) -> HTMLResponse | None:
-    """Return an error response if round is closed/expired, else None."""
     if not rnd or not rnd.is_active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
@@ -112,7 +119,7 @@ def _check_round_open(request, rnd) -> HTMLResponse | None:
 
 
 # ---------------------------------------------------------------------------
-# /vote  – redirect to first active round
+# /vote
 # ---------------------------------------------------------------------------
 
 @router.get("/vote", response_class=HTMLResponse)
@@ -126,10 +133,6 @@ def vote_redirect(request: Request, db: Session = Depends(get_db)):
         )
     return RedirectResponse(url=f"/{active.year}/vote", status_code=302)
 
-
-# ---------------------------------------------------------------------------
-# GET /{year}/vote
-# ---------------------------------------------------------------------------
 
 @router.get("/{year}/vote", response_class=HTMLResponse)
 def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
@@ -147,10 +150,6 @@ def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
     return _render_vote_page(request, db, rnd, voter)
 
 
-# ---------------------------------------------------------------------------
-# POST /{year}/vote
-# ---------------------------------------------------------------------------
-
 @router.post("/{year}/vote")
 async def submit_vote_year(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
@@ -167,10 +166,6 @@ async def submit_vote_year(year: int, request: Request, db: Session = Depends(ge
     return await _do_submit(request, db, rnd, voter)
 
 
-# ---------------------------------------------------------------------------
-# POST /{year}/draft  – autosave
-# ---------------------------------------------------------------------------
-
 @router.post("/{year}/draft")
 async def save_draft_year(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
@@ -185,12 +180,11 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 
 # ---------------------------------------------------------------------------
-# POST /{year}/ballot-export  – client-side rows → xlsx download
+# POST /{year}/ballot-export
 # ---------------------------------------------------------------------------
 
 @router.post("/{year}/ballot-export")
 async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
-    """Accept JSON {rows: [[col, ...], ...]} and return an xlsx file."""
     voter: Voter = request.state.voter
     body: dict[str, Any] = await request.json()
     rows: list[list] = body.get("rows", [])
@@ -201,11 +195,10 @@ async def ballot_export(year: int, request: Request, db: Session = Depends(get_d
 
     for i, row in enumerate(rows):
         ws.append(row)
-        if i == 0:  # header row — bold
+        if i == 0:
             for cell in ws[1]:
                 cell.font = Font(bold=True)
 
-    # auto-width
     for col in ws.columns:
         max_len = max((len(str(c.value or "")) for c in col), default=10)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
@@ -213,17 +206,17 @@ async def ballot_export(year: int, request: Request, db: Session = Depends(get_d
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    safe_voter = voter.name.replace(" ", "_")
+
+    fname = f"ballot_{year}_{voter.name}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition":
-                 f"attachment; filename=ballot_{year}_{safe_voter}.xlsx"},
+        headers={"Content-Disposition": _content_disposition(fname)},
     )
 
 
 # ---------------------------------------------------------------------------
-# GET /rounds/{round_id}/vote  – compat
+# Compat routes
 # ---------------------------------------------------------------------------
 
 @router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
@@ -235,10 +228,6 @@ def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(url=f"/{rnd.year}/vote", status_code=301)
 
 
-# ---------------------------------------------------------------------------
-# POST /rounds/{round_id}/draft  – compat
-# ---------------------------------------------------------------------------
-
 @router.post("/rounds/{round_id}/draft")
 async def save_draft(round_id: int, request: Request, db: Session = Depends(get_db)):
     body = await request.json()
@@ -247,10 +236,6 @@ async def save_draft(round_id: int, request: Request, db: Session = Depends(get_
     db.commit()
     return {"ok": True}
 
-
-# ---------------------------------------------------------------------------
-# POST /rounds/{round_id}/vote  – compat
-# ---------------------------------------------------------------------------
 
 @router.post("/rounds/{round_id}/vote")
 async def submit_vote_compat(round_id: int, request: Request, db: Session = Depends(get_db)):
@@ -270,9 +255,7 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
 
-    round_nominee_ids = {
-        n.id for nom in nominations for n in nom.nominees
-    }
+    round_nominee_ids = {n.id for nom in nominations for n in nom.nominees}
 
     for nom in nominations:
         if nom.type == NominationType.RANK:
@@ -304,8 +287,7 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                 except ValueError:
                     pass
             if is_final and nom.has_runner_up:
-                ru_key = f"runnerup_{nom.id}"
-                ru_val = form.get(ru_key)
+                ru_val = form.get(f"runnerup_{nom.id}")
                 if ru_val:
                     try:
                         nid = int(ru_val)
@@ -313,10 +295,9 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                             db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=True))
                     except ValueError:
                         pass
-        else:  # RANK
+        else:
             for nominee in nom.nominees:
-                key = f"rank_{nom.id}_{nominee.film_id}"
-                val = form.get(key)
+                val = form.get(f"rank_{nom.id}_{nominee.film_id}")
                 if val:
                     try:
                         rank = int(val)
@@ -403,10 +384,8 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
 
     for nom in nominations:
         if nom.type == NominationType.PICK:
-            main_votes = [n for n in nom.nominees
-                          if n.id in pick_votes and not pick_votes[n.id]]
-            ru_votes   = [n for n in nom.nominees
-                          if n.id in pick_votes and pick_votes[n.id]]
+            main_votes = [n for n in nom.nominees if n.id in pick_votes and not pick_votes[n.id]]
+            ru_votes   = [n for n in nom.nominees if n.id in pick_votes and pick_votes[n.id]]
             for n in main_votes:
                 label = (n.persons_label and f"{n.persons_label} ({n.film.title})") \
                         or (n.item and f"{n.item} ({n.film.title})") \
@@ -434,11 +413,11 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    safe_name = voter.name.replace(" ", "_")
-    label_safe = (rnd.label if rnd else str(round_id)).replace(" ", "_")
+
+    label_safe = rnd.label if rnd else str(round_id)
+    fname = f"ballot_{voter.name}_{label_safe}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition":
-                 f"attachment; filename=ballot_{safe_name}_{label_safe}.xlsx"},
+        headers={"Content-Disposition": _content_disposition(fname)},
     )
