@@ -53,7 +53,6 @@ def _sheet_title(name: str) -> str:
 
 
 def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, link_font: Font):
-    """Write label into cell; if url provided, make it a hyperlink."""
     cell = ws.cell(row=row, column=col, value=label)
     if url:
         cell.hyperlink = url
@@ -62,7 +61,6 @@ def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, l
 
 
 def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
-    """Build xlsx where each nomination is a separate sheet."""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -82,14 +80,12 @@ def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
             title = raw_title
 
         ws = wb.create_sheet(title=title)
-
         ws.append([nom["name"]])
         ws.merge_cells(start_row=1, start_column=1, end_row=1,
                        end_column=max(len(nom["header"]), 1))
         ws.cell(1, 1).font = Font(bold=True, size=13)
         ws.cell(1, 1).alignment = Alignment(horizontal="left")
-        ws.append([])  # blank row
-
+        ws.append([])
         ws.append(nom["header"])
         for i in range(1, len(nom["header"]) + 1):
             cell = ws.cell(3, i)
@@ -105,11 +101,9 @@ def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
             else:
                 cols = row
                 urls = [None] * len(cols)
-
             for col_idx, (val, url) in enumerate(zip(cols, urls), start=1):
                 _write_cell_with_link(ws, data_row, col_idx, val, url or None, link_font)
             data_row += 1
-
         _auto_width(ws)
 
     buf = io.BytesIO()
@@ -144,16 +138,26 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
     )
 
 
-def _find_active_round_for_year(db: Session, year: int) -> Round | None:
-    """Return the active round for the year, preferring FINAL over LONGLIST."""
-    rounds = (
-        db.query(Round)
-        .filter(Round.year == year, Round.is_active == True)  # noqa: E712
-        .all()
+def _find_active_round_for_year(
+    db: Session, year: int, round_type: RoundType | None = None
+) -> Round | None:
+    """Return the active round for the year.
+
+    If round_type is given — return only that type.
+    Otherwise prefer FINAL over LONGLIST.
+    """
+    q = db.query(Round).filter(
+        Round.year == year,
+        Round.is_active == True,  # noqa: E712
     )
+    if round_type is not None:
+        q = q.filter(Round.round_type == round_type)
+    rounds = q.all()
     if not rounds:
         return None
-    # Prefer FINAL, then LONGLIST
+    if round_type is not None:
+        return rounds[0]
+    # prefer FINAL
     for rnd in rounds:
         if rnd.round_type == RoundType.FINAL:
             return rnd
@@ -161,12 +165,6 @@ def _find_active_round_for_year(db: Session, year: int) -> Round | None:
 
 
 def _find_latest_active_round(db: Session) -> Round | None:
-    """Return the most relevant active round across all years.
-
-    Priority:
-    1. FINAL round — most recent year first
-    2. LONGLIST round — most recent year first
-    """
     active = (
         db.query(Round)
         .filter(Round.is_active == True)  # noqa: E712
@@ -175,11 +173,9 @@ def _find_latest_active_round(db: Session) -> Round | None:
     )
     if not active:
         return None
-    # prefer FINAL of the most recent year that has a FINAL
     for rnd in active:
         if rnd.round_type == RoundType.FINAL:
             return rnd
-    # fallback: most recent LONGLIST
     return active[0]
 
 
@@ -199,22 +195,12 @@ def _render_vote_page(request, db, rnd, voter):
 
 
 def _deadline_passed(rnd: Round) -> bool:
-    """Return True if the round has a deadline and it has passed.
-
-    Handles both naive (no tzinfo) and aware datetimes stored in DB.
-    For naive datetimes, interpret them as local time and convert to UTC
-    for correct comparison with current UTC time.
-    """
     if not rnd.deadline:
         return False
     dl = rnd.deadline
     if dl.tzinfo is None:
-        # Treat naive datetimes as local time
-        local_tz = datetime.now().astimezone().tzinfo
-        dl = dl.replace(tzinfo=local_tz)
-    # Compare in UTC
-    dl_utc = dl.astimezone(timezone.utc)
-    return datetime.now(timezone.utc) > dl_utc
+        dl = dl.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > dl
 
 
 def _check_round_open(request, rnd) -> HTMLResponse | None:
@@ -246,17 +232,33 @@ def vote_redirect(request: Request, db: Session = Depends(get_db)):
             {"nom": None, "message": "Активных раундов нет."},
             status_code=403,
         )
-    return RedirectResponse(url=f"/{active.year}/vote", status_code=302)
+    slug = "final" if active.round_type == RoundType.FINAL else "longlist"
+    return RedirectResponse(url=f"/{active.year}/vote/{slug}", status_code=302)
 
 
+# /{year}/vote  — prefers FINAL, redirects to typed URL
 @router.get("/{year}/vote", response_class=HTMLResponse)
 def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
-    voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year)
     if not rnd:
         return templates.TemplateResponse(
             request, "voting_closed.html",
             {"nom": None, "message": f"Активных раундов для {year} года нет."},
+            status_code=403,
+        )
+    slug = "final" if rnd.round_type == RoundType.FINAL else "longlist"
+    return RedirectResponse(url=f"/{year}/vote/{slug}", status_code=302)
+
+
+# /{year}/vote/longlist
+@router.get("/{year}/vote/longlist", response_class=HTMLResponse)
+def vote_longlist(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year, RoundType.LONGLIST)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активного лонг-листа для {year} года нет."},
             status_code=403,
         )
     err = _check_round_open(request, rnd)
@@ -265,14 +267,47 @@ def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
     return _render_vote_page(request, db, rnd, voter)
 
 
-@router.post("/{year}/vote")
-async def submit_vote_year(year: int, request: Request, db: Session = Depends(get_db)):
+@router.post("/{year}/vote/longlist")
+async def submit_vote_longlist(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
-    rnd = _find_active_round_for_year(db, year)
+    rnd = _find_active_round_for_year(db, year, RoundType.LONGLIST)
     if not rnd:
         return templates.TemplateResponse(
             request, "voting_closed.html",
-            {"nom": None, "message": f"Активных раундов для {year} года нет."},
+            {"nom": None, "message": f"Активного лонг-листа для {year} года нет."},
+            status_code=403,
+        )
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return await _do_submit(request, db, rnd, voter)
+
+
+# /{year}/vote/final
+@router.get("/{year}/vote/final", response_class=HTMLResponse)
+def vote_final(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year, RoundType.FINAL)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активного финала для {year} года нет."},
+            status_code=403,
+        )
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return _render_vote_page(request, db, rnd, voter)
+
+
+@router.post("/{year}/vote/final")
+async def submit_vote_final(year: int, request: Request, db: Session = Depends(get_db)):
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year, RoundType.FINAL)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активного финала для {year} года нет."},
             status_code=403,
         )
     err = _check_round_open(request, rnd)
@@ -303,7 +338,6 @@ async def ballot_export(year: int, request: Request, db: Session = Depends(get_d
     voter: Voter = request.state.voter
     body: dict[str, Any] = await request.json()
     nominations_data: list[dict] = body.get("nominations", [])
-
     buf = _build_xlsx_per_nomination(nominations_data)
     fname = f"ballot_{year}_{voter.name}.xlsx"
     return StreamingResponse(
@@ -314,16 +348,20 @@ async def ballot_export(year: int, request: Request, db: Session = Depends(get_d
 
 
 # ---------------------------------------------------------------------------
-# Compat routes
+# Compat routes (legacy round_id URLs)
 # ---------------------------------------------------------------------------
 
 @router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
 def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
     rnd = db.get(Round, round_id)
-    err = _check_round_open(request, rnd)
-    if err:
-        return err
-    return RedirectResponse(url=f"/{rnd.year}/vote", status_code=301)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": "Раунд не найден."},
+            status_code=404,
+        )
+    slug = "final" if rnd.round_type == RoundType.FINAL else "longlist"
+    return RedirectResponse(url=f"/{rnd.year}/vote/{slug}", status_code=301)
 
 
 @router.post("/rounds/{round_id}/draft")
@@ -352,7 +390,6 @@ async def submit_vote_compat(round_id: int, request: Request, db: Session = Depe
 async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
-
     round_nominee_ids = {n.id for nom in nominations for n in nom.nominees}
 
     for nom in nominations:
@@ -413,6 +450,7 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     participation.voted_at = datetime.now(timezone.utc)
     participation.draft = None
     db.commit()
+    slug = "final" if rnd.round_type == RoundType.FINAL else "longlist"
     return RedirectResponse(url=f"/thank-you?round_id={rnd.id}", status_code=303)
 
 

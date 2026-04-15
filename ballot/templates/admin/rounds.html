@@ -176,6 +176,8 @@
       {% if contest.rounds %}
       <div class="divide-y divide-gray-100">
         {% for rnd in contest.rounds | sort(attribute='tour') %}
+        {% set vote_slug = 'final' if rnd.round_type.value == 'FINAL' else 'longlist' %}
+        {% set vote_url = '/' ~ rnd.year ~ '/vote/' ~ vote_slug %}
         <div x-data="{ showEdit: false }" class="px-5 py-3">
           <div class="flex flex-wrap items-center gap-2">
             {% if rnd.round_type.value == 'LONGLIST' %}
@@ -197,11 +199,12 @@
 
             {# ── Vote link ── #}
             <div x-data="{ copied: false }" class="flex items-center gap-1">
-              <span class="text-xs text-gray-400 font-mono bg-gray-50 border border-gray-200 rounded px-2 py-0.5 select-all">
-                /{{ rnd.year }}/vote
+              <span class="text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-0.5 select-all
+                {% if rnd.round_type.value == 'FINAL' %}text-amber-600{% else %}text-blue-500{% endif %}">
+                {{ vote_url }}
               </span>
               <button type="button"
-                      @click="navigator.clipboard.writeText(window.location.origin + '/{{ rnd.year }}/vote').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
+                      @click="navigator.clipboard.writeText(window.location.origin + '{{ vote_url }}').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
                       class="text-xs text-gray-400 hover:text-indigo-600 transition px-1"
                       :title="copied ? 'Скопировано!' : 'Копировать ссылку'">
                 <span x-text="copied ? '✓' : '⎘'"></span>
@@ -270,6 +273,8 @@
   <h2 class="text-lg font-bold text-gray-600 mb-3">Отдельные раунды</h2>
   <div class="space-y-3">
     {% for rnd in standalone %}
+    {% set vote_slug = 'final' if rnd.round_type.value == 'FINAL' else 'longlist' %}
+    {% set vote_url = '/' ~ rnd.year ~ '/vote/' ~ vote_slug %}
     <div x-data="{ showEdit: false }"
          class="bg-white border {% if rnd.is_active %}border-green-400{% else %}border-gray-200{% endif %} rounded-xl shadow-sm overflow-hidden">
       <div class="flex flex-wrap items-center gap-3 px-5 py-4">
@@ -293,11 +298,12 @@
 
         {# ── Vote link ── #}
         <div x-data="{ copied: false }" class="flex items-center gap-1">
-          <span class="text-xs text-gray-400 font-mono bg-gray-50 border border-gray-200 rounded px-2 py-0.5 select-all">
-            /{{ rnd.year }}/vote
+          <span class="text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-0.5 select-all
+            {% if rnd.round_type.value == 'FINAL' %}text-amber-600{% else %}text-blue-500{% endif %}">
+            {{ vote_url }}
           </span>
           <button type="button"
-                  @click="navigator.clipboard.writeText(window.location.origin + '/{{ rnd.year }}/vote').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
+                  @click="navigator.clipboard.writeText(window.location.origin + '{{ vote_url }}').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
                   class="text-xs text-gray-400 hover:text-indigo-600 transition px-1"
                   :title="copied ? 'Скопировано!' : 'Копировать ссылку'">
             <span x-text="copied ? '✓' : '⎘'"></span>
