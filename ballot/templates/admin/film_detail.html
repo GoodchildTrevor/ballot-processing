@@ -76,9 +76,9 @@
   </form>
 </div>
 
-<div class="bg-white shadow rounded-xl p-6">
+<div class="bg-white shadow rounded-xl p-6 mb-6">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-листы этого фильма</h2>
-  {% if film.nominees %}
+  {% if longlists %}
   <table class="w-full text-sm">
     <thead class="text-left text-xs text-gray-500 border-b">
       <tr>
@@ -90,7 +90,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for nominee in film.nominees %}
+      {% for nominee in longlists %}
       <tr class="border-b last:border-0 hover:bg-gray-50">
         <td class="py-2 pr-4">{{ nominee.nomination.name }}</td>
         <td class="py-2 pr-4">
@@ -119,7 +119,54 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-sm text-gray-400">Фильм ещё не добавлен ни в одну номинацию.</p>
+  <p class="text-sm text-gray-400">Фильм ещё не добавлен в лонг-листы.</p>
+  {% endif %}
+</div>
+
+<div class="bg-white shadow rounded-xl p-6">
+  <h2 class="text-base font-semibold mb-4 text-gray-700">Финалы</h2>
+  {% if finals %}
+  <table class="w-full text-sm">
+    <thead class="text-left text-xs text-gray-500 border-b">
+      <tr>
+        <th class="pb-2 pr-4">Номинация</th>
+        <th class="pb-2 pr-4">Персона</th>
+        <th class="pb-2 pr-4">Элемент</th>
+        <th class="pb-2 pr-4">Ссылка</th>
+        <th class="pb-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for nominee in finals %}
+      <tr class="border-b last:border-0 hover:bg-gray-50">
+        <td class="py-2 pr-4">{{ nominee.nomination.name }}</td>
+        <td class="py-2 pr-4">
+          {% if nominee.person %}
+          <a href="/admin/persons/{{ nominee.person.id }}"
+             class="text-indigo-500 hover:underline">{{ nominee.person.name }}</a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="py-2 pr-4">
+          {% if nominee.item %}{{ nominee.item }}{% else %}—{% endif %}
+        </td>
+        <td class="py-2 pr-4">
+          {% if nominee.item_url %}
+          <a href="{{ nominee.item_url }}" target="_blank" rel="noopener noreferrer"
+             class="text-xs text-indigo-400 hover:underline truncate max-w-xs inline-block">↗ ссылка</a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="py-2">
+          <form method="post" action="/admin/nominees/{{ nominee.id }}/delete">
+            <input type="hidden" name="back" value="film">
+            <button type="submit" class="text-red-400 hover:underline text-xs">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-gray-400">Фильм не попал в финалы.</p>
   {% endif %}
 </div>
 

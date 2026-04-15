@@ -82,13 +82,17 @@ def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
 
     longlists_count = 0
     nominations_count = 0
+    finals = []
+    longlists = []
     for n in film.nominees:
         rnd = n.nomination.round if n.nomination else None
         if rnd and rnd.round_type == RoundType.FINAL:
             nominations_count += 1
+            finals.append(n)
         else:
             # LONGLIST round or no round at all — both count as longlists
             longlists_count += 1
+            longlists.append(n)
 
     nominations = db.query(Nomination).order_by(Nomination.sort_order, Nomination.id).all()
     persons = db.query(Person).order_by(Person.name).all()
@@ -98,6 +102,8 @@ def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
         "persons": persons,
         "longlists_count": longlists_count,
         "nominations_count": nominations_count,
+        "finals": finals,
+        "longlists": longlists,
     })
 
 
