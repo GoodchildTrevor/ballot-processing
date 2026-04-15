@@ -201,15 +201,20 @@ def _render_vote_page(request, db, rnd, voter):
 def _deadline_passed(rnd: Round) -> bool:
     """Return True if the round has a deadline and it has passed.
 
-    Handles both naive (no tzinfo) and aware (UTC) datetimes stored in DB.
+    Handles both naive (no tzinfo) and aware datetimes stored in DB.
+    For naive datetimes, interpret them as local time and convert to UTC
+    for correct comparison with current UTC time.
     """
     if not rnd.deadline:
         return False
     dl = rnd.deadline
-    # Make deadline timezone-aware (UTC) if it is naive
     if dl.tzinfo is None:
-        dl = dl.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) > dl
+        # Treat naive datetimes as local time
+        local_tz = datetime.now().astimezone().tzinfo
+        dl = dl.replace(tzinfo=local_tz)
+    # Compare in UTC
+    dl_utc = dl.astimezone(timezone.utc)
+    return datetime.now(timezone.utc) > dl_utc
 
 
 def _check_round_open(request, rnd) -> HTMLResponse | None:
