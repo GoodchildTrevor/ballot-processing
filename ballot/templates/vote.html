@@ -76,7 +76,8 @@
 </div>
 
 {# ══ SLIDES 1…N — NOMINATIONS ══ #}
-<form id="vote-form" method="post" action="/{{ round.year }}/vote/{{ 'final' if round.round_type.value == 'FINAL' else 'longlist' }}" onsubmit="return validateAndSubmit();">
+{# NOTE: no onsubmit here — validateAndSubmit() calls form.submit() directly #}
+<form id="vote-form" method="post" action="/{{ round.year }}/vote/{{ 'final' if round.round_type.value == 'FINAL' else 'longlist' }}">
 {% set is_final = (round.round_type.value == 'FINAL') %}
 {% for nom in nominations %}
 <div class="slide hidden" data-slide="{{ loop.index }}" data-nom-id="{{ nom.id }}">
@@ -318,6 +319,7 @@ const NOM_DATA = [
     pick_max: {{ nom.pick_max | tojson }},
     nominees_count: {{ nom.nominees_count | tojson }},
     total: {{ nom.nominees | length }},
+    has_runner_up: {{ 'true' if nom.has_runner_up else 'false' }},
     nominees: [
       {% for n in nom.nominees | sort(attribute='label_for_sort') %}
       {
@@ -476,26 +478,43 @@ function updateToc() {
 function getPickErrors(nom, checked) {
   if (checked === 0) return [];
   const e = [];
-  if (nom.pick_min && checked < nom.pick_min) {
+  if (nom.pick_min && checked < nom.pick_min)
     e.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
-    e.push(`Недопустимое число номинантов в PICK: ${nom.name}`);
-  }
-  if (nom.pick_max && checked > nom.pick_max) {
+  if (nom.pick_max && checked > nom.pick_max)
     e.push(`«${nom.name}»: выбрано ${checked}, максимум ${nom.pick_max}`);
-    e.push(`Недопустимое число номинантов в PICK: ${nom.name}`);
-  }
   return e;
 }
 function getRankErrors(nom, vals) {
   if (vals.length === 0) return [];
   const e = [];
   const max = rankMax(nom);
-  if (vals.length !== new Set(vals).size) {
+  if (vals.length !== new Set(vals).size)
     e.push(`«${nom.name}»: одно место указано дважды`);
-    e.push(`одно место 2 и более раз в RANK: ${nom.name}`);
-  }
-  if (vals.some(v => v > max)) e.push(`«${nom.name}»: место не может быть больше ${max}`);
-  if (IS_FINAL && vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
+  if (vals.some(v => v > max))
+    e.push(`«${nom.name}»: место не может быть больше ${max}`);
+  if (IS_FINAL && vals.length < nom.total)
+    e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
+  return e;
+}
+function getRunnerUpErrors() {
+  const e = [];
+  NOM_DATA.forEach(nom => {
+    if (nom.type !== 'PICK' || !nom.has_runner_up) return;
+    const ruEl = document.querySelector(`input[type=radio][name="runnerup_${nom.id}"]:checked`);
+    if (!ruEl) return; // runner-up не выбран — это ок
+    const ruId = ruEl.value;
+    // Найти выбранный winner (pick с pick_max=1 или любой единственный checked)
+    const pickedCbs = [...document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
+    // Ошибка: runner-up совпадает с единственным выбранным победителем
+    if (pickedCbs.length === 1 && pickedCbs[0].value === ruId) {
+      e.push(`«${nom.name}»: победитель и runner-up — один и тот же номинант`);
+    }
+    // Ошибка: runner-up выбран, но его нет в picks вообще (не отмечен чекбоксом)
+    const ruInPicks = pickedCbs.some(c => c.value === ruId);
+    if (!ruInPicks && pickedCbs.length > 0) {
+      e.push(`«${nom.name}»: runner-up не входит в выбранных номинантов`);
+    }
+  });
   return e;
 }
 function collectAllErrors() {
@@ -510,28 +529,13 @@ function collectAllErrors() {
       e.push(...getRankErrors(nom, vals));
     }
   });
+  e.push(...getRunnerUpErrors());
   return e;
 }
 
-// ── validateAndSubmit — вызывается прямо с кнопки через onclick ──
+// ── validateAndSubmit — вызывается только через onclick ──
 function validateAndSubmit() {
   const errors = collectAllErrors();
-
-  // Validate runner-up selections by inspecting radio inputs on the page:
-  // for each checked runnerup radio ensure the corresponding pick checkbox for the same nomination is checked.
-  document.querySelectorAll('input[type=radio][name^="runnerup_"]:checked').forEach(ruEl => {
-    const m = ruEl.name.match(/runnerup_(\d+)/);
-    if (!m) return;
-    const nomId = m[1];
-    const ruVal = ruEl.value;
-    const pickCb = document.querySelector(`input.pick-cb[data-nom="${nomId}"][value="${ruVal}"]`);
-    if (!pickCb || !pickCb.checked) {
-      const nomLabelEl = document.querySelector(`.slide[data-nom-id="${nomId}"] .font-bold`);
-      const nomName = nomLabelEl ? nomLabelEl.textContent.trim() : `номинация ${nomId}`;
-      errors.push(`«${nomName}»: runner-up выбран, но он не отмечен в выборе. Добавьте его в выбор или уберите runner-up.`);
-    }
-  });
-
   const banner = document.getElementById('error-banner');
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
@@ -539,13 +543,9 @@ function validateAndSubmit() {
     banner.classList.remove('hidden');
     goToSlide(TOTAL_SLIDES);
     window.scrollTo({ top: 0, behavior: 'instant' });
-    return false;
   } else {
     banner.classList.add('hidden');
-    const form = document.getElementById('vote-form');
-    // Ensure form posts to the correct endpoint (final vs longlist)
-    form.action = `/${YEAR}/vote/${IS_FINAL ? 'final' : 'longlist'}`;
-    return true;
+    document.getElementById('vote-form').submit();
   }
 }
 
@@ -624,7 +624,7 @@ function renderBallot() {
   body.innerHTML = html;
 }
 
-// ── XLSX export — rows now carry urls for hyperlinks ──
+// ── XLSX export ──
 document.getElementById('export-xlsx-btn').addEventListener('click', async function() {
   const { picks, ranks } = collectState();
   const nominations = NOM_DATA.map(nom => {
