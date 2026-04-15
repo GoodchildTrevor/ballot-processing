@@ -422,12 +422,12 @@
           <div x-show="!editing"
                x-data="{ addingUrl: false, urlVal: {{ nominee.person.url | tojson if nominee.person.url else "''" }} }">
             {% if nominee.person.url %}
-            <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer"
-               class="text-indigo-600 hover:underline inline-flex items-center gap-1">{{ nominee.person.name }}
+            <a href="/admin/persons/{{ nominee.person.id }}" class="text-indigo-600 hover:underline inline-flex items-center gap-1">{{ nominee.person.name }}</a>
+            <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="text-gray-400 ml-1" title="Внешняя ссылка">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>
             {% else %}
-            <span class="text-gray-700">{{ nominee.person.name }}</span>
+            <a href="/admin/persons/{{ nominee.person.id }}" class="text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
             <button type="button" @click="addingUrl = true"
                     class="ml-1 text-xs text-gray-400 hover:text-indigo-500 transition" title="Добавить ссылку">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
