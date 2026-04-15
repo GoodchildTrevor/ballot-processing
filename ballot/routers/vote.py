@@ -194,12 +194,26 @@ def _render_vote_page(request, db, rnd, voter):
     })
 
 
+def _deadline_passed(rnd: Round) -> bool:
+    if not rnd.deadline:
+        return False
+    dl = rnd.deadline
+    if dl.tzinfo is None:
+        dl = dl.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > dl
+
+
 def _check_round_open(request, rnd) -> HTMLResponse | None:
-    """Block only if round is inactive. Deadline is informational — managed via ▶/⏸."""
     if not rnd or not rnd.is_active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
             {"nom": None, "message": "Этот раунд не активен."},
+            status_code=403,
+        )
+    if _deadline_passed(rnd):
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
             status_code=403,
         )
     return None
@@ -436,6 +450,7 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     participation.voted_at = datetime.now(timezone.utc)
     participation.draft = None
     db.commit()
+    slug = "final" if rnd.round_type == RoundType.FINAL else "longlist"
     return RedirectResponse(url=f"/thank-you?round_id={rnd.id}", status_code=303)
 
 
