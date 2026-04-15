@@ -59,6 +59,25 @@ def edit_person(
     return RedirectResponse(url="/admin/persons", status_code=303)
 
 
+@router.post("/persons/{person_id}/set-url")
+async def set_person_url(
+    person_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Quick URL setter — back=<url> redirects to caller page after save."""
+    form = await request.form()
+    url_val = (form.get("url") or "").strip()
+    back = (form.get("back") or "/admin/persons").strip()
+
+    person = db.get(Person, person_id)
+    if person:
+        person.url = url_val or None
+        db.commit()
+
+    return RedirectResponse(url=back, status_code=303)
+
+
 @router.get("/persons/{person_id}", response_class=HTMLResponse)
 def person_detail(person_id: int, request: Request, db: Session = Depends(get_db)):
     person = (
@@ -93,10 +112,8 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
             if rnd.round_type == RoundType.FINAL:
                 nominations_count += 1
             else:
-                # LONGLIST or any other type
                 longlists_count += 1
         else:
-            # No round assigned — treat as longlist
             no_round_nom[nom].append(n)
             longlists_count += 1
 
