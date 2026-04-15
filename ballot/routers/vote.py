@@ -198,6 +198,20 @@ def _render_vote_page(request, db, rnd, voter):
     })
 
 
+def _deadline_passed(rnd: Round) -> bool:
+    """Return True if the round has a deadline and it has passed.
+
+    Handles both naive (no tzinfo) and aware (UTC) datetimes stored in DB.
+    """
+    if not rnd.deadline:
+        return False
+    dl = rnd.deadline
+    # Make deadline timezone-aware (UTC) if it is naive
+    if dl.tzinfo is None:
+        dl = dl.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > dl
+
+
 def _check_round_open(request, rnd) -> HTMLResponse | None:
     if not rnd or not rnd.is_active:
         return templates.TemplateResponse(
@@ -205,7 +219,7 @@ def _check_round_open(request, rnd) -> HTMLResponse | None:
             {"nom": None, "message": "Этот раунд не активен."},
             status_code=403,
         )
-    if rnd.deadline and datetime.now() > rnd.deadline:
+    if _deadline_passed(rnd):
         return templates.TemplateResponse(
             request, "voting_closed.html",
             {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
