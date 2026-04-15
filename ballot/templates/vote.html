@@ -185,6 +185,7 @@
       {% endfor %}
     </div>
 
+    {# ══ RUNNER-UP ══ #}
     {% if nom.type.value == 'PICK' and nom.has_runner_up %}
     <div class="border-t border-dashed border-amber-200 bg-amber-50 px-5 py-4">
       <p class="text-sm font-semibold text-amber-700 mb-3">🥈 Runner-up (второй выбор)</p>
@@ -194,9 +195,37 @@
           <input type="radio" name="runnerup_{{ nom.id }}" value="{{ nominee.id }}"
                  id="ru_{{ nom.id }}_{{ nominee.id }}" class="w-4 h-4 text-amber-500"
                  {% if draft and draft.get('runnerups',{}).get(nom.id|string) == (nominee.id|string) %}checked{% endif %} />
-          <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="text-base text-gray-700 cursor-pointer">
-            {% if nominee.persons_label %}{{ nominee.persons_label }} — {% endif %}
-            {{ nominee.film.title }} ({{ nominee.film.year }})
+          <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-700">
+            {% if nominee.persons_label %}
+              {% if nominee.person and nominee.person.url %}
+                <a href="{{ nominee.person.url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.persons_label }}</a>
+              {% else %}
+                <span class="font-semibold">{{ nominee.persons_label }}</span>
+              {% endif %}
+              {% if nominee.film.url %}
+                — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
+              {% else %}
+                <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% endif %}
+            {% elif nominee.item %}
+              {% if nominee.item_url %}
+                <a href="{{ nominee.item_url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.item }}</a>
+              {% else %}
+                <span class="font-semibold">{{ nominee.item }}</span>
+              {% endif %}
+              {% if nominee.film.url %}
+                — <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="text-gray-500 hover:underline">{{ nominee.film.title }} ({{ nominee.film.year }})</a>
+              {% else %}
+                <span class="text-gray-400"> — {{ nominee.film.title }} ({{ nominee.film.year }})</span>
+              {% endif %}
+            {% else %}
+              {% if nominee.film.url %}
+                <a href="{{ nominee.film.url }}" target="_blank" rel="noopener" class="font-semibold text-indigo-600 hover:underline">{{ nominee.film.title }}</a>
+              {% else %}
+                <span class="font-semibold">{{ nominee.film.title }}</span>
+              {% endif %}
+              <span class="text-gray-400"> ({{ nominee.film.year }})</span>
+            {% endif %}
           </label>
         </div>
         {% endfor %}
@@ -662,10 +691,8 @@ updateToc();
   let countdownInterval = null;
 
   function expireVoting() {
-    // Prevent further autosaves/submits
     try { if (typeof draftTimer !== 'undefined') clearTimeout(draftTimer); } catch(e) {}
     try { if (typeof saveDraftInterval !== 'undefined') clearInterval(saveDraftInterval); } catch(e) {}
-    // Hide slides and show closed message
     const slides = document.getElementById('slides');
     if (slides) {
       slides.innerHTML = `
@@ -678,7 +705,6 @@ updateToc();
           </div>
         </div>`;
     }
-    // Update nav countdown
     el.textContent = 'истёк';
     el.style.color = '#ef4444';
   }
