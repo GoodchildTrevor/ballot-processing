@@ -28,7 +28,11 @@
 {# ── Error banner — above slides ── #}
 <div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
   <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
-  <ul id="error-list" class="list-disc list-inside space-y-1"></ul>
+  <ul id="error-list" class="list-disc list-inside space-y-1">
+    {% if error_message %}
+      <li>{{ error_message }}</li>
+    {% endif %}
+  </ul>
 </div>
 
 <div id="slides">
@@ -72,7 +76,7 @@
 </div>
 
 {# ══ SLIDES 1…N — NOMINATIONS ══ #}
-<form id="vote-form" method="post" action="/{{ round.year }}/vote">
+<form id="vote-form" method="post" action="/{{ round.year }}/vote/{{ 'final' if round.round_type.value == 'FINAL' else 'longlist' }}" onsubmit="return validateAndSubmit();">
 {% set is_final = (round.round_type.value == 'FINAL') %}
 {% for nom in nominations %}
 <div class="slide hidden" data-slide="{{ loop.index }}" data-nom-id="{{ nom.id }}">
@@ -472,15 +476,24 @@ function updateToc() {
 function getPickErrors(nom, checked) {
   if (checked === 0) return [];
   const e = [];
-  if (nom.pick_min && checked < nom.pick_min) e.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
-  if (nom.pick_max && checked > nom.pick_max) e.push(`«${nom.name}»: выбрано ${checked}, максимум ${nom.pick_max}`);
+  if (nom.pick_min && checked < nom.pick_min) {
+    e.push(`«${nom.name}»: выбрано ${checked}, нужно не менее ${nom.pick_min}`);
+    e.push(`Недопустимое число номинантов в PICK: ${nom.name}`);
+  }
+  if (nom.pick_max && checked > nom.pick_max) {
+    e.push(`«${nom.name}»: выбрано ${checked}, максимум ${nom.pick_max}`);
+    e.push(`Недопустимое число номинантов в PICK: ${nom.name}`);
+  }
   return e;
 }
 function getRankErrors(nom, vals) {
   if (vals.length === 0) return [];
   const e = [];
   const max = rankMax(nom);
-  if (vals.length !== new Set(vals).size) e.push(`«${nom.name}»: одно место указано дважды`);
+  if (vals.length !== new Set(vals).size) {
+    e.push(`«${nom.name}»: одно место указано дважды`);
+    e.push(`одно место 2 и более раз в RANK: ${nom.name}`);
+  }
   if (vals.some(v => v > max)) e.push(`«${nom.name}»: место не может быть больше ${max}`);
   if (IS_FINAL && vals.length < nom.total) e.push(`«${nom.name}»: расставлено ${vals.length} из ${nom.total} мест`);
   return e;
@@ -503,6 +516,22 @@ function collectAllErrors() {
 // ── validateAndSubmit — вызывается прямо с кнопки через onclick ──
 function validateAndSubmit() {
   const errors = collectAllErrors();
+
+  // Validate runner-up selections by inspecting radio inputs on the page:
+  // for each checked runnerup radio ensure the corresponding pick checkbox for the same nomination is checked.
+  document.querySelectorAll('input[type=radio][name^="runnerup_"]:checked').forEach(ruEl => {
+    const m = ruEl.name.match(/runnerup_(\d+)/);
+    if (!m) return;
+    const nomId = m[1];
+    const ruVal = ruEl.value;
+    const pickCb = document.querySelector(`input.pick-cb[data-nom="${nomId}"][value="${ruVal}"]`);
+    if (!pickCb || !pickCb.checked) {
+      const nomLabelEl = document.querySelector(`.slide[data-nom-id="${nomId}"] .font-bold`);
+      const nomName = nomLabelEl ? nomLabelEl.textContent.trim() : `номинация ${nomId}`;
+      errors.push(`«${nomName}»: runner-up выбран, но он не отмечен в выборе. Добавьте его в выбор или уберите runner-up.`);
+    }
+  });
+
   const banner = document.getElementById('error-banner');
   const list = document.getElementById('error-list');
   if (errors.length > 0) {
@@ -510,9 +539,13 @@ function validateAndSubmit() {
     banner.classList.remove('hidden');
     goToSlide(TOTAL_SLIDES);
     window.scrollTo({ top: 0, behavior: 'instant' });
+    return false;
   } else {
     banner.classList.add('hidden');
-    document.getElementById('vote-form').submit();
+    const form = document.getElementById('vote-form');
+    // Ensure form posts to the correct endpoint (final vs longlist)
+    form.action = `/${YEAR}/vote/${IS_FINAL ? 'final' : 'longlist'}`;
+    return true;
   }
 }
 

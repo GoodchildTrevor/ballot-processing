@@ -324,6 +324,25 @@ async def submit_vote_final(year: int, request: Request, db: Session = Depends(g
         return err
     return await _do_submit(request, db, rnd, voter)
 
+@router.post("/{year}/vote")
+async def submit_vote_year(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Compatibility POST endpoint: accept form posts to /{year}/vote and dispatch
+    to the currently active round (FINAL or LONGLIST).
+    """
+    voter: Voter = request.state.voter
+    rnd = _find_active_round_for_year(db, year)
+    if not rnd:
+        return templates.TemplateResponse(
+            request, "voting_closed.html",
+            {"nom": None, "message": f"Активного раунда для {year} года нет."},
+            status_code=403,
+        )
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+    return await _do_submit(request, db, rnd, voter)
+
 
 @router.post("/{year}/draft")
 async def save_draft_year(year: int, request: Request, db: Session = Depends(get_db)):
@@ -404,6 +423,82 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
 
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
+
+    # Server-side validation: runner-up (if provided) must be among picks for the same nomination.
+    # If invalid, restore draft and show vote page with an error so the user can fix choices.
+    invalid_runnerups: list[tuple[Nomination, str]] = []
+    picks_map: dict[str, list[str]] = {}
+    runnerups_map: dict[str, str] = {}
+    for nom in nominations:
+        if nom.type == NominationType.PICK:
+            raw_picks = form.getlist(f"pick_{nom.id}") or []
+            picks_set = {str(x) for x in raw_picks}
+            picks_map[str(nom.id)] = list(picks_set)
+            ru = form.get(f"runnerup_{nom.id}")
+            if ru:
+                runnerups_map[str(nom.id)] = str(ru)
+                if str(ru) not in picks_set:
+                    invalid_runnerups.append((nom, str(ru)))
+
+    # Server-side validation for pick/rank constraints and runner-up consistency.
+    # Gather rank answers to report back in draft if invalid.
+    ranks_map: dict[str, dict[str, int]] = {}
+    errors: list[str] = []
+
+    # Validate picks / runner-ups already collected in picks_map / runnerups_map
+    for nom in nominations:
+        sid = str(nom.id)
+        if nom.type == NominationType.PICK:
+            picked = picks_map.get(sid, [])
+            if nom.pick_min and len(picked) < nom.pick_min:
+                errors.append(f"«{nom.name}»: выбрано {len(picked)}, нужно не менее {nom.pick_min}")
+                errors.append(f"Недопустимое число номинантов в PICK: {nom.name}")
+            if nom.pick_max and len(picked) > nom.pick_max:
+                errors.append(f"«{nom.name}»: выбрано {len(picked)}, максимум {nom.pick_max}")
+                errors.append(f"Недопустимое число номинантов в PICK: {nom.name}")
+            # runner-up already validated above; keep picks_map as-is
+        else:
+            # collect ranks from form
+            rank_entries: list[int] = []
+            ranks_map[sid] = {}
+            for nominee in nom.nominees:
+                val = form.get(f"rank_{nom.id}_{nominee.film_id}")
+                if val:
+                    try:
+                        r = int(val)
+                        ranks_map[sid][str(nominee.film_id)] = r
+                        rank_entries.append(r)
+                    except ValueError:
+                        # ignore non-int; will be caught by later checks if necessary
+                        pass
+            if rank_entries:
+                # detect duplicate ranks
+                if len(rank_entries) != len(set(rank_entries)):
+                    errors.append(f"«{nom.name}»: одно место указано дважды")
+                    errors.append(f"одно место 2 и более раз в RANK: {nom.name}")
+                # detect overflow
+                max_val = (nom.nominees_count if (not (rnd.round_type.value == "FINAL") and nom.nominees_count) else len(nom.nominees))
+                if any(r > max_val for r in rank_entries):
+                    errors.append(f"«{nom.name}»: место не может быть больше {max_val}")
+
+    # include runner-up inconsistency error found earlier
+    if invalid_runnerups:
+        errors.append("Runner-up выбран, но не отмечен в основном выборе. Пожалуйста, исправьте выбор перед отправкой.")
+
+    if errors:
+        participation = _get_or_create_participation(db, rnd.id, voter.id)
+        # include ranks in draft so user sees their inputs
+        participation.draft = {"picks": picks_map, "runnerups": runnerups_map, "ranks": ranks_map}
+        db.commit()
+        return templates.TemplateResponse(request, "vote.html", {
+            "voter": voter,
+            "round": rnd,
+            "nominations": nominations,
+            "draft": participation.draft,
+            "draft_restored": True,
+            "error_message": " · ".join(errors),
+        }, status_code=400)
+
     round_nominee_ids = {n.id for nom in nominations for n in nom.nominees}
 
     for nom in nominations:
@@ -421,6 +516,8 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                 ).delete(synchronize_session="fetch")
 
     is_final = (rnd.round_type.value == "FINAL")
+    # Track nominee_ids added during this submission to avoid duplicate INSERTs
+    added_vote_nids: set[int] = set()
 
     for nom in nominations:
         if nom.type == NominationType.PICK:
@@ -428,22 +525,46 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
             raw = form.getlist(key)
             if nom.pick_max and len(raw) > nom.pick_max:
                 raw = raw[:nom.pick_max]
-            for val in raw:
-                try:
-                    nid = int(val)
-                    if nid in round_nominee_ids:
-                        db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=False))
-                except ValueError:
-                    pass
+
+            # Parse runner-up selection (if any) once per nomination
+            ru_nid = None
             if is_final and nom.has_runner_up:
                 ru_val = form.get(f"runnerup_{nom.id}")
                 if ru_val:
                     try:
-                        nid = int(ru_val)
-                        if nid in round_nominee_ids:
-                            db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=True))
+                        ru_nid = int(ru_val)
                     except ValueError:
-                        pass
+                        ru_nid = None
+
+            raw_nids: set[int] = set()
+            for val in raw:
+                try:
+                    nid = int(val)
+                    raw_nids.add(nid)
+                    if nid in round_nominee_ids:
+                        is_ru = (ru_nid == nid)
+                        # Update existing vote if present, otherwise add new (guard against duplicates within same request)
+                        existing = db.query(Vote).filter_by(voter_id=voter.id, nominee_id=nid).first()
+                        if existing:
+                            existing.is_runner_up = existing.is_runner_up or is_ru
+                            added_vote_nids.add(nid)
+                        else:
+                            if nid not in added_vote_nids:
+                                db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=is_ru))
+                                added_vote_nids.add(nid)
+                except ValueError:
+                    pass
+
+            # If runner-up chosen but not among picks, ensure a single runner-up vote exists
+            if ru_nid and ru_nid not in raw_nids and ru_nid in round_nominee_ids:
+                existing = db.query(Vote).filter_by(voter_id=voter.id, nominee_id=ru_nid).first()
+                if existing:
+                    existing.is_runner_up = True
+                    added_vote_nids.add(ru_nid)
+                else:
+                    if ru_nid not in added_vote_nids:
+                        db.add(Vote(voter_id=voter.id, nominee_id=ru_nid, is_runner_up=True))
+                        added_vote_nids.add(ru_nid)
         else:
             for nominee in nom.nominees:
                 val = form.get(f"rank_{nom.id}_{nominee.film_id}")
