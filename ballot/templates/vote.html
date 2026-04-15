@@ -659,13 +659,39 @@ updateToc();
   const deadline = new Date('{{ round.deadline.isoformat() }}');
   const el = document.getElementById('deadline-countdown');
   if (!el) return;
+  let countdownInterval = null;
+
+  function expireVoting() {
+    // Prevent further autosaves/submits
+    try { if (typeof draftTimer !== 'undefined') clearTimeout(draftTimer); } catch(e) {}
+    try { if (typeof saveDraftInterval !== 'undefined') clearInterval(saveDraftInterval); } catch(e) {}
+    // Hide slides and show closed message
+    const slides = document.getElementById('slides');
+    if (slides) {
+      slides.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-24 text-center">
+          <div class="bg-red-50 border border-red-200 rounded-xl p-6 max-w-md">
+            <h2 class="text-xl font-bold text-red-700 mb-2">⏰ Голосование закрыто</h2>
+            <p class="text-gray-600 mb-4">Дедлайн раунда <strong>{{ round.label }}</strong> истёк:<br>
+            <span class="font-mono text-sm text-gray-500">{{ round.deadline.strftime('%d.%m.%Y %H:%M') }}</span></p>
+            <a href="/" class="text-indigo-600 hover:underline">← Вернуться на главную</a>
+          </div>
+        </div>`;
+    }
+    // Update nav countdown
+    el.textContent = 'истёк';
+    el.style.color = '#ef4444';
+  }
+
   function tick() {
     const diff = deadline - Date.now();
-    if (diff <= 0) { el.textContent = 'истёк'; el.style.color = '#ef4444'; return; }
+    if (diff <= 0) { expireVoting(); if (countdownInterval) clearInterval(countdownInterval); return; }
     const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
     el.textContent = h > 0 ? `${h}ч ${m}м ${s}с` : m > 0 ? `${m}м ${s}с` : `${s}с`;
   }
-  tick(); setInterval(tick, 1000);
+
+  tick();
+  countdownInterval = setInterval(tick, 1000);
 })();
 </script>
 {% endif %}

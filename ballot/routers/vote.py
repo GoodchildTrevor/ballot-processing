@@ -195,12 +195,21 @@ def _render_vote_page(request, db, rnd, voter):
 
 
 def _deadline_passed(rnd: Round) -> bool:
+    """Return True if the round has a deadline and it has passed.
+
+    Handles both naive (no tzinfo) and aware datetimes stored in DB.
+    For naive datetimes we treat them as server local time and convert to UTC
+    before comparing with current UTC time.
+    """
     if not rnd.deadline:
         return False
     dl = rnd.deadline
     if dl.tzinfo is None:
-        dl = dl.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) > dl
+        # Interpret naive deadline as local server time
+        local_tz = datetime.now().astimezone().tzinfo
+        dl = dl.replace(tzinfo=local_tz)
+    dl_utc = dl.astimezone(timezone.utc)
+    return datetime.now(timezone.utc) > dl_utc
 
 
 def _check_round_open(request, rnd) -> HTMLResponse | None:
@@ -213,7 +222,7 @@ def _check_round_open(request, rnd) -> HTMLResponse | None:
     if _deadline_passed(rnd):
         return templates.TemplateResponse(
             request, "voting_closed.html",
-            {"nom": None, "round": rnd, "message": "Дедлайн голосования прошёл."},
+            {"nom": None, "round": rnd, "deadline": rnd.deadline, "message": "Дедлайн голосования прошёл."},
             status_code=403,
         )
     return None
@@ -388,6 +397,11 @@ async def submit_vote_compat(round_id: int, request: Request, db: Session = Depe
 # ---------------------------------------------------------------------------
 
 async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
+    # Defense in depth: re-check round open/deadline to prevent direct POST bypass
+    err = _check_round_open(request, rnd)
+    if err:
+        return err
+
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
     round_nominee_ids = {n.id for nom in nominations for n in nom.nominees}
