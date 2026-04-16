@@ -90,12 +90,15 @@
               <p class="text-xs font-semibold text-gray-500 mb-1">{{ bsection['nom'].name }}</p>
               {% if bsection['type'] == 'pick' %}
               <ul class="space-y-0.5">
-                {% for nominee in bsection['items'] %}
-                <li class="text-xs text-gray-700">
-                  &bull;
+                {% for item in bsection['items'] %}
+                {% set nominee = item[0] %}
+                {% set is_runner_up = item[1] %}
+                <li class="text-xs {% if is_runner_up %}text-amber-600{% else %}text-gray-700{% endif %}">
+                  {% if is_runner_up %}🏃 {% else %}&bull;{% endif %}
                   {% if nominee.person %}{{ nominee.person.name }} <span class="text-gray-400">({{ nominee.film.title }})</span>
                   {% elif nominee.item %}<span class="italic">{{ nominee.item }}</span> <span class="text-gray-400">({{ nominee.film.title }})</span>
                   {% else %}{{ nominee.film.title }}{% endif %}
+                  {% if is_runner_up %}<span class="text-amber-500 text-[10px]">(runner-up)</span>{% endif %}
                 </li>
                 {% endfor %}
               </ul>

@@ -116,12 +116,13 @@ def list_voters(
         ballot = []
         for nom in nominations:
             if nom.type == NominationType.PICK:
-                chosen = [
-                    v.nominee for v in voter.votes
+                # Separate regular votes and runner-ups
+                regular_votes = [
+                    (v.nominee, v.is_runner_up) for v in voter.votes
                     if v.nominee and v.nominee.nomination_id == nom.id
                 ]
-                if chosen:
-                    ballot.append({"nom": nom, "type": "pick", "items": chosen})
+                if regular_votes:
+                    ballot.append({"nom": nom, "type": "pick", "items": regular_votes})
             else:
                 ranks = sorted(
                     [r for r in voter.rankings if r.nomination_id == nom.id],
@@ -256,9 +257,13 @@ def edit_vote_form(
         current_rankings.setdefault(r.nomination_id, {})[r.film_id] = r.rank
 
     current_picks = {}
+    current_runner_ups = {}
     for v in voter.votes:
         if v.nominee:
-            current_picks.setdefault(v.nominee.nomination_id, []).append(v.nominee_id)
+            if v.is_runner_up:
+                current_runner_ups.setdefault(v.nominee.nomination_id, []).append(v.nominee_id)
+            else:
+                current_picks.setdefault(v.nominee.nomination_id, []).append(v.nominee_id)
 
     return templates.TemplateResponse(request, "admin/voter_edit.html", {
         "voter": voter,
@@ -266,6 +271,7 @@ def edit_vote_form(
         "pick_noms": pick_noms,
         "current_rankings": current_rankings,
         "current_picks": current_picks,
+        "current_runner_ups": current_runner_ups,
         "contest_id": contest_id,
         "round_id": round_id,
     })
@@ -332,11 +338,19 @@ async def edit_vote_submit(
                         pass
         elif nom.type == NominationType.PICK:
             chosen = form.getlist(f"pick_{nom.id}")
+            runner_ups = form.getlist(f"runner_up_{nom.id}")
             for nominee_id in chosen:
                 try:
                     nid = int(nominee_id)
                     if db.get(Nominee, nid):
-                        db.add(Vote(voter_id=voter.id, nominee_id=nid))
+                        db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=False))
+                except ValueError:
+                    pass
+            for nominee_id in runner_ups:
+                try:
+                    nid = int(nominee_id)
+                    if db.get(Nominee, nid):
+                        db.add(Vote(voter_id=voter.id, nominee_id=nid, is_runner_up=True))
                 except ValueError:
                     pass
 
