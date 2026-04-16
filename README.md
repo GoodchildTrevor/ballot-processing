@@ -36,8 +36,15 @@ uvicorn ballot.main:app --reload
 ```
 
 Запуск в Docker
+- При сборке образа скрипт entrypoint.sh будет запускать миграции Alembic автоматически перед стартом приложения.
 ```bash
 docker-compose up --build
+```
+
+Если нужно собрать и запустить вручную:
+```bash
+docker build -t ballot-processing .
+docker run --env-file .env -p 8000:8000 ballot-processing
 ```
 
 Структура проекта (кратко)
