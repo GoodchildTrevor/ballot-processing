@@ -95,6 +95,9 @@
           <th class="px-3 py-2 text-left w-8">#</th>
           <th class="px-5 py-2 text-left">{{ 'Фильм' if item.nom.type.value == 'RANK' else 'Участник' }}</th>
           <th class="px-5 py-2 text-left">{{ 'Очки' if item.nom.type.value == 'RANK' else 'Голоса' }}</th>
+          {% if item.nom.has_runner_up and item.nom.type.value != 'RANK' %}
+          <th class="px-5 py-2 text-left">Runner Ups</th>
+          {% endif %}
           <th class="px-5 py-2 text-left">Проголосовали</th>
         </tr>
       </thead>
@@ -107,6 +110,9 @@
           </td>
           <td class="px-5 py-2 font-medium text-gray-800">{{ row.label }}</td>
           <td class="px-5 py-2 text-gray-600 tabular-nums">{{ row.score }}</td>
+          {% if item.nom.has_runner_up and item.nom.type.value != 'RANK' %}
+          <td class="px-5 py-2 text-gray-600 tabular-nums">{{ row.runner_ups | default(0) }}</td>
+          {% endif %}
           <td class="px-5 py-2 text-gray-400 text-xs">
             {% if row.voter_list %}
               {% for entry in row.voter_list %}
@@ -114,8 +120,10 @@
                   {% if entry.rank is defined and entry.rank %}({{ entry.rank }}){% endif %}
                 </span>
               {% endfor %}
-            {% elif row.voters %}
-              {{ row.voters }}
+            {% elif row.voters or row.runner_up_voters %}
+              {% if row.voters %}<span class="text-gray-500">{{ row.voters }}</span>{% endif %}
+              {% if row.voters and row.runner_up_voters %}<span class="text-gray-300 mx-1">|</span>{% endif %}
+              {% if row.runner_up_voters %}<span class="text-amber-600" title="Runner Ups">🏃 {{ row.runner_up_voters }}</span>{% endif %}
             {% else %}
               &mdash;
             {% endif %}

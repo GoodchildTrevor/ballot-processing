@@ -17,17 +17,25 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _annotate_rows(rows: list, count: int | None) -> list:
+def _annotate_rows(rows: list, count: int | None, has_runner_up: bool = False) -> list:
     if not rows:
         return rows
     rank = 1
     prev_score = None
+    prev_runner_ups = None
     for i, row in enumerate(rows):
+        runner_ups = row.get("runner_ups", 0) if has_runner_up else None
         if prev_score is None or row["score"] != prev_score:
+            # Different votes - new rank
             rank = i + 1
+        elif has_runner_up and runner_ups != prev_runner_ups:
+            # Same votes but different runner-ups - new rank
+            rank = i + 1
+        # else: same votes AND same runner-ups (if applicable) - same rank
         row["position"] = rank
         row["is_nominee"] = bool(count and rank <= count)
         prev_score = row["score"]
+        prev_runner_ups = runner_ups
     return rows
 
 
@@ -83,22 +91,38 @@ def get_results(db: Session, round_ids: set[int] | None = None):
             rows = _annotate_rows(rows, nom.nominees_count)
             results.append({"nom": nom, "round": rnd, "rows": rows})
         else:
+            # Count regular votes and runner-up votes separately
             rows_raw = (
-                db.query(Nominee, func.count(Vote.id).label("votes"))
+                db.query(
+                    Nominee,
+                    func.count(Vote.id).label("votes"),
+                    func.sum(func.case((Vote.is_runner_up == True, 1), else_=0)).label("runner_ups")
+                )
                 .outerjoin(Vote, Vote.nominee_id == Nominee.id)
                 .filter(Nominee.nomination_id == nom.id)
                 .group_by(Nominee.id)
-                .order_by(func.count(Vote.id).desc())
+                .order_by(func.count(Vote.id).desc(),
+                          func.sum(func.case((Vote.is_runner_up == True, 1), else_=0)).desc())
                 .all()
             )
             rows = []
-            for nominee, votes in rows_raw:
+            for nominee, votes, runner_ups in rows_raw:
                 label = _nominee_label(nominee)
                 voter_names = ", ".join(
-                    sorted(db.get(Voter, v.voter_id).name for v in nominee.votes)
+                    sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if not v.is_runner_up)
                 )
-                rows.append({"label": label, "score": votes, "voters": voter_names, "voter_list": []})
-            rows = _annotate_rows(rows, nom.nominees_count)
+                runner_up_names = ", ".join(
+                    sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if v.is_runner_up)
+                )
+                rows.append({
+                    "label": label,
+                    "score": votes or 0,
+                    "runner_ups": runner_ups or 0,
+                    "voters": voter_names,
+                    "runner_up_voters": runner_up_names,
+                    "voter_list": []
+                })
+            rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
     return results
 
@@ -180,11 +204,27 @@ def export_results(
             ws.append(["Участник", "Очки", "Проголосовали (место)",
                        "Номинант" if item["nom"].nominees_count else ""])
         else:
-            ws.append(["Участник", "Голоса", "Проголосовали",
-                       "Номинант" if item["nom"].nominees_count else ""])
+            has_runner_up = item["nom"].has_runner_up
+            header = ["Участник", "Голоса"]
+            if has_runner_up:
+                header.append("Runner Ups")
+            header.append("Проголосовали")
+            if item["nom"].nominees_count:
+                header.append("Номинант")
+            ws.append(header)
         for row in item["rows"]:
             extra = ["✅ Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
-            ws.append([row["label"], row["score"], row["voters"]] + extra)
+            if item["nom"].type == NominationType.RANK:
+                ws.append([row["label"], row["score"], row["voters"]] + extra)
+            else:
+                has_runner_up = item["nom"].has_runner_up
+                if has_runner_up:
+                    voters_display = row["voters"]
+                    if row.get("runner_up_voters"):
+                        voters_display = f"{row['voters']} | 🏃 {row['runner_up_voters']}" if row['voters'] else f"🏃 {row['runner_up_voters']}"
+                    ws.append([row["label"], row["score"], row.get("runner_ups", 0), voters_display] + extra)
+                else:
+                    ws.append([row["label"], row["score"], row["voters"]] + extra)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
