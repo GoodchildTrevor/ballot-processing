@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from ballot.database import get_db
 from ballot.models import (
@@ -96,13 +96,13 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 db.query(
                     Nominee,
                     func.count(Vote.id).label("votes"),
-                    func.sum(func.case((Vote.is_runner_up == True, 1), else_=0)).label("runner_ups")
+                    func.sum(case((Vote.is_runner_up == True, 1), else_=0)).label("runner_ups")
                 )
                 .outerjoin(Vote, Vote.nominee_id == Nominee.id)
                 .filter(Nominee.nomination_id == nom.id)
                 .group_by(Nominee.id)
                 .order_by(func.count(Vote.id).desc(),
-                          func.sum(func.case((Vote.is_runner_up == True, 1), else_=0)).desc())
+                          func.sum(case((Vote.is_runner_up == True, 1), else_=0)).desc())
                 .all()
             )
             rows = []
