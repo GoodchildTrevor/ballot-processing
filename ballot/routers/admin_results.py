@@ -65,12 +65,17 @@ def get_results(db: Session, round_ids: set[int] | None = None):
     for nom in nominations:
         rnd = round_cache.get(nom.round_id) if nom.round_id else None
         if nom.type == NominationType.RANK:
+            # Count total nominees in this nomination for dynamic scoring
+            nominees_count = db.query(func.count(Nominee.id)).filter(
+                Nominee.nomination_id == nom.id
+            ).scalar() or 10
+            # Score: last place = 1 point, first place = nominees_count points
             rows_raw = (
-                db.query(Film.title, func.sum(11 - Ranking.rank).label("score"))
+                db.query(Film.title, func.sum(nominees_count + 1 - Ranking.rank).label("score"))
                 .join(Ranking, Ranking.film_id == Film.id)
                 .filter(Ranking.nomination_id == nom.id)
                 .group_by(Film.id)
-                .order_by(func.sum(11 - Ranking.rank).desc())
+                .order_by(func.sum(nominees_count + 1 - Ranking.rank).desc())
                 .all()
             )
             film_voters_map = {}

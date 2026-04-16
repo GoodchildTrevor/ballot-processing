@@ -39,6 +39,37 @@ def create_person(
     return RedirectResponse(url="/admin/persons", status_code=303)
 
 
+@router.post("/persons/bulk")
+def bulk_create_persons(
+    lines: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    created, skipped = 0, 0
+    for line in lines.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        url = None
+        if "|" in line:
+            parts = line.split("|", 1)
+            line = parts[0].strip()
+            url = parts[1].strip() or None
+        name = line.strip()
+        if not name:
+            continue
+        exists = db.query(Person).filter(Person.name == name).first()
+        if exists:
+            skipped += 1
+            continue
+        db.add(Person(name=name, url=url))
+        created += 1
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/persons?bulk_created={created}&bulk_skipped={skipped}",
+        status_code=303,
+    )
+
+
 @router.post("/persons/{person_id}/delete")
 def delete_person(person_id: int, db: Session = Depends(get_db)):
     person = db.get(Person, person_id)

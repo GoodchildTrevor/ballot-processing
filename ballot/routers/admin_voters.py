@@ -116,13 +116,15 @@ def list_voters(
         ballot = []
         for nom in nominations:
             if nom.type == NominationType.PICK:
-                # Separate regular votes and runner-ups
-                regular_votes = [
+                # Separate regular votes and runner-ups, sort regular first
+                votes_list = [
                     (v.nominee, v.is_runner_up) for v in voter.votes
                     if v.nominee and v.nominee.nomination_id == nom.id
                 ]
-                if regular_votes:
-                    ballot.append({"nom": nom, "type": "pick", "items": regular_votes})
+                # Sort: regular votes (is_runner_up=False) first, then runner-ups
+                votes_list.sort(key=lambda x: x[1])
+                if votes_list:
+                    ballot.append({"nom": nom, "type": "pick", "items": votes_list})
             else:
                 ranks = sorted(
                     [r for r in voter.rankings if r.nomination_id == nom.id],
