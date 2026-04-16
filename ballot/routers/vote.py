@@ -424,8 +424,11 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
 
-    # Server-side validation: runner-up (if provided) must be among picks for the same nomination.
-    # If invalid, restore draft and show vote page with an error so the user can fix choices.
+    # Server-side validation: runner-up (if provided) — ensure consistency with picks.
+    # Rules:
+    #  - If runner-up chosen but no main pick => invalid.
+    #  - If runner-up equals the sole selected winner => invalid.
+    #  - Runner-up is allowed to be not among picks otherwise.
     invalid_runnerups: list[tuple[Nomination, str]] = []
     picks_map: dict[str, list[str]] = {}
     runnerups_map: dict[str, str] = {}
@@ -435,10 +438,25 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
             picks_set = {str(x) for x in raw_picks}
             picks_map[str(nom.id)] = list(picks_set)
             ru = form.get(f"runnerup_{nom.id}")
-            if ru:
+            # record runner-up selection (may be empty string when "none" chosen)
+            if ru is not None:
                 runnerups_map[str(nom.id)] = str(ru)
-                if str(ru) not in picks_set:
-                    invalid_runnerups.append((nom, str(ru)))
+                if str(ru) != "":
+                    if not picks_set:
+                        # runner-up chosen but no winner selected
+                        invalid_runnerups.append((nom, "no_pick"))
+                    elif len(picks_set) == 1 and str(ru) in picks_set:
+                        # runner-up equals the sole selected winner
+                        invalid_runnerups.append((nom, "same_as_winner"))
+                    # otherwise runner-up is acceptable (may be outside picks)
+                else:
+                    # empty string / none selected — if winner chosen, runner-up is missing
+                    if picks_set and nom.has_runner_up:
+                        invalid_runnerups.append((nom, "missing_ru"))
+            else:
+                # field not submitted at all — same as no runner-up chosen
+                if picks_set and nom.has_runner_up:
+                    invalid_runnerups.append((nom, "missing_ru"))
 
     # Server-side validation for pick/rank constraints and runner-up consistency.
     # Gather rank answers to report back in draft if invalid.
@@ -450,12 +468,12 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
         sid = str(nom.id)
         if nom.type == NominationType.PICK:
             picked = picks_map.get(sid, [])
-            if nom.pick_min and len(picked) < nom.pick_min:
-                errors.append(f"«{nom.name}»: выбрано {len(picked)}, нужно не менее {nom.pick_min}")
-                errors.append(f"Недопустимое число номинантов в PICK: {nom.name}")
-            if nom.pick_max and len(picked) > nom.pick_max:
-                errors.append(f"«{nom.name}»: выбрано {len(picked)}, максимум {nom.pick_max}")
-                errors.append(f"Недопустимое число номинантов в PICK: {nom.name}")
+            # Only validate min/max if the voter actually made a selection (skip = allowed)
+            if len(picked) > 0:
+                if nom.pick_min and len(picked) < nom.pick_min:
+                    errors.append(f"«{nom.name}»: выбрано {len(picked)}, нужно не менее {nom.pick_min}")
+                if nom.pick_max and len(picked) > nom.pick_max:
+                    errors.append(f"«{nom.name}»: выбрано {len(picked)}, максимум {nom.pick_max}")
             # runner-up already validated above; keep picks_map as-is
         else:
             # collect ranks from form
@@ -481,9 +499,14 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                 if any(r > max_val for r in rank_entries):
                     errors.append(f"«{nom.name}»: место не может быть больше {max_val}")
 
-    # include runner-up inconsistency error found earlier
-    if invalid_runnerups:
-        errors.append("Runner-up выбран, но не отмечен в основном выборе. Пожалуйста, исправьте выбор перед отправкой.")
+    # include runner-up inconsistency errors found earlier
+    for nom, code in invalid_runnerups:
+        if code == "no_pick":
+            errors.append(f"«{nom.name}»: выбран runner-up, но победитель не отмечен")
+        elif code == "same_as_winner":
+            errors.append(f"«{nom.name}»: победитель и runner-up — один и тот же номинант")
+        elif code == "missing_ru":
+            errors.append(f"«{nom.name}»: выбран победитель, но runner-up не указан")
 
     if errors:
         participation = _get_or_create_participation(db, rnd.id, voter.id)

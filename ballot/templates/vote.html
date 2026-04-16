@@ -26,7 +26,7 @@
 {% if nominations %}
 
 {# ── Error banner — above slides ── #}
-<div id="error-banner" class="hidden mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
+<div id="error-banner" class="{% if not error_message %}hidden {% endif %}mb-4 bg-red-50 border border-red-300 text-red-700 rounded-xl px-4 py-3 text-base">
   <p class="font-semibold mb-1">⚠️ Исправьте ошибки перед отправкой:</p>
   <ul id="error-list" class="list-disc list-inside space-y-1">
     {% if error_message %}
@@ -123,7 +123,8 @@
       <div class="px-5 py-3.5 flex flex-wrap items-center gap-3">
         {% if nom.type.value == 'PICK' %}
           <input type="checkbox"
-                 name="pick_{{ nom.id }}" value="{{ nominee.id }}"
+                 name="pick_{{ nom.id }}"
+                 value="{{ nominee.id }}"
                  id="pick_{{ nom.id }}_{{ nominee.id }}"
                  class="w-5 h-5 text-indigo-600 rounded pick-cb"
                  data-nom="{{ nom.id }}"
@@ -197,8 +198,9 @@
       <div class="space-y-2">
         {% for nominee in nom.nominees | sort(attribute='label_for_sort') %}
         <div class="flex items-center gap-3">
-          <input type="radio" name="runnerup_{{ nom.id }}" value="{{ nominee.id }}"
-                 id="ru_{{ nom.id }}_{{ nominee.id }}" class="w-4 h-4 text-amber-500"
+          <input type="checkbox" name="runnerup_{{ nom.id }}" value="{{ nominee.id }}"
+                 id="ru_{{ nom.id }}_{{ nominee.id }}" class="w-4 h-4 text-amber-500 runnerup-cb"
+                 data-nom="{{ nom.id }}"
                  {% if draft and draft.get('runnerups',{}).get(nom.id|string) == (nominee.id|string) %}checked{% endif %} />
           <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-700">
             {% if nominee.persons_label %}
@@ -384,10 +386,54 @@ goToSlide(0);
   window._getPickGroups = () => groups;
   window._updatePickGroup = updateGroup;
   Object.keys(groups).forEach(updateGroup);
-  document.querySelectorAll('input.pick-cb').forEach(cb =>
-    cb.addEventListener('change', () => updateGroup(cb.dataset.nom))
-  );
+  // Radios: allow deselect by clicking already-selected radio (defer deselect to after native toggle)
+  document.querySelectorAll('input.pick-cb').forEach(r => {
+    r.addEventListener('mousedown', function() {
+      this.dataset.wasChecked = this.checked ? 'true' : 'false';
+    });
+    r.addEventListener('click', function(e) {
+      const was = this.dataset.wasChecked === 'true';
+      if (was) {
+        const input = this;
+        // Defer to after native handling so we reliably clear the checked state
+        setTimeout(() => {
+          input.checked = false;
+          input.dataset.wasChecked = 'false';
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          const nom = input.dataset.nom;
+          if (nom && window._updatePickGroup) window._updatePickGroup(nom);
+        }, 0);
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      const nom = this.dataset.nom;
+      if (nom && window._updatePickGroup) window._updatePickGroup(nom);
+    });
+  });
+  // Also set wasChecked when clicking the label (some browsers/fire modes trigger mousedown on label)
+  document.querySelectorAll('label[for^="pick_"]').forEach(lb => {
+    lb.addEventListener('mousedown', function() {
+      const id = this.getAttribute('for');
+      const input = document.getElementById(id);
+      if (input) input.dataset.wasChecked = input.checked ? 'true' : 'false';
+    });
+  });
 })();
+
+// runner-up: behave like single-select but keep checkbox semantics so user can deselect
+document.querySelectorAll('.runnerup-cb').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const nomId = cb.dataset.nom;
+    if (!nomId) return;
+    if (cb.checked) {
+      document.querySelectorAll(`.runnerup-cb[data-nom="${nomId}"]`).forEach(other => {
+        if (other !== cb) other.checked = false;
+      });
+    }
+    updateToc();
+  });
+});
 
 // ── RANK inline warning ──
 function rankMax(nom) {
@@ -500,26 +546,25 @@ function getRunnerUpErrors() {
   const e = [];
   NOM_DATA.forEach(nom => {
     if (nom.type !== 'PICK' || !nom.has_runner_up) return;
-    const ruEl = document.querySelector(`input[type=radio][name="runnerup_${nom.id}"]:checked`);
-    if (!ruEl) return; // runner-up не выбран — ок
-    const ruId = ruEl.value;
+    const ruChecked = [...document.querySelectorAll(`.runnerup-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
     const pickedCbs = [...document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
 
-    // Нельзя голосовать только за runner-up (победитель не выбран вообще)
-    if (pickedCbs.length === 0) {
+    // Winner selected but no runner-up chosen
+    if (pickedCbs.length > 0 && ruChecked.length === 0) {
+      e.push(`«${nom.name}»: выбран победитель, но runner-up не указан`);
+      return;
+    }
+
+    // Runner-up chosen but no winner
+    if (ruChecked.length > 0 && pickedCbs.length === 0) {
       e.push(`«${nom.name}»: выбран runner-up, но победитель не отмечен`);
       return;
     }
 
     // Победитель и runner-up — один и тот же номинант
-    if (pickedCbs.length === 1 && pickedCbs[0].value === ruId) {
+    if (ruChecked.length > 0 && pickedCbs.length === 1 && pickedCbs[0].value === ruChecked[0].value) {
       e.push(`«${nom.name}»: победитель и runner-up — один и тот же номинант`);
       return;
-    }
-
-    // Runner-up не входит в список выбранных победителей
-    if (!pickedCbs.some(c => c.value === ruId)) {
-      e.push(`«${nom.name}»: runner-up не входит в выбранных номинантов`);
     }
   });
   return e;
@@ -559,7 +604,7 @@ function validateAndSubmit() {
 // ── Collect state ──
 function collectState() {
   const picks = {}, ranks = {};
-  document.querySelectorAll('input[type=checkbox][name^=pick_]').forEach(cb => {
+  document.querySelectorAll('input.pick-cb').forEach(cb => {
     const m = cb.name.match(/pick_(\d+)/);
     if (!m || !cb.checked) return;
     if (!picks[m[1]]) picks[m[1]] = {};
@@ -684,9 +729,9 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
 function collectDraft() {
   const { picks, ranks } = collectState();
   const runnerups = {};
-  document.querySelectorAll('input[type=radio][name^=runnerup_]:checked').forEach(r => {
-    const m = r.name.match(/runnerup_(\d+)/);
-    if (m) runnerups[m[1]] = r.value;
+  document.querySelectorAll('.runnerup-cb:checked').forEach(r => {
+    const nomId = r.dataset.nom;
+    if (nomId) runnerups[nomId] = r.value;
   });
   return { picks, ranks, runnerups };
 }
@@ -720,6 +765,31 @@ document.querySelectorAll('#vote-form input').forEach(el => {
 setInterval(saveDraft, 60000);
 
 updateToc();
+
+ // Single-select pick behavior (toggleable): checking one unchecks others; allow immediate swap by enforcing selection after click
+document.querySelectorAll('input.pick-cb').forEach(cb => {
+  cb.addEventListener('click', () => {
+    const nomId = cb.dataset.nom;
+    if (!nomId) return;
+    // Defer to after native toggle, then enforce single-select so clicking another immediately replaces previous
+    setTimeout(() => {
+      if (cb.checked) {
+        document.querySelectorAll(`.pick-cb[data-nom="${nomId}"]`).forEach(other => {
+          if (other !== cb) other.checked = false;
+        });
+      }
+      if (window._updatePickGroup) window._updatePickGroup(nomId);
+      updateToc();
+    }, 0);
+  });
+  // also keep change handler to update UI if selection is modified programmatically
+  cb.addEventListener('change', () => {
+    const nomId = cb.dataset.nom;
+    if (!nomId) return;
+    if (window._updatePickGroup) window._updatePickGroup(nomId);
+    updateToc();
+  });
+});
 </script>
 
 {% if round.deadline %}
@@ -733,20 +803,8 @@ updateToc();
   function expireVoting() {
     try { if (typeof draftTimer !== 'undefined') clearTimeout(draftTimer); } catch(e) {}
     try { if (typeof saveDraftInterval !== 'undefined') clearInterval(saveDraftInterval); } catch(e) {}
-    const slides = document.getElementById('slides');
-    if (slides) {
-      slides.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-24 text-center">
-          <div class="bg-red-50 border border-red-200 rounded-xl p-6 max-w-md">
-            <h2 class="text-xl font-bold text-red-700 mb-2">⏰ Голосование закрыто</h2>
-            <p class="text-gray-600 mb-4">Дедлайн раунда <strong>{{ round.label }}</strong> истёк:<br>
-            <span class="font-mono text-sm text-gray-500">{{ round.deadline.strftime('%d.%m.%Y %H:%M') }}</span></p>
-            <a href="/" class="text-indigo-600 hover:underline">← Вернуться на главную</a>
-          </div>
-        </div>`;
-    }
-    el.textContent = 'истёк';
-    el.style.color = '#ef4444';
+    // Reload the page so the server renders the proper voting_closed page (avoids showing admin UI client-side)
+    window.location.reload();
   }
 
   function tick() {

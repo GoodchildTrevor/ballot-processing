@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Голосование закрыто{% endblock %}
+{# Hide admin nav on closed-voting pages #}
+{% block nav %}{% endblock %}
 {% block content %}
 <div class="max-w-lg mx-auto mt-24 text-center px-4">
   <div class="text-6xl mb-6">🔒</div>
