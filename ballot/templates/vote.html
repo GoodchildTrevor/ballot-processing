@@ -501,17 +501,24 @@ function getRunnerUpErrors() {
   NOM_DATA.forEach(nom => {
     if (nom.type !== 'PICK' || !nom.has_runner_up) return;
     const ruEl = document.querySelector(`input[type=radio][name="runnerup_${nom.id}"]:checked`);
-    if (!ruEl) return; // runner-up не выбран — это ок
+    if (!ruEl) return; // runner-up не выбран — ок
     const ruId = ruEl.value;
-    // Найти выбранный winner (pick с pick_max=1 или любой единственный checked)
     const pickedCbs = [...document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
-    // Ошибка: runner-up совпадает с единственным выбранным победителем
+
+    // Нельзя голосовать только за runner-up (победитель не выбран вообще)
+    if (pickedCbs.length === 0) {
+      e.push(`«${nom.name}»: выбран runner-up, но победитель не отмечен`);
+      return;
+    }
+
+    // Победитель и runner-up — один и тот же номинант
     if (pickedCbs.length === 1 && pickedCbs[0].value === ruId) {
       e.push(`«${nom.name}»: победитель и runner-up — один и тот же номинант`);
+      return;
     }
-    // Ошибка: runner-up выбран, но его нет в picks вообще (не отмечен чекбоксом)
-    const ruInPicks = pickedCbs.some(c => c.value === ruId);
-    if (!ruInPicks && pickedCbs.length > 0) {
+
+    // Runner-up не входит в список выбранных победителей
+    if (!pickedCbs.some(c => c.value === ruId)) {
       e.push(`«${nom.name}»: runner-up не входит в выбранных номинантов`);
     }
   });
