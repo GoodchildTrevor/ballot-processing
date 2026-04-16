@@ -1,84 +1,83 @@
 # ballot-processing
 
-Веб-приложение для голосования на кинопремии.
+Небольшое веб-приложение для проведения голосования (бюллетеней) на кинопремии.
 
-## Стек
-- FastAPI + SQLAlchemy (sync) + SQLite
-- Jinja2 templates
-- Tailwind CSS (CDN) + Alpine.js (CDN)
-- openpyxl для экспорта .xlsx
+Технологии
+- FastAPI
+- SQLAlchemy (синхронный)
+- Jinja2 шаблоны
+- Tailwind CSS (CDN), Alpine.js (CDN)
+- SQLite по умолчанию
+- openpyxl для экспорта результатов в .xlsx
+- Миграции: Alembic
 
-## Запуск
-
+Быстрый запуск (локально)
+1. Установить зависимости:
 ```bash
 pip install -r requirements.txt
+```
 
-# Задать логин/пароль для админки (или оставить дефолтные admin/secret)
+2. Создать файл окружения (или задать переменные):
+```bash
+cp .env.example .env
+# либо
 export ADMIN_USER=admin
 export ADMIN_PASS=secret
+```
 
+3. Применить миграции БД:
+```bash
+alembic upgrade head
+```
+
+4. Запустить приложение:
+```bash
 uvicorn ballot.main:app --reload
 ```
 
-## Структура
-
-```
-ballot/
-├── main.py
-├── database.py
-├── models.py
-├── auth.py
-├── routers/
-│   ├── vote.py
-│   ├── admin_films.py
-│   ├── admin_nominations.py
-│   ├── admin_voters.py
-│   └── admin_results.py
-└── templates/
-    ├── base.html
-    ├── index.html
-    ├── vote.html
-    ├── thankyou.html
-    └── admin/
-        ├── films.html
-        ├── film_detail.html
-        ├── nominations.html
-        ├── nomination_detail.html
-        ├── voters.html
-        └── results.html
+Запуск в Docker
+```bash
+docker-compose up --build
 ```
 
-## Схема БД
+Структура проекта (кратко)
+- ballot/ — код приложения
+  - main.py — точка входа
+  - database.py — подключение и инициализация БД
+  - models.py — ORM-модели
+  - auth.py — простая BasicAuth для админки
+  - routers/ — маршруты приложения (public + admin)
+  - templates/ — Jinja2 шаблоны
+- alembic/ — миграции БД
+- requirements.txt, Dockerfile, docker-compose.yml
 
-| Таблица | Поля |
-|---|---|
-| Film | id, title, year |
-| Person | id, name |
-| Nomination | id, name, type (RANK/PICK) |
-| Nominee | id, nomination_id, film_id, person_id? |
-| Voter | id, name UNIQUE, voted_at? |
-| Vote | id, voter_id, nominee_id |
-| Ranking | id, voter_id, nomination_id, film_id, rank |
+Краткое описание БД (основные сущности)
+- Film: id, title, year
+- Person: id, name
+- Nomination: id, name, type (RANK / PICK)
+- Nominee: id, nomination_id, film_id, person_id?
+- Voter: id, name (unique), voted_at
+- Vote / Ranking: связи голосов и ранжирования по номинациям
 
-## Роуты
+Основные роуты
+Публичные
+- GET / — форма ввода ника
+- POST / — вход / создание voter
+- GET /vote/{id} — страница с бюллетенём
+- POST /vote/{id} — отправка голосов
 
-### Публичные
-| Метод | Путь | Описание |
-|---|---|---|
-| GET | `/` | Форма ввода ника |
-| POST | `/` | Вход / создание voter |
-| GET | `/vote/{id}` | Бюллетень |
-| POST | `/vote/{id}` | Отправить голос |
+Админка (Basic Auth)
+- GET/POST /admin/films — список фильмов + создание
+- GET /admin/films/{id} — карточка фильма
+- POST /admin/films/{id}/nominees — добавить номинанта
+- POST /admin/nominees/{id}/delete — удалить номинанта
+- GET/POST /admin/nominations — список/создание номинаций
+- GET /admin/nominations/{id} — детали номинации
+- GET /admin/voters — список участников
+- GET /admin/results — результаты
+- GET /admin/results/export — скачать .xlsx
 
-### Админка (Basic Auth)
-| Метод | Путь | Описание |
-|---|---|---|
-| GET/POST | `/admin/films` | Список + создание фильмов |
-| GET | `/admin/films/{id}` | Карточка фильма |
-| POST | `/admin/films/{id}/nominees` | Добавить номинанта |
-| POST | `/admin/nominees/{id}/delete` | Удалить номинанта |
-| GET/POST | `/admin/nominations` | Список + создание номинаций |
-| GET | `/admin/nominations/{id}` | Детали номинации |
-| GET | `/admin/voters` | Список участников |
-| GET | `/admin/results` | Результаты |
-| GET | `/admin/results/export` | Скачать .xlsx |
+Советы и замечания
+- По умолчанию используется SQLite (файл в проекте).
+- Админские креденшелы берутся из окружения (ADMIN_USER, ADMIN_PASS) или .env.
+- Перед развёртыванием убедитесь, что применили миграции alembic.
