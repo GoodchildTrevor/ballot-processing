@@ -28,6 +28,7 @@ const PERSONS_DATA = [
     name: {{ person.name | tojson }},
     url: {{ person.url | tojson if person.url else 'null' }},
     longlist_count: {{ person.nominees | length }},
+    shortlist_count: {{ person.nominees | selectattr('nomination.round') | selectattr('nomination.round.round_type', 'equalto', 'FINAL') | list | length }},
     longlists: [
       {% for n in person.nominees %}
       {
@@ -62,7 +63,9 @@ const PERSONS_DATA = [
         <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('longlist_count')">
           Лонг-листов <span x-text="sortIcon('longlist_count')" class="text-xs"></span>
         </th>
-        <th class="pb-2 pr-4">В лонг-листах</th>
+        <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('shortlist_count')">
+          Номинаций <span x-text="sortIcon('shortlist_count')" class="text-xs"></span>
+        </th>
         <th class="pb-2"></th>
       </tr>
     </thead>
@@ -97,15 +100,12 @@ const PERSONS_DATA = [
             </form>
           </td>
 
-          <td class="py-2 pr-4 tabular-nums font-semibold text-gray-600" x-text="p.longlist_count || '—'"></td>
+          <td class="py-2 pr-4 tabular-nums text-gray-600" x-text="p.longlist_count || '—'"></td>
 
-          {# Longlist entries: film → internal card + external icon if url; nomination → internal admin page #}
-          <td class="py-2 pr-4">
-            <span x-show="p.longlists.length === 0" class="text-gray-300 text-xs">—</span>
-            <template x-for="ll in p.longlists" :key="ll.nom_id + '-' + ll.film_id">
-              <div class="text-xs mb-0.5 flex flex-wrap items-baseline gap-x-1"
-                   x-html="filmEntry(ll)"></div>
-            </template>
+          <td class="py-2 pr-4 tabular-nums">
+            <span x-show="p.shortlist_count > 0"
+                  class="font-semibold text-purple-700" x-text="p.shortlist_count"></span>
+            <span x-show="p.shortlist_count === 0" class="text-gray-300">—</span>
           </td>
 
           <td class="py-2 text-right whitespace-nowrap">
@@ -154,7 +154,7 @@ function personsTable() {
     dir: 'asc',
     sortBy(c) {
       if (this.col === c) this.dir = this.dir === 'asc' ? 'desc' : 'asc';
-      else { this.col = c; this.dir = c === 'longlist_count' ? 'desc' : 'asc'; }
+      else { this.col = c; this.dir = (c === 'longlist_count' || c === 'shortlist_count') ? 'desc' : 'asc'; }
     },
     sortIcon(c) {
       if (this.col !== c) return '⇕';

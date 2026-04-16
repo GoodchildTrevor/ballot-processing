@@ -236,28 +236,63 @@ async def move_nomination(nom_id: int, request: Request, db: Session = Depends(g
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/nominations/export-longlist")
-def export_longlist(year: Optional[int] = Query(None), db: Session = Depends(get_db)):
+def export_longlist(
+    contest_id: Optional[int] = Query(None),
+    round_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Export longlists to Excel. Each nomination is a separate sheet.
+    Filters by contest and round if provided."""
     q = (
         db.query(Nomination)
-        .options(joinedload(Nomination.nominees).joinedload(Nominee.film))
+        .options(
+            joinedload(Nomination.nominees).joinedload(Nominee.film),
+            joinedload(Nomination.nominees).joinedload(Nominee.person),
+            joinedload(Nomination.nominees).joinedload(Nominee.persons).joinedload(NomineePerson.person),
+        )
         .order_by(Nomination.sort_order, Nomination.id)
     )
-    if year:
-        q = q.filter(Nomination.year_filter == year)
+
+    if round_id:
+        q = q.filter(Nomination.round_id == round_id)
+    elif contest_id:
+        # Get rounds for this contest
+        round_ids = [r.id for r in db.query(Round).filter(Round.contest_id == contest_id).all()]
+        q = q.filter(Nomination.round_id.in_(round_ids))
+
     nominations = q.all()
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Long-list"
-    ws.append(["Номинация", "Номинант", "Год"])
+    ws.title = "Сводка"
+    ws.append(["Номинация", "Количество номинантов"])
+
     for nom in nominations:
-        for nominee in nom.nominees:
-            ws.append([nom.name, nominee.film.title if nominee.film else "", nominee.film.year if nominee.film else ""])
+        # Summary row
+        ws.append([nom.name, len(nom.nominees)])
+
+        # Create separate sheet for each nomination
+        nom_ws = wb.create_sheet(title=nom.name[:31])  # Excel sheet name limit
+        nom_ws.append(["Фильм", "Год", "Персоны", "Item", "Item URL"])
+
+        for nominee in sorted(nom.nominees, key=lambda n: (n.film.title if n.film else "", n.item or "")):
+            persons_str = ", ".join([p.name for p in nominee.all_persons]) if nominee.all_persons else (nominee.person.name if nominee.person else "")
+            nom_ws.append([
+                nominee.film.title if nominee.film else "",
+                nominee.film.year if nominee.film else "",
+                persons_str,
+                nominee.item or "",
+                nominee.item_url or "",
+            ])
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    fname = f"longlist_{year}.xlsx" if year else "longlist.xlsx"
+    fname = "longlist.xlsx"
+    if contest_id:
+        contest = db.get(Contest, contest_id)
+        if contest:
+            fname = f"longlist_{contest.year}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

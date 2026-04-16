@@ -142,7 +142,6 @@
         <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('shortlist_count')">
           Номинаций <span x-text="sortIcon('shortlist_count')" class="text-xs"></span>
         </th>
-        <th class="pb-2 pr-4">В лонг-листах</th>
         <th class="pb-2"></th>
       </tr>
     </thead>
@@ -184,21 +183,6 @@
             <span x-show="film.shortlist_count > 0"
                   class="font-semibold text-purple-700" x-text="film.shortlist_count"></span>
             <span x-show="film.shortlist_count === 0" class="text-gray-300">—</span>
-          </td>
-          <td class="py-2 pr-4">
-            <template x-for="n in film.noms" :key="n.nom_name + (n.person || '')">
-              <span :class="n.is_shortlist
-                      ? 'bg-purple-50 text-purple-700'
-                      : 'bg-indigo-50 text-indigo-700'"
-                    class="inline-block rounded px-2 py-0.5 mr-1 mb-1 text-xs">
-                <span x-text="n.nom_name"></span>
-                <template x-if="n.person">
-                  <span :class="n.is_shortlist ? 'text-purple-400' : 'text-indigo-400'"
-                        x-text="' — ' + n.person"></span>
-                </template>
-              </span>
-            </template>
-            <span x-show="film.noms.length === 0" class="text-gray-300">—</span>
           </td>
           <td class="py-2 text-right">
             <button @click="editing = !editing"

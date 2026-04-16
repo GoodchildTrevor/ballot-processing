@@ -14,7 +14,12 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 @router.get("/persons", response_class=HTMLResponse)
 def list_persons(request: Request, db: Session = Depends(get_db)):
-    persons = db.query(Person).order_by(Person.name).all()
+    persons = (
+        db.query(Person)
+        .options(joinedload(Person.nominees).joinedload(Nominee.nomination).joinedload(Nomination.round))
+        .order_by(Person.name)
+        .all()
+    )
     return templates.TemplateResponse(request, "admin/persons.html", {"persons": persons})
 
 
