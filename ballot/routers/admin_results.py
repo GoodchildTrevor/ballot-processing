@@ -12,9 +12,20 @@ from ballot.models import (
 )
 from ballot.auth import require_admin
 import openpyxl
+from urllib.parse import quote
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
+
+def _build_content_disposition(filename: str) -> str:
+    # ASCII fallback для старых клиентов и чтобы пройти latin-1 в Starlette
+    ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename)
+    if not ascii_fallback.strip():
+        ascii_fallback = "results.csv"
+
+    # RFC 5987 / RFC 6266
+    encoded = quote(filename, safe="")
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _annotate_rows(rows: list, count: int | None, has_runner_up: bool = False) -> list:
@@ -192,13 +203,16 @@ def export_results(
         rnd = db.get(Round, round_id)
         if rnd:
             round_ids = {rnd.id}
-            filename = f"results_{rnd.year}_{rnd.label}.xlsx".replace(" ", "_")
+            # Use ASCII-safe filename
+            safe_label = rnd.label.encode('ascii', 'replace').decode('ascii').replace('?', '_')
+            filename = f"results_{rnd.year}_{safe_label}.xlsx".replace(" ", "_")
     elif contest_id:
         contest = db.get(Contest, contest_id)
         if contest:
             rounds = db.query(Round).filter(Round.contest_id == contest_id).all()
             round_ids = {r.id for r in rounds}
-            filename = f"results_{contest.year}_{contest.name}.xlsx".replace(" ", "_")
+            safe_name = contest.name.encode('ascii', 'replace').decode('ascii').replace('?', '_')
+            filename = f"results_{contest.year}_{safe_name}.xlsx".replace(" ", "_")
 
     results = get_results(db, round_ids)
     wb = openpyxl.Workbook()
@@ -233,8 +247,11 @@ def export_results(
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+    disposition = _build_content_disposition(filename)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": disposition
+        },
     )
