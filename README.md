@@ -23,6 +23,9 @@ cp .env.example .env
 # либо
 export ADMIN_USER=admin
 export ADMIN_PASS=secret
+# (опционально) субадмин — может добавлять фильмы/персон/номинантов, но не видит результаты и не управляет конкурсами
+export SUBADMIN_USER=subadmin
+export SUBADMIN_PASS=subsecret
 ```
 
 3. Применить миграции БД:

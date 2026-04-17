@@ -7,10 +7,10 @@ from ballot.database import get_db
 from ballot.models import (
     Contest, Film, Nomination, NominationType, Nominee, NomineePerson, Person, Round
 )
-from ballot.auth import require_admin
+from ballot.auth import require_subadmin
 import io, openpyxl
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 

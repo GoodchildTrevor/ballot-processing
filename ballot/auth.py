@@ -10,12 +10,28 @@ security = HTTPBasic()
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "secret")
+SUBADMIN_USER = os.getenv("SUBADMIN_USER", "subadmin")
+SUBADMIN_PASS = os.getenv("SUBADMIN_PASS", "subsecret")
 
 
 def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
     ok_user = secrets.compare_digest(credentials.username.encode(), ADMIN_USER.encode())
     ok_pass = secrets.compare_digest(credentials.password.encode(), ADMIN_PASS.encode())
     if not (ok_user and ok_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+def require_subadmin(credentials: HTTPBasicCredentials = Depends(security)):
+    # Allow full admin or subadmin accounts
+    ok_admin = secrets.compare_digest(credentials.username.encode(), ADMIN_USER.encode()) and \
+               secrets.compare_digest(credentials.password.encode(), ADMIN_PASS.encode())
+    ok_sub = secrets.compare_digest(credentials.username.encode(), SUBADMIN_USER.encode()) and \
+             secrets.compare_digest(credentials.password.encode(), SUBADMIN_PASS.encode())
+    if not (ok_admin or ok_sub):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",

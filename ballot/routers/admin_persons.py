@@ -6,9 +6,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from ballot.database import get_db
 from ballot.models import Person, Nominee, Nomination, Round, RoundType
-from ballot.auth import require_admin
+from ballot.auth import require_subadmin
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
