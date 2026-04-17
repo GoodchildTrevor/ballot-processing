@@ -220,8 +220,9 @@ def export_results(
     for item in results:
         ws = wb.create_sheet(title=item["nom"].name[:31])
         if item["nom"].type == NominationType.RANK:
+            include_nominee = bool(item["nom"].nominees_count and (not item.get("round") or item["round"].tour != 2))
             ws.append(["Участник", "Очки", "Проголосовали (место)",
-                       "Номинант" if item["nom"].nominees_count else ""])
+                       "Номинант" if include_nominee else ""])
         else:
             has_runner_up = item["nom"].has_runner_up
             header = ["Участник", "Голоса"]
@@ -232,7 +233,8 @@ def export_results(
                 header.append("Номинант")
             ws.append(header)
         for row in item["rows"]:
-            extra = ["✅ Номинант" if row["is_nominee"] else ""] if item["nom"].nominees_count else []
+            include_nominee = bool(item["nom"].nominees_count and (not item.get("round") or item["round"].tour != 2))
+            extra = ["✅ Номинант" if row["is_nominee"] else ""] if include_nominee else []
             if item["nom"].type == NominationType.RANK:
                 ws.append([row["label"], row["score"], row["voters"]] + extra)
             else:
