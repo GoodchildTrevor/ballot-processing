@@ -228,6 +228,18 @@ def delete_contest(contest_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
+@router.post("/contests/{contest_id}/edit")
+def edit_contest(
+    contest_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    contest = db.get(Contest, contest_id)
+    if contest:
+        contest.name = name.strip()
+        db.commit()
+    return RedirectResponse(url="/admin/rounds", status_code=303)
+
 
 @router.post("/rounds")
 def create_round(
