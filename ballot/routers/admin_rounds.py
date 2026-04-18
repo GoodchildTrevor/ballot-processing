@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 
 from ballot.auth import require_admin
 from ballot.database import get_db
@@ -48,10 +49,20 @@ def _nominee_label(nominee: Nominee) -> str:
 
 @router.get("/rounds", response_class=HTMLResponse)
 def list_rounds(request: Request, db: Session = Depends(get_db)):
+
+    latest_deadline = (
+        db.query(
+            Round.contest_id,
+            func.max(Round.deadline).label("latest_deadline")
+        )
+        .group_by(Round.contest_id)
+        .subquery()
+    )
+
     contests = (
         db.query(Contest)
-        .options(joinedload(Contest.rounds))
-        .order_by(Round.deadline.desc())
+        .outerjoin(latest_deadline, latest_deadline.c.contest_id == Contest.id)
+        .order_by(latest_deadline.c.latest_deadline.desc())
         .all()
     )
     standalone = (

@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
+
 from ballot.database import get_db
 from ballot.models import (
     Contest, Round, RoundParticipation,
@@ -50,9 +52,20 @@ def list_voters(
     round_id: Optional[int] = Query(None),  # optional: filter to a single round
     db: Session = Depends(get_db),
 ):
+
+    latest_deadline = (
+        db.query(
+            Round.contest_id,
+            func.max(Round.deadline).label("latest_deadline")
+        )
+        .group_by(Round.contest_id)
+        .subquery()
+    )
+
     contests = (
         db.query(Contest)
-        .order_by(Round.deadline.desc())
+        .outerjoin(latest_deadline, latest_deadline.c.contest_id == Contest.id)
+        .order_by(latest_deadline.c.latest_deadline.desc())
         .all()
     )
 

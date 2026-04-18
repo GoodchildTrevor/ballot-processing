@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from ballot.database import get_db
 from ballot.models import (
     Contest, Film, Nomination, NominationType, Nominee, NomineePerson, Person, Round
@@ -85,7 +86,22 @@ def list_nominations(
     db: Session = Depends(get_db),
 ):
     years = _all_years(db)
-    contests = db.query(Contest).order_by(Round.deadline.desc()).all()
+
+    latest_deadline = (
+        db.query(
+            Round.contest_id,
+            func.max(Round.deadline).label("latest_deadline")
+        )
+        .group_by(Round.contest_id)
+        .subquery()
+    )
+
+    contests = (
+        db.query(Contest)
+        .outerjoin(latest_deadline, latest_deadline.c.contest_id == Contest.id)
+        .order_by(latest_deadline.c.latest_deadline.desc())
+        .all()
+    )
 
     selected_contest = None
     selected_round = None

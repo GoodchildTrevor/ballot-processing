@@ -208,7 +208,22 @@ def show_results(
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    contests = db.query(Contest).order_by(Round.deadline.desc()).all()
+
+    latest_deadline = (
+        db.query(
+            Round.contest_id,
+            func.max(Round.deadline).label("latest_deadline")
+        )
+        .group_by(Round.contest_id)
+        .subquery()
+    )
+
+    contests = (
+        db.query(Contest)
+        .outerjoin(latest_deadline, latest_deadline.c.contest_id == Contest.id)
+        .order_by(latest_deadline.c.latest_deadline.desc())
+        .all()
+    )
 
     selected_contest = None
     selected_round = None
