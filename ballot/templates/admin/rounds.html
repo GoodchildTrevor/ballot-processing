@@ -24,40 +24,7 @@
     <p class="text-xs text-gray-400 mb-4">Автоматически создаёт лонг-лист раунд и номинации по выбранным шаблонам.</p>
     <form method="post" action="/admin/contests" class="space-y-4">
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <div x-data="{ showEdit: false }">
-    
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-gray-900">{{ contest.name }}</span>
-              <span class="text-xs text-gray-400">{{ contest.year }}</span>
-              <button @click="showEdit = !showEdit"
-                      class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
-                ✏ Переименовать
-              </button>
-            </div>
-    
-            <div x-show="showEdit" x-cloak class="mt-3">
-              <form method="post" action="/admin/contests/{{ contest.id }}/edit"
-                    class="flex items-center gap-2">
-                <input name="name" value="{{ contest.name }}" required
-                       class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 w-64" />
-                <button type="submit"
-                        class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 transition">
-                  Сохранить
-                </button>
-                <button type="button" @click="showEdit = false"
-                        class="text-gray-500 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100 transition">
-                  Отмена
-                </button>
-              </form>
-            </div>
-    
-          </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-gray-900">{{ contest.name }}</span>
-            <span class="text-xs text-gray-400">{{ contest.year }}</span>
-          </div>
+        
         <div class="sm:col-span-2">
           <label class="block text-xs font-medium text-gray-500 mb-1">Название конкурса</label>
           <input name="name" required placeholder="Премия 2024"
