@@ -51,7 +51,7 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
     contests = (
         db.query(Contest)
         .options(joinedload(Contest.rounds))
-        .order_by(Contest.year.desc())
+        .order_by(Round.deadline.desc())
         .all()
     )
     standalone = (

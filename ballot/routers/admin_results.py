@@ -208,7 +208,7 @@ def show_results(
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    contests = db.query(Contest).order_by(Contest.year.desc()).all()
+    contests = db.query(Contest).order_by(Round.deadline.desc()).all()
 
     selected_contest = None
     selected_round = None

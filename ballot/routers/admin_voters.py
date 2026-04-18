@@ -52,7 +52,7 @@ def list_voters(
 ):
     contests = (
         db.query(Contest)
-        .order_by(Contest.year.desc())
+        .order_by(Round.deadline.desc())
         .all()
     )
 

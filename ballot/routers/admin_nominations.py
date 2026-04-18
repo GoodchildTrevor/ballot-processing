@@ -85,7 +85,7 @@ def list_nominations(
     db: Session = Depends(get_db),
 ):
     years = _all_years(db)
-    contests = db.query(Contest).order_by(Contest.year.desc()).all()
+    contests = db.query(Contest).order_by(Round.deadline.desc()).all()
 
     selected_contest = None
     selected_round = None
