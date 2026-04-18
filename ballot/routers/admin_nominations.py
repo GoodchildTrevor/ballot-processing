@@ -135,6 +135,7 @@ async def create_nomination(request: Request, db: Session = Depends(get_db)):
     pick_max_raw = form.get("pick_max")
     round_id_raw = form.get("round_id")
     year_filter_raw = form.get("year_filter")
+    acting_group_raw = form.get("acting_group")
 
     nom = Nomination(
         name=form["name"],
@@ -144,6 +145,7 @@ async def create_nomination(request: Request, db: Session = Depends(get_db)):
         pick_max=int(pick_max_raw) if pick_max_raw else None,
         round_id=int(round_id_raw) if round_id_raw else None,
         year_filter=int(year_filter_raw) if year_filter_raw else None,
+        acting_group=acting_group_raw.strip() if acting_group_raw else None,
     )
     db.add(nom)
     db.commit()
@@ -172,6 +174,8 @@ async def edit_nomination(nom_id: int, request: Request, db: Session = Depends(g
         nom.pick_max = int(px) if px else None
         yf = form.get("year_filter")
         nom.year_filter = int(yf) if yf else None
+        ag = form.get("acting_group")
+        nom.acting_group = ag.strip() if ag else None
         db.commit()
 
     contest_id = form.get("contest_id")

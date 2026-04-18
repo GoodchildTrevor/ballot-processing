@@ -118,6 +118,13 @@
         {% endfor %}
       </select>
     </div>
+
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Acting group <span class="text-gray-300">(необяз.)</span></label>
+      <input type="text" name="acting_group" value=""
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:ring-indigo-400 focus:outline-none" />
+    </div>
+
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Создать</button>
   </form>
 </div>
@@ -227,6 +234,13 @@
                   {% endfor %}
                 </select>
               </div>
+
+              <div>
+                <label class="block text-xs text-gray-400 mb-0.5">Acting group <span class="text-gray-300">(необяз.)</span></label>
+                <input type="text" name="acting_group" value="{{ nom.acting_group or '' }}"
+                       class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-44 focus:ring-indigo-400 focus:outline-none" />
+              </div>
+
               <div class="flex gap-2 items-end">
                 <button type="submit"
                         class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs">Сохранить</button>

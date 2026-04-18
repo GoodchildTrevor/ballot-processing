@@ -182,6 +182,7 @@ class Nomination(Base):
     sort_order     = Column(Integer, nullable=False, default=0)
     round_id       = Column(Integer, ForeignKey("rounds.id"), nullable=True)
     has_runner_up  = Column(Boolean, default=False, nullable=False)
+    acting_group   = Column(String, nullable=True)
     contest_nomination_id = Column(Integer,
                                    ForeignKey("contest_nominations.id"),
                                    nullable=True)

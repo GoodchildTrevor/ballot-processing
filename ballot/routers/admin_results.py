@@ -165,7 +165,8 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
     for item in results:
         nom = item.get("nom")
         tmpl = getattr(nom.contest_nomination, "template", None) if nom and nom.contest_nomination else None
-        ag = getattr(tmpl, "acting_group", None) if tmpl else None
+        # Prefer acting_group set on Nomination (per-contest override); fall back to template acting_group
+        ag = getattr(nom, "acting_group", None) or (getattr(tmpl, "acting_group", None) if tmpl else None)
         if ag:
             group_map[ag].append(item)
 

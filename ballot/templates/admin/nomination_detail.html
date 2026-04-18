@@ -72,6 +72,11 @@
           {% endfor %}
         </select>
       </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Acting group <span class="text-gray-300">(необяз.)</span></label>
+        <input type="text" name="acting_group" value="{{ nom.acting_group or '' }}"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-400 focus:outline-none" />
+      </div>
       <div class="flex gap-2 pt-1">
         <button type="submit"
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition">Сохранить</button>
@@ -95,20 +100,23 @@
   {% endif %}
 
   <script>
-  const NOM_TYPE = "{{ nom.type.value }}";
-  const NOM_FILMS = [
-    {% for film in films %}
-    { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
-  const NOM_HAS_YEAR_FILTER = {{ 'true' if nom.year_filter else 'false' }};
-  {% if nom.type.value == 'PICK' %}
-  const NOM_PERSONS = [
-    {% for person in persons %}
-    { id: {{ person.id }}, name: {{ person.name | tojson }}, url: {{ person.url | tojson if person.url else 'null' }} }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
-  {% endif %}
+    window.__NOM_DETAIL = {
+      NOM_TYPE: {{ nom.type.value | tojson }},
+      HAS_YEAR_FILTER: {{ (nom.year_filter is not none) | tojson }},
+      FILMS: {{ films | tojson }},
+      PERSONS: {{ persons | tojson }},
+      NOMINEE_DATA: {
+        {% for nominee in nom.nominees %}
+        "{{ nominee.id }}": {
+          personId: {{ nominee.person_id or 'null' }},
+          personUrl: {{ (nominee.person.url if nominee.person and nominee.person.url else None) | tojson }},
+          filmId: {{ nominee.film_id }},
+          item: {{ nominee.item | tojson if nominee.item else 'null' }},
+          itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      }
+    };
   </script>
 
   <form method="post" action="/admin/nominations/{{ nom.id }}/nominees"
@@ -279,33 +287,8 @@
 
 {# ── Longlist table ── #}
 <script>
-  {% if nom.type.value == 'PICK' %}
-  const ALL_PERSONS = [
-    {% for person in persons %}
-    { id: {{ person.id }}, name: {{ person.name | tojson }}, url: {{ person.url | tojson if person.url else 'null' }} }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
-  {% endif %}
-  const ALL_FILMS = [
-    {% for film in films %}
-    { id: {{ film.id }}, title: {{ film.title | tojson }}, year: {{ film.year }} }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
-
-  const NOMINEE_DATA = {
-    {% for nominee in nom.nominees %}
-    {{ nominee.id }}: {
-      personId: {{ nominee.person_id or 'null' }},
-      personUrl: {{ nominee.person.url | tojson if nominee.person and nominee.person.url else 'null' }},
-      filmId: {{ nominee.film_id }},
-      item: {{ nominee.item | tojson if nominee.item else 'null' }},
-      itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }}
-    }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  };
-
   function rowEditor(nomineeId) {
-    const d = NOMINEE_DATA[nomineeId] || {};
+    const d = (window.__NOM_DETAIL && window.__NOM_DETAIL.NOMINEE_DATA ? window.__NOM_DETAIL.NOMINEE_DATA[nomineeId] : null) || {};
     return {
       editing: false,
       filmSel: null, filmQ: '', filmOpen: false,
@@ -315,20 +298,20 @@
       itemUrlVal: d.itemUrl || '',
       {% endif %}
       init() {
-        this.filmSel = ALL_FILMS.find(f => f.id === d.filmId) || null;
+        this.filmSel = (window.__NOM_DETAIL && window.__NOM_DETAIL.FILMS || []).find(f => f.id === d.filmId) || null;
         {% if nom.type.value == 'PICK' %}
-        this.personSel = ALL_PERSONS.find(p => p.id === d.personId) || null;
+        this.personSel = (window.__NOM_DETAIL && window.__NOM_DETAIL.PERSONS || []).find(p => p.id === d.personId) || null;
         this.personUrlVal = d.personUrl || '';
         {% endif %}
       },
       visibleFilms() {
         const q = this.filmQ.toLowerCase().trim();
-        return q ? ALL_FILMS.filter(f => f.title.toLowerCase().includes(q)) : ALL_FILMS;
+        return q ? (window.__NOM_DETAIL && window.__NOM_DETAIL.FILMS || []).filter(f => f.title.toLowerCase().includes(q)) : (window.__NOM_DETAIL && window.__NOM_DETAIL.FILMS || []);
       },
       {% if nom.type.value == 'PICK' %}
       visiblePersons() {
         const q = this.personQ.toLowerCase().trim();
-        return q ? ALL_PERSONS.filter(p => p.name.toLowerCase().includes(q)) : ALL_PERSONS;
+        return q ? (window.__NOM_DETAIL && window.__NOM_DETAIL.PERSONS || []).filter(p => p.name.toLowerCase().includes(q)) : (window.__NOM_DETAIL && window.__NOM_DETAIL.PERSONS || []);
       },
       selectPerson(p) { this.personSel = p; this.personUrlVal = p ? (p.url || '') : ''; this.personOpen = false; this.personQ = ''; },
       {% endif %}
@@ -336,10 +319,10 @@
   }
 
   function formPicker() {
-    const films = NOM_FILMS.slice().sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+    const films = (window.__NOM_DETAIL && window.__NOM_DETAIL.FILMS || []).slice().sort((a, b) => a.title.localeCompare(b.title, 'ru'));
     const filmYears = [...new Set(films.map(f => f.year))].sort((a, b) => b - a);
     {% if nom.type.value == 'PICK' %}
-    const persons = NOM_PERSONS.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const persons = (window.__NOM_DETAIL && window.__NOM_DETAIL.PERSONS || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     {% endif %}
     return {
       films, filmYears,
@@ -354,7 +337,7 @@
       },
       {% endif %}
       visibleFilms() {
-        let rows = (!NOM_HAS_YEAR_FILTER && this.yearTab !== null) ? this.films.filter(f => f.year === this.yearTab) : this.films;
+        let rows = (!(window.__NOM_DETAIL && window.__NOM_DETAIL.HAS_YEAR_FILTER) && this.yearTab !== null) ? this.films.filter(f => f.year === this.yearTab) : this.films;
         const q = this.filmQ.toLowerCase().trim();
         return q ? rows.filter(f => f.title.toLowerCase().includes(q)) : rows;
       },
