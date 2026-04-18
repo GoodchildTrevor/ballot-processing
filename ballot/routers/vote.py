@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -21,6 +21,7 @@ from ballot.models import (
     Nomination, NominationType,
     Nominee, Vote, Ranking, Voter,
     Round, RoundParticipation, RoundType,
+    ContestNomination, NominationTemplate,
 )
 
 router = APIRouter(dependencies=[Depends(require_voter)])
@@ -136,6 +137,76 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
         .order_by(Nomination.sort_order, Nomination.id)
         .all()
     )
+
+def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: set[int], rnd: Round):
+    """
+    Ensure the voter does not vote for the same person in two nominations belonging
+    to the same acting_group within the same round. Raises HTTPException on conflict.
+    """
+    # Collect person_id -> list of (nominee_id, nomination_id, acting_group)
+    person_map: dict[int, list[tuple[int, int, str]]] = {}
+    # Load all nominees referenced by selected_nids
+    for nid in list(selected_nids):
+        nom_obj = db.get(Nominee, nid)
+        if not nom_obj:
+            continue
+        # gather person ids for this nominee
+        pids = []
+        if nom_obj.person_id:
+            pids.append(nom_obj.person_id)
+        if nom_obj.persons:
+            pids.extend([np.person_id for np in nom_obj.persons])
+        if not pids:
+            continue
+        # find acting_group for this nominee via its template (if available)
+        acting_group = None
+        if nom_obj.nomination and nom_obj.nomination.contest_nomination and nom_obj.nomination.contest_nomination.template:
+            acting_group = getattr(nom_obj.nomination.contest_nomination.template, "acting_group", None)
+        if not acting_group:
+            continue
+        for pid in pids:
+            person_map.setdefault(pid, []).append((nid, nom_obj.nomination_id, acting_group))
+
+    if not person_map:
+        return
+
+    # For each person, look for other nominees in same round that share the acting_group.
+    for pid, entries in person_map.items():
+        # For each acting_group present for this person, collect all nominee ids in this round with same group
+        groups = {}
+        for nid, nomination_id, acting_group in entries:
+            groups.setdefault(acting_group, set()).add(nid)
+
+        for acting_group, nids_in_submission in groups.items():
+            # find other nominees in the same round with this acting_group
+            other_nominees = (
+                db.query(Nominee)
+                .join(Nominee.nomination)
+                .join(Nomination.contest_nomination)
+                .join(ContestNomination.template)
+                .filter(Nomination.round_id == rnd.id)
+                .filter(NominationTemplate.acting_group == acting_group)
+                .filter(Nominee.id.notin_(list(nids_in_submission)))
+                .all()
+            )
+            # check DB votes by voter for any of these other nominees
+            for other in other_nominees:
+                # collect person ids for other nominee
+                other_pids = set()
+                if other.person_id:
+                    other_pids.add(other.person_id)
+                if other.persons:
+                    other_pids.update(np.person_id for np in other.persons)
+                if pid not in other_pids:
+                    continue
+                # conflict if voter already has a vote for this other nominee
+                existing = db.query(Vote).filter(Vote.voter_id == voter_id, Vote.nominee_id == other.id).first()
+                if existing:
+                    raise HTTPException(status_code=400, detail="Нельзя голосовать за одного актёра в обоих планах")
+                # or conflict if the voter is selecting that other nominee in the same submission
+                if other.id in selected_nids:
+                    raise HTTPException(status_code=400, detail="Нельзя голосовать за одного актёра в обоих планах")
+    return
 
 
 def _find_active_round_for_year(
@@ -520,6 +591,38 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
             "draft": participation.draft,
             "draft_restored": True,
             "error_message": " · ".join(errors),
+        }, status_code=400)
+
+    # Cross-nomination conflict check: prevent voting for same person across acting_group-linked nominations
+    selected_nids = set()
+    for nom in nominations:
+        if nom.type == NominationType.PICK:
+            raw = form.getlist(f"pick_{nom.id}") or []
+            for v in raw:
+                try:
+                    selected_nids.add(int(v))
+                except ValueError:
+                    pass
+            if is_final and nom.has_runner_up:
+                ru_val = form.get(f"runnerup_{nom.id}")
+                if ru_val:
+                    try:
+                        selected_nids.add(int(ru_val))
+                    except ValueError:
+                        pass
+    try:
+        _check_cross_nomination_conflict(db, voter.id, selected_nids, rnd)
+    except HTTPException as e:
+        participation = _get_or_create_participation(db, rnd.id, voter.id)
+        participation.draft = {"picks": picks_map, "runnerups": runnerups_map, "ranks": ranks_map}
+        db.commit()
+        return templates.TemplateResponse(request, "vote.html", {
+            "voter": voter,
+            "round": rnd,
+            "nominations": nominations,
+            "draft": participation.draft,
+            "draft_restored": True,
+            "error_message": e.detail,
         }, status_code=400)
 
     round_nominee_ids = {n.id for nom in nominations for n in nom.nominees}

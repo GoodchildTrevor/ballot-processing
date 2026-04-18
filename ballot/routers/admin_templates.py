@@ -43,6 +43,7 @@ def create_template(
     longlist_pick_min: Optional[str] = Form(None),
     longlist_pick_max: Optional[str] = Form(None),
     final_promotes_count: Optional[str] = Form(None),
+    acting_group: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     last = (
@@ -56,6 +57,7 @@ def create_template(
         description=description.strip() if description else None,
         type=type,
         sort_order=order,
+        acting_group=acting_group.strip() if acting_group else None,
         longlist_pick_min=_int(longlist_pick_min),
         longlist_pick_max=_int(longlist_pick_max),
         final_promotes_count=_int(final_promotes_count),
@@ -73,6 +75,7 @@ def edit_template(
     longlist_pick_min: Optional[str] = Form(None),
     longlist_pick_max: Optional[str] = Form(None),
     final_promotes_count: Optional[str] = Form(None),
+    acting_group: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     tmpl = db.get(NominationTemplate, template_id)
@@ -80,6 +83,7 @@ def edit_template(
         tmpl.name = name.strip()
         tmpl.description = description.strip() if description else None
         tmpl.type = type
+        tmpl.acting_group = acting_group.strip() if acting_group else None
         tmpl.longlist_pick_min = _int(longlist_pick_min)
         tmpl.longlist_pick_max = _int(longlist_pick_max)
         tmpl.final_promotes_count = _int(final_promotes_count)

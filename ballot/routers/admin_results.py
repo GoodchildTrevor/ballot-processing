@@ -140,6 +140,56 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 })
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
+
+    # Post-processing: merge acting groups (aggregate scores by person across linked templates)
+    results = merge_acting_groups(results)
+    return results
+
+
+def merge_acting_groups(results: list[dict]) -> list[dict]:
+    """
+    For nominations that share the same NominationTemplate.acting_group,
+    sum votes per person_id and keep the person only in the nomination with the highest score.
+    The winner receives the total sum; other entries for that person are zeroed.
+    """
+    from collections import defaultdict
+
+    # group items by acting_group
+    group_map: dict[str, list[dict]] = defaultdict(list)
+    for item in results:
+        nom = item.get("nom")
+        tmpl = getattr(nom.contest_nomination, "template", None) if nom and nom.contest_nomination else None
+        ag = getattr(tmpl, "acting_group", None) if tmpl else None
+        if ag:
+            group_map[ag].append(item)
+
+    for group, items in group_map.items():
+        # person_id -> {nomination_id: score}
+        person_votes: dict[int, dict[int, int]] = defaultdict(dict)
+        for item in items:
+            for row in item.get("rows", []):
+                pid = row.get("person_id")
+                if pid:
+                    person_votes[pid][item["nom"].id] = int(row.get("score", 0) or 0)
+
+        for pid, votes_by_nom in person_votes.items():
+            if len(votes_by_nom) <= 1:
+                continue
+            total = sum(votes_by_nom.values())
+            best_nom_id = max(votes_by_nom, key=votes_by_nom.get)
+            for item in items:
+                for row in item.get("rows", []):
+                    if row.get("person_id") != pid:
+                        continue
+                    if item["nom"].id == best_nom_id:
+                        row["score"] = total
+                        row["merged"] = True
+                        if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
+                            row["cols"][1] = total
+                    else:
+                        row["score"] = 0
+                        if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
+                            row["cols"][1] = 0
     return results
 
 

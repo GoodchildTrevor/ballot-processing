@@ -58,6 +58,7 @@ class NominationTemplate(Base):
     type        = Column(SAEnum(NominationType), nullable=False)
     sort_order  = Column(Integer, default=0,  nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)
+    acting_group = Column(String, nullable=True)
 
     # --- longlist voting parameters ---
     longlist_pick_min = Column(Integer, nullable=True)
