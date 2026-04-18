@@ -494,6 +494,7 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
 
     nominations = _nominations_for_round(db, rnd.id)
     form = await request.form()
+    is_final = (rnd.round_type.value == "FINAL")
 
     # Server-side validation: runner-up (if provided) — ensure consistency with picks.
     # Rules:

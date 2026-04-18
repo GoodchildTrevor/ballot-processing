@@ -130,13 +130,19 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 runner_up_names = ", ".join(
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if v.is_runner_up)
                 )
+                pid = None
+                if getattr(nominee, "person", None) and nominee.person:
+                    pid = nominee.person.id
+                elif getattr(nominee, "persons", None) and nominee.persons:
+                    pid = nominee.persons[0].person_id
                 rows.append({
                     "label": label,
                     "score": votes or 0,
                     "runner_ups": runner_ups or 0,
                     "voters": voter_names,
                     "runner_up_voters": runner_up_names,
-                    "voter_list": []
+                    "voter_list": [],
+                    "person_id": pid,
                 })
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
