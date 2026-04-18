@@ -50,6 +50,14 @@
         <input name="final_promotes_count" type="number" min="1" placeholder="5"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
       </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Группа объединения голосов
+          <span class="text-gray-400 font-normal">(напр. «acting»)</span>
+        </label>
+        <input name="acting_group" placeholder="acting"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+      </div>
       <div class="sm:col-span-2 lg:col-span-3 flex gap-3">
         <button type="submit"
                 class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Создать</button>
@@ -84,6 +92,9 @@
           {% endif %}
           {% if tmpl.final_promotes_count %}
             <span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">топ-{{ tmpl.final_promotes_count }}</span>
+          {% endif %}
+          {% if tmpl.acting_group %}
+            <span class="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-200">⛓ {{ tmpl.acting_group }}</span>
           {% endif %}
         </div>
 
@@ -151,6 +162,14 @@
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Кол-во номинантов / топ-N в финал</label>
             <input name="final_promotes_count" type="number" min="1" value="{{ tmpl.final_promotes_count or '' }}"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Группа объединения голосов
+              <span class="text-gray-400 font-normal">(напр. «acting»)</span>
+            </label>
+            <input name="acting_group" value="{{ tmpl.acting_group or '' }}" placeholder="acting"
                    class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
           </div>
           <div class="sm:col-span-2 lg:col-span-3 flex gap-3">
