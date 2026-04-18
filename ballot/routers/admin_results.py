@@ -130,11 +130,11 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 runner_up_names = ", ".join(
                     sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if v.is_runner_up)
                 )
-                pid = None
-                if getattr(nominee, "person", None) and nominee.person:
-                    pid = nominee.person.id
-                elif getattr(nominee, "persons", None) and nominee.persons:
-                    pid = nominee.persons[0].person_id
+                person_ids = (
+                    [np.person_id for np in nominee.persons]
+                    if getattr(nominee, "persons", None) and nominee.persons
+                    else ([nominee.person_id] if nominee.person_id else [])
+                )
                 rows.append({
                     "label": label,
                     "score": votes or 0,
@@ -142,7 +142,7 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                     "voters": voter_names,
                     "runner_up_voters": runner_up_names,
                     "voter_list": [],
-                    "person_id": pid,
+                    "person_ids": person_ids,
                 })
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
@@ -174,9 +174,9 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
         person_votes: dict[int, dict[int, int]] = defaultdict(dict)
         for item in items:
             for row in item.get("rows", []):
-                pid = row.get("person_id")
-                if pid:
-                    person_votes[pid][item["nom"].id] = int(row.get("score", 0) or 0)
+                for pid in (row.get("person_ids") or []):
+                    if pid:
+                        person_votes[pid][item["nom"].id] = int(row.get("score", 0) or 0)
 
         for pid, votes_by_nom in person_votes.items():
             if len(votes_by_nom) <= 1:
@@ -185,7 +185,8 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
             best_nom_id = max(votes_by_nom, key=votes_by_nom.get)
             for item in items:
                 for row in item.get("rows", []):
-                    if row.get("person_id") != pid:
+                    pids = row.get("person_ids") or []
+                    if pid not in pids:
                         continue
                     if item["nom"].id == best_nom_id:
                         row["score"] = total
