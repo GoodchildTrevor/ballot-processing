@@ -65,6 +65,14 @@ def _set_nominee_persons(db: Session, nominee: Nominee, person_ids: list[int], p
     db.flush()
 
 
+def _film_to_dict(film: Film) -> dict:
+    return {"id": film.id, "title": film.title, "year": film.year}
+
+
+def _person_to_dict(person: Person) -> dict:
+    return {"id": person.id, "name": person.name, "url": person.url}
+
+
 # ─────────────────────────────────────────────────────────────
 # LIST
 # ─────────────────────────────────────────────────────────────
@@ -345,9 +353,9 @@ def nomination_detail(
 
     return templates.TemplateResponse(request, "admin/nomination_detail.html", {
         "nom": nom,
-        "films": films,
+        "films": [_film_to_dict(f) for f in films],
         "added_film_ids": added_film_ids,
-        "persons": persons,
+        "persons": [_person_to_dict(p) for p in persons],
         "years": years,
         "error": error,
         "bulk_created": bulk_created,
@@ -437,11 +445,6 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
 
         parts = [p.strip() for p in line.split("|")]
         film_title = parts[0] if len(parts) > 0 else ""
-        # support multiple persons: parts[1] and parts[2] can both be person names
-        # format: Film | Person1 | Person2 | Item | ItemURL | PersonURL
-        # OR old format: Film | Person | Item | ItemURL | PersonURL
-        # We detect: if parts[2] looks like a URL or empty → old format
-        # Simple heuristic: if parts[2] starts with http or is empty treat as item
         person1_name = ""
         person2_name = ""
         item = ""
@@ -453,12 +456,8 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
         if len(parts) >= 3:
             candidate = parts[2]
             if candidate.startswith("http"):
-                # old format: Film | Person | ItemURL (no item)
                 item_url = candidate
             else:
-                # could be person2 or item
-                # treat as person2 only if no item yet and candidate doesn't look like item
-                # simple rule: if it has spaces and no slash, it's a person name
                 if " " in candidate and "/" not in candidate and not candidate.startswith("https"):
                     person2_name = candidate
                 else:
