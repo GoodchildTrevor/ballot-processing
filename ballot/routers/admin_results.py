@@ -135,15 +135,15 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                     if getattr(nominee, "persons", None) and nominee.persons
                     else ([nominee.person_id] if nominee.person_id else [])
                 )
-            rows.append({
-                "label": label,
-                "score": votes or 0,
-                "runner_ups": runner_ups or 0,
-                "voters": voter_names,
-                "runner_up_voters": runner_up_names,
-                "voter_list": [],
-                "person_ids": person_ids,
-            })
+                rows.append({
+                    "label": label,
+                    "score": votes or 0,
+                    "runner_ups": runner_ups or 0,
+                    "voters": voter_names,
+                    "runner_up_voters": runner_up_names,
+                    "voter_list": [],
+                    "person_ids": person_ids,
+                })
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
 
