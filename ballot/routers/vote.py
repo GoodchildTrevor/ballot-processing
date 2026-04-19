@@ -138,11 +138,8 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
         .all()
     )
 
+
 def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: set[int], rnd: Round):
-    """
-    Ensure the voter does not vote for the same person in two nominations belonging
-    to the same acting_group within the same round. Raises HTTPException on conflict.
-    """
     if not selected_nids:
         return
 
@@ -158,6 +155,9 @@ def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: 
 
     # (person_id, acting_group) -> set(nomination_id)
     person_group_nominations: dict[tuple[int, str], set[int]] = {}
+    # person_id -> name  (для сообщения об ошибке)
+    person_names: dict[int, str] = {}
+
     for nominee in nominees:
         nomination = nominee.nomination
         if not nomination or nomination.round_id != rnd.id:
@@ -166,19 +166,28 @@ def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: 
         acting_group = nomination.acting_group or (template.acting_group if template else None)
         if not acting_group:
             continue
+
         person_ids = set()
         if nominee.person_id:
             person_ids.add(nominee.person_id)
+            if nominee.person:
+                person_names[nominee.person_id] = nominee.person.name
         if nominee.persons:
-            person_ids.update(np.person_id for np in nominee.persons)
+            for np in nominee.persons:
+                person_ids.add(np.person_id)
+                person_names[np.person_id] = np.person.name
+
         for pid in person_ids:
             key = (pid, acting_group)
             person_group_nominations.setdefault(key, set()).add(nomination.id)
 
-    for nomination_ids in person_group_nominations.values():
+    for (pid, acting_group), nomination_ids in person_group_nominations.items():
         if len(nomination_ids) > 1:
-            raise HTTPException(status_code=400, detail="Нельзя голосовать за одного актёра в обоих планах")
-    return
+            person_name = person_names.get(pid, f"person#{pid}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Нельзя голосовать за «{person_name}» в двух номинациях одной группы ({acting_group})",
+            )
 
 
 def _find_active_round_for_year(
