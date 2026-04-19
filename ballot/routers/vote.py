@@ -177,8 +177,7 @@ def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: 
             key = (pid, acting_group)
             person_group_nominations.setdefault(key, set()).add(nomination.id)
 
-    for (person_id, acting_group), nomination_ids in person_group_nominations.items():
-        _ = (person_id, acting_group)
+    for (_person_id, _acting_group), nomination_ids in person_group_nominations.items():
         if len(nomination_ids) > 1:
             raise HTTPException(status_code=400, detail="Нельзя голосовать за одного актёра в обоих планах")
     return
