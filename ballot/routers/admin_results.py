@@ -135,16 +135,15 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                     if getattr(nominee, "persons", None) and nominee.persons
                     else ([nominee.person_id] if nominee.person_id else [])
                 )
-                rows.append({
-                    "label": label,
-                    "score": votes or 0,
-                    "runner_ups": runner_ups or 0,
-                    "voters": voter_names,
-                    "runner_up_voters": runner_up_names,
-                    "voter_list": [],
-                    "person_ids": person_ids,
-                })
-            rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
+            rows.append({
+                "label": label,
+                "score": votes or 0,
+                "runner_ups": runner_ups or 0,
+                "voters": voter_names,
+                "runner_up_voters": runner_up_names,
+                "voter_list": [],
+                "person_ids": person_ids,
+            })
             results.append({"nom": nom, "round": rnd, "rows": rows})
 
     # Post-processing: merge acting groups (aggregate scores by person across linked templates)
@@ -198,6 +197,18 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
                         row["score"] = 0
                         if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
                             row["cols"][1] = 0
+
+    # ── Re-sort and re-annotate each nomination after score changes ──
+    for item in results:
+        nom = item["nom"]
+        if nom.type != NominationType.RANK:
+            item_rows = item.get("rows", [])
+            item_rows.sort(
+                key=lambda r: (r.get("score", 0), r.get("runner_ups", 0)),
+                reverse=True,
+            )
+            item["rows"] = _annotate_rows(item_rows, nom.nominees_count, nom.has_runner_up)
+
     return results
 
 
