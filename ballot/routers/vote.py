@@ -181,13 +181,20 @@ def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: 
             key = (pid, acting_group)
             person_group_nominations.setdefault(key, set()).add(nomination.id)
 
+    conflicts: list[str] = []
     for (pid, acting_group), nomination_ids in person_group_nominations.items():
         if len(nomination_ids) > 1:
             person_name = person_names.get(pid, f"person#{pid}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Нельзя голосовать за «{person_name}» в двух номинациях одной группы ({acting_group})",
+            conflicts.append(
+                f"«{person_name}» ({acting_group})"
             )
+
+    if conflicts:
+        names = ", ".join(conflicts)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Нельзя голосовать за одного актёра в двух номинациях одной группы: {names}",
+        )
 
 
 def _find_active_round_for_year(
