@@ -372,7 +372,7 @@ goToSlide(0);
     if (!g) return;
     const checked = g.checkboxes.filter(c => c.checked).length;
     if (g.counter) {
-      g.counter.textContent = checked + '\u00a0/\u00a0' + g.max;
+      g.counter.textContent = checked + '/' + g.max;
       g.counter.classList.toggle('text-red-600', !!(g.max && checked >= g.max));
       g.counter.classList.toggle('text-gray-500', !(g.max && checked >= g.max));
     }
@@ -766,30 +766,6 @@ setInterval(saveDraft, 60000);
 
 updateToc();
 
- // Single-select pick behavior (toggleable): checking one unchecks others; allow immediate swap by enforcing selection after click
-document.querySelectorAll('input.pick-cb').forEach(cb => {
-  cb.addEventListener('click', () => {
-    const nomId = cb.dataset.nom;
-    if (!nomId) return;
-    // Defer to after native toggle, then enforce single-select so clicking another immediately replaces previous
-    setTimeout(() => {
-      if (cb.checked) {
-        document.querySelectorAll(`.pick-cb[data-nom="${nomId}"]`).forEach(other => {
-          if (other !== cb) other.checked = false;
-        });
-      }
-      if (window._updatePickGroup) window._updatePickGroup(nomId);
-      updateToc();
-    }, 0);
-  });
-  // also keep change handler to update UI if selection is modified programmatically
-  cb.addEventListener('change', () => {
-    const nomId = cb.dataset.nom;
-    if (!nomId) return;
-    if (window._updatePickGroup) window._updatePickGroup(nomId);
-    updateToc();
-  });
-});
 </script>
 
 {% if round.deadline %}
