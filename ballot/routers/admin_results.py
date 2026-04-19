@@ -144,6 +144,7 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 "voter_list": [],
                 "person_ids": person_ids,
             })
+            rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
 
     # Post-processing: merge acting groups (aggregate scores by person across linked templates)
@@ -198,9 +199,13 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
                         if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
                             row["cols"][1] = 0
 
-    # ── Re-sort and re-annotate each nomination after score changes ──
+    # Re-sort and re-annotate only nominations that belong to an acting group
+    affected_nom_ids = {item["nom"].id for items in group_map.values() for item in items}
+
     for item in results:
         nom = item["nom"]
+        if nom.id not in affected_nom_ids:
+            continue
         if nom.type != NominationType.RANK:
             item_rows = item.get("rows", [])
             item_rows.sort(
