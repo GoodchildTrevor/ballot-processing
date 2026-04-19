@@ -16,6 +16,9 @@
     {% endif %}
 
     <form method="post" action="/">
+      {% if next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
       <label class="block text-sm font-medium text-gray-700 mb-1">Ваш ник</label>
       <input
         type="text" name="name" required autofocus

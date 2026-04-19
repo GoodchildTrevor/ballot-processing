@@ -5,6 +5,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 from ballot.database import get_db
 from ballot.models import Voter
+from urllib.parse import quote
 
 security = HTTPBasic()
 
@@ -45,22 +46,25 @@ def require_voter(request: Request, db: Session = Depends(get_db)):
     stores it in request.state.voter. Redirects to / if missing or unknown."""
     raw = request.cookies.get("voter_id")
     if not raw:
+        next_url = quote(str(request.url.path), safe="")
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/"},
+            headers={"Location": f"/?next={next_url}"},
         )
     try:
         voter_id = int(raw)
     except ValueError:
+        next_url = quote(str(request.url.path), safe="")
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/"},
+            headers={"Location": f"/?next={next_url}"},
         )
     voter = db.get(Voter, voter_id)
     if not voter:
+        next_url = quote(str(request.url.path), safe="")
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/"},
+            headers={"Location": f"/?next={next_url}"},
         )
     request.state.voter = voter
     return voter

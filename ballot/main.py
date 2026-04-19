@@ -34,20 +34,22 @@ app.include_router(admin_templates.router)
 
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
-    return templates.TemplateResponse(request, "index.html", {})
+    next_url = request.query_params.get("next", "")
+    return templates.TemplateResponse(request, "index.html", {"next": next_url})
 
 
 @app.post("/", response_class=HTMLResponse)
 def login(
     request: Request,
     name: str = Form(...),
+    next: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     name = name.strip()
     if not name:
         return templates.TemplateResponse(
             request, "index.html",
-            {"error": "Введите ник."},
+            {"error": "Введите ник.", "next": next},
             status_code=400,
         )
     voter = db.query(Voter).filter(Voter.name == name).first()
@@ -56,7 +58,9 @@ def login(
         db.add(voter)
         db.commit()
         db.refresh(voter)
-    response = RedirectResponse(url="/vote", status_code=303)
+    # Redirect to original URL if valid, otherwise /vote
+    redirect_to = next if (next and next.startswith("/")) else "/vote"
+    response = RedirectResponse(url=redirect_to, status_code=303)
     response.set_cookie(key="voter_id", value=str(voter.id), httponly=True, samesite="lax")
     return response
 

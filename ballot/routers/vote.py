@@ -236,18 +236,25 @@ def _find_active_round_for_year(
 
 
 def _find_latest_active_round(db: Session) -> Round | None:
+    """Return the active round with the latest deadline.
+    If deadlines are equal or absent, prefer FINAL, then higher year.
+    """
     active = (
         db.query(Round)
         .filter(Round.is_active == True)  # noqa: E712
-        .order_by(Round.year.desc())
         .all()
     )
     if not active:
         return None
-    for rnd in active:
-        if rnd.round_type == RoundType.FINAL:
-            return rnd
-    return active[0]
+    # Sort: rounds with deadline first (later deadline = higher priority),
+    # then no-deadline rounds, prefer FINAL over LONGLIST within same deadline.
+    def sort_key(r: Round):
+        # None deadline → treat as epoch 0 (lowest priority)
+        dl = r.deadline.timestamp() if r.deadline else 0
+        is_final = 1 if r.round_type == RoundType.FINAL else 0
+        return (dl, is_final, r.year)
+
+    return max(active, key=sort_key)
 
 
 def _render_vote_page(request, db, rnd, voter):
