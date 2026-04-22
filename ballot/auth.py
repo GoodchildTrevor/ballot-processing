@@ -1,5 +1,6 @@
 import os
 import secrets
+from itsdangerous import BadData, URLSafeSerializer
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
 SUBADMIN_USER = os.getenv("SUBADMIN_USER")
 SUBADMIN_PASS = os.getenv("SUBADMIN_PASS")
+COOKIE_SALT = "voter-cookie"
+serializer = URLSafeSerializer(os.environ["SECRET_KEY"], salt=COOKIE_SALT)
 
 
 def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
@@ -42,18 +45,14 @@ def require_subadmin(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 def require_voter(request: Request, db: Session = Depends(get_db)):
-    """Reads voter_id cookie (int), loads Voter from DB,
-    stores it in request.state.voter. Redirects to / if missing or unknown."""
-    raw = request.cookies.get("voter_id")
-    if not raw:
-        next_url = quote(str(request.url.path), safe="")
-        raise HTTPException(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": f"/?next={next_url}"},
-        )
+    """Reads signed voter cookie, loads Voter from DB, sets request.state.voter."""
+    raw = request.cookies.get("voter_id", "")
     try:
-        voter_id = int(raw)
-    except ValueError:
+        payload = serializer.loads(raw)
+        voter_id = int(payload["voter_id"])
+        if voter_id <= 0:
+            raise ValueError("voter_id must be positive")
+    except (BadData, KeyError, TypeError, ValueError):
         next_url = quote(str(request.url.path), safe="")
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,

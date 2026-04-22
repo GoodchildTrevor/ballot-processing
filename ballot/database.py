@@ -1,4 +1,5 @@
 import os
+import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
@@ -9,6 +10,7 @@ DATABASE_URL = f"sqlite:///{DB_DIR}/ballot.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -154,6 +156,9 @@ def run_migrations():
             try:
                 conn.execute(text(stmt))
                 conn.commit()
-            except Exception:
-                # Column/table already exists or doesn't exist — safe to ignore
-                pass
+            except Exception as exc:
+                logger.exception("migration failed for statement: %s", stmt)
+                err = str(exc).lower()
+                known_safe = ("already exists", "duplicate column", "no such column")
+                if not any(marker in err for marker in known_safe):
+                    raise

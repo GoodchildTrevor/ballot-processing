@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
@@ -9,6 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ValidationError, conint
 from sqlalchemy.orm import Session, joinedload
 import openpyxl
 from openpyxl.cell import MergedCell
@@ -26,6 +28,31 @@ from ballot.models import (
 
 router = APIRouter(dependencies=[Depends(require_voter)])
 templates = Jinja2Templates(directory="ballot/templates")
+SAFE_FILENAME_RE = re.compile(r"[^0-9A-Za-z_-]")
+MAX_EXPORT_NOMINATIONS = 100
+MAX_EXPORT_ROWS = 500
+MAX_EXPORT_COLS = 10
+
+
+class DraftModel(BaseModel):
+    picks: dict[str, list[conint(ge=1)]] = {}
+    runnerups: dict[str, conint(ge=1)] = {}
+    ranks: dict[str, dict[str, conint(ge=1)]] = {}
+
+
+class ExportRowModel(BaseModel):
+    cols: list[str]
+    urls: list[str | None] = []
+
+
+class ExportNominationModel(BaseModel):
+    name: str
+    header: list[str]
+    rows: list[ExportRowModel]
+
+
+class BallotExportModel(BaseModel):
+    nominations: list[ExportNominationModel] = []
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +63,48 @@ def _content_disposition(filename: str) -> str:
     ascii_name = filename.encode("ascii", "ignore").decode()
     encoded_name = quote(filename, safe="")
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
+
+
+def _safe_filename_label(raw: str) -> str:
+    safe = SAFE_FILENAME_RE.sub("_", (raw or "").strip())[:60]
+    return safe or "ballot"
+
+
+def _parse_draft_payload(body: Any) -> dict[str, Any]:
+    try:
+        return DraftModel.parse_obj(body).dict()
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="Invalid draft payload")
+
+
+def _parse_export_payload(body: Any) -> list[dict[str, Any]]:
+    try:
+        payload = BallotExportModel.parse_obj(body)
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="Invalid export payload")
+
+    if len(payload.nominations) > MAX_EXPORT_NOMINATIONS:
+        raise HTTPException(status_code=400, detail="Too many nominations in export payload")
+
+    nominations_data: list[dict[str, Any]] = []
+    for nom in payload.nominations:
+        if len(nom.rows) > MAX_EXPORT_ROWS:
+            raise HTTPException(status_code=400, detail="Too many rows in export payload")
+        if len(nom.header) > MAX_EXPORT_COLS:
+            raise HTTPException(status_code=400, detail="Too many columns in export payload")
+
+        rows: list[dict[str, list[str | None] | list[str]]] = []
+        for row in nom.rows:
+            if len(row.cols) > MAX_EXPORT_COLS:
+                raise HTTPException(status_code=400, detail="Too many columns in export payload")
+            rows.append({"cols": row.cols, "urls": row.urls})
+
+        nominations_data.append({
+            "name": nom.name,
+            "header": nom.header,
+            "rows": rows,
+        })
+    return nominations_data
 
 
 def _auto_width(ws):
@@ -416,7 +485,7 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
     rnd = _find_active_round_for_year(db, year)
     if not rnd:
         return {"ok": False, "error": "no active round"}
-    body = await request.json()
+    body = _parse_draft_payload(await request.json())
     p = _get_or_create_participation(db, rnd.id, voter.id)
     p.draft = body
     db.commit()
@@ -430,10 +499,10 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 @router.post("/{year}/ballot-export")
 async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
     voter: Voter = request.state.voter
-    body: dict[str, Any] = await request.json()
-    nominations_data: list[dict] = body.get("nominations", [])
+    nominations_data = _parse_export_payload(await request.json())
     buf = _build_xlsx_per_nomination(nominations_data)
-    fname = f"ballot_{year}_{voter.name}.xlsx"
+    safe_label = _safe_filename_label(voter.name or str(voter.id))
+    fname = f"ballot_{year}_{safe_label}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -460,7 +529,7 @@ def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/rounds/{round_id}/draft")
 async def save_draft(round_id: int, request: Request, db: Session = Depends(get_db)):
-    body = await request.json()
+    body = _parse_draft_payload(await request.json())
     p = _get_or_create_participation(db, round_id, request.state.voter.id)
     p.draft = body
     db.commit()
@@ -816,8 +885,9 @@ def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_
         })
 
     buf = _build_xlsx_per_nomination(nominations_data)
-    label_safe = rnd.label if rnd else str(round_id)
-    fname = f"ballot_{voter.name}_{label_safe}.xlsx"
+    label_safe = _safe_filename_label(rnd.label if rnd else str(round_id))
+    voter_safe = _safe_filename_label(voter.name or str(voter.id))
+    fname = f"ballot_{voter_safe}_{label_safe}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
