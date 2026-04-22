@@ -9,10 +9,10 @@ from urllib.parse import quote
 
 security = HTTPBasic()
 
-ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "secret")
-SUBADMIN_USER = os.getenv("SUBADMIN_USER", "subadmin")
-SUBADMIN_PASS = os.getenv("SUBADMIN_PASS", "subsecret")
+ADMIN_USER = os.getenv("ADMIN_USER")
+ADMIN_PASS = os.getenv("ADMIN_PASS")
+SUBADMIN_USER = os.getenv("SUBADMIN_USER")
+SUBADMIN_PASS = os.getenv("SUBADMIN_PASS")
 
 
 def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
