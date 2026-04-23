@@ -108,11 +108,14 @@
       NOMINEE_DATA: {
         {% for nominee in nom.nominees %}
         "{{ nominee.id }}": {
-          personId: {{ nominee.person_id or 'null' }},
-          personUrl: {{ (nominee.person.url if nominee.person and nominee.person.url else None) | tojson }},
           filmId: {{ nominee.film_id }},
           item: {{ nominee.item | tojson if nominee.item else 'null' }},
-          itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }}
+          itemUrl: {{ nominee.item_url | tojson if nominee.item_url else 'null' }},
+          persons: [
+            {% for np in nominee.persons %}
+            { id: {{ np.person.id }}, name: {{ np.person.name | tojson }}, url: {{ (np.person.url or None) | tojson }} }{% if not loop.last %},{% endif %}
+            {% endfor %}
+          ]
         }{% if not loop.last %},{% endif %}
         {% endfor %}
       }
@@ -398,37 +401,20 @@
           <span x-show="editing" x-cloak x-text="filmSel ? filmSel.year : ''"></span>
         </td>
 
-        {# Person cell #}
+        {# Person cell — show all persons from nominee.persons relationship #}
         <td class="py-2 pr-4">
-          {% if nominee.person %}
-          {# View mode: name + link (or inline URL form if no link) #}
-          <div x-show="!editing"
-               x-data="{ addingUrl: false, urlVal: {{ nominee.person.url | tojson if nominee.person.url else "''" }} }">
-            {% if nominee.person.url %}
-            <a href="/admin/persons/{{ nominee.person.id }}" class="text-indigo-600 hover:underline inline-flex items-center gap-1">{{ nominee.person.name }}</a>
-            <a href="{{ nominee.person.url }}" target="_blank" rel="noopener noreferrer" class="text-gray-400 ml-1" title="Внешняя ссылка">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            </a>
-            {% else %}
-            <a href="/admin/persons/{{ nominee.person.id }}" class="text-indigo-600 hover:underline">{{ nominee.person.name }}</a>
-            <button type="button" @click="addingUrl = true"
-                    class="ml-1 text-xs text-gray-400 hover:text-indigo-500 transition" title="Добавить ссылку">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            </button>
-            <div x-show="addingUrl" x-cloak class="mt-1 flex items-center gap-1">
-              <form method="post" action="/admin/persons/{{ nominee.person.id }}/set-url"
-                    class="flex items-center gap-1">
-                <input type="hidden" name="back" value="/admin/nominations/{{ nom.id }}" />
-                <input type="url" name="url" x-model="urlVal"
-                       placeholder="https://..."
-                       class="border border-gray-300 rounded px-2 py-1 text-xs w-40 focus:outline-none focus:ring-indigo-400" />
-                <button type="submit"
-                        class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded transition">ОК</button>
-                <button type="button" @click="addingUrl = false"
-                        class="text-xs text-gray-400 hover:underline">×</button>
-              </form>
+          {% if nominee.persons %}
+          <div x-show="!editing" class="space-y-0.5">
+            {% for np in nominee.persons %}
+            <div class="flex items-center gap-1">
+              <a href="/admin/persons/{{ np.person.id }}" class="text-indigo-600 hover:underline">{{ np.person.name }}</a>
+              {% if np.person.url %}
+              <a href="{{ np.person.url }}" target="_blank" rel="noopener noreferrer" class="text-gray-400" title="Внешняя ссылка">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+              {% endif %}
             </div>
-            {% endif %}
+            {% endfor %}
           </div>
           {% else %}
           <div x-show="!editing" class="text-gray-400">&mdash;</div>
