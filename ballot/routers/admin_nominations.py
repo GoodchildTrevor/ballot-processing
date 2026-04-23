@@ -460,41 +460,15 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
             continue
 
         parts = [p.strip() for p in line.split("|")]
-        film_title = parts[0] if len(parts) > 0 else ""
-        person1_name = ""
-        person2_name = ""
-        item = ""
-        item_url = ""
-        person_url = ""
-
-        if len(parts) >= 2:
-            person1_name = parts[1]
-        if len(parts) >= 3:
-            candidate = parts[2]
-            if candidate.startswith("http"):
-                item_url = candidate
-            else:
-                if " " in candidate and "/" not in candidate and not candidate.startswith("https"):
-                    person2_name = candidate
-                else:
-                    item = candidate
-        if len(parts) >= 4:
-            if person2_name:
-                item = parts[3]
-            else:
-                item_url = parts[3]
-        if len(parts) >= 5:
-            if person2_name:
-                item_url = parts[4]
-            else:
-                person_url = parts[4]
-        if len(parts) >= 6:
-            person_url = parts[5]
-
+        film_title   = parts[0] if len(parts) > 0 else ""
+        person_name = parts[1] if len(parts) > 1 else ""
+        person_url   = parts[2] if len(parts) > 2 else ""
+        item         = parts[3] if len(parts) > 3 else ""
+        item_url     = parts[4] if len(parts) > 4 else ""
+        
         if not film_title:
             continue
 
-        # Get or create film
         film = _get_or_create_film(db, film_title, nom.year_filter)
         if not film:
             not_found.append(film_title)
@@ -502,22 +476,20 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
         if db.new and film in db.new:
             films_created += 1
 
-        # Get or create persons
         person_objs: list[Person] = []
-        for pname, purl in [(person1_name, person_url), (person2_name, "")]:
-            if pname.strip():
-                was_new = not db.query(Person).filter(Person.name == pname.strip()).first()
-                p = _get_or_create_person(db, pname, purl if pname == person1_name else "")
-                if was_new:
-                    persons_created += 1
-                person_objs.append(p)
+        if person_name:
+            was_new = not db.query(Person).filter(Person.name == person_name).first()
+            p = _get_or_create_person(db, person_name, person_url)
+            if was_new:
+                persons_created += 1
+            person_objs.append(p)
 
         nominee = Nominee(
             nomination_id=nom_id,
             film_id=film.id,
             person_id=person_objs[0].id if person_objs else None,
-            item=item.strip() or None,
-            item_url=item_url.strip() or None,
+            item=item or None,
+            item_url=item_url or None,
         )
         db.add(nominee)
         db.flush()

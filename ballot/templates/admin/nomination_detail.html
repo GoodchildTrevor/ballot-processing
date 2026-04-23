@@ -270,14 +270,14 @@
     </div>
     {% endif %}
     <p class="text-xs text-gray-400 leading-relaxed">
-      Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Элемент | Ссылка элемент | Ссылка персона</code><br>
+      Каждая строка: <code class="bg-gray-100 px-1 rounded">Фильм | Персона | Ссылка персона | Элемент | Ссылка элемент </code><br>
       Персона и остальное — опционально. Фильм и персона создаются автоматически если не найдены.
     </p>
     <form method="post" action="/admin/nominations/{{ nom.id }}/nominees/bulk">
       <textarea name="lines" rows="8"
-                placeholder="Криминальное чтиво | Джон Траволта | | | https://travolta.com
-Криминальное чтиво | | Urge Overkill-Girl, You'll Be a Woman Soon | | https://song.com |
-Криминальное чтиво | | Лучший постер | https://example.com/poster.jpg |"
+                placeholder="Криминальное чтиво | Джон Траволта | https://travolta.com 
+Криминальное чтиво | | | Urge Overkill-Girl, You'll Be a Woman Soon | https://song.com 
+Криминальное чтиво | | | Лучший постер | https://example.com/poster.jpg"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-indigo-400 focus:outline-none resize-y"
                 style="min-height: 160px"></textarea>
       <div class="flex gap-2 mt-2">
