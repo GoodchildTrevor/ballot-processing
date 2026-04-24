@@ -156,6 +156,15 @@ _MIGRATIONS = [
     # SQLite >= 3.35.0 supports DROP COLUMN
     # ================================================================
     "ALTER TABLE nomination_templates DROP COLUMN longlist_nominees_count",
+
+    # ================================================================
+    # Unique index for nominees (added 2026-04-24)
+    # Protects against duplicate nominees at DB level
+    # ================================================================
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_nominee_nom_film_person
+    ON nominees(nomination_id, film_id, COALESCE(person_id, -1), COALESCE(item, ''))
+    """,
 ]
 
 

@@ -499,9 +499,14 @@ async def add_nominee(
     item = form.get("item", "").strip() or None
     item_url = form.get("item_url", "").strip() or None
 
-    # Duplicate check (same film + same persons set)
-    existing = db.query(Nominee).filter_by(nomination_id=nom_id, film_id=film_id).first()
-    if existing and not person_ids:
+    # Duplicate check (same film + same persons + same item)
+    existing = db.query(Nominee).filter_by(
+        nomination_id=nom_id,
+        film_id=film_id,
+        person_id=person_ids[0] if person_ids else None,
+        item=item,
+    ).first()
+    if existing:
         return RedirectResponse(url=f"/admin/nominations/{nom_id}?error=duplicate", status_code=303)
 
     nominee = Nominee(
@@ -572,6 +577,17 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
             if was_new:
                 persons_created += 1
             person_objs.append(p)
+
+        # Duplicate check
+        existing = db.query(Nominee).filter_by(
+            nomination_id=nom_id,
+            film_id=film.id,
+            person_id=person_objs[0].id if person_objs else None,
+            item=item or None,
+        ).first()
+        if existing:
+            skipped += 1
+            continue
 
         nominee = Nominee(
             nomination_id=nom_id,
