@@ -18,6 +18,15 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 def _build_content_disposition(filename: str) -> str:
+    """
+    Build Content-Disposition header for file downloads.
+
+    Creates a properly formatted Content-Disposition header that supports both
+    ASCII and UTF-8 filenames for maximum browser compatibility.
+
+    :param filename: Original filename (may contain Unicode characters)
+    :returns: Formatted Content-Disposition header string
+    """
     # ASCII fallback для старых клиентов и чтобы пройти latin-1 в Starlette
     ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename)
     if not ascii_fallback.strip():
@@ -28,7 +37,18 @@ def _build_content_disposition(filename: str) -> str:
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
-def _annotate_rows(rows: list, count: int | None, has_runner_up: bool = False) -> list:
+def _annotate_rows(rows: list, count: Optional[int], has_runner_up: bool = False) -> list:
+    """
+    Annotate result rows with position and nominee status.
+
+    Adds position (rank) and nominee status to each row based on score and runner-up counts.
+    Handles tie-breaking logic for same scores.
+
+    :param rows: List of result rows to annotate
+    :param count: Number of nominees to select (None for no limit)
+    :param has_runner_up: Whether to consider runner-up counts for tie-breaking
+    :returns: Annotated rows with position and is_nominee fields
+    """
     if not rows:
         return rows
     rank = 1
@@ -51,6 +71,14 @@ def _annotate_rows(rows: list, count: int | None, has_runner_up: bool = False) -
 
 
 def _nominee_label(nominee) -> str:
+    """
+    Generate a display label for a nominee.
+
+    Creates a formatted label showing the nominee's name/persons and associated film information.
+
+    :param nominee: Nominee object to create label for
+    :returns: Formatted string label for display
+    """
     film_part = f"{nominee.film.title} ({nominee.film.year})" if nominee.film else "?"
     if getattr(nominee, 'persons_label', None):
         return f"{nominee.persons_label} — {film_part}"
@@ -62,6 +90,16 @@ def _nominee_label(nominee) -> str:
 
 
 def get_results(db: Session, round_ids: set[int] | None = None):
+    """
+    Retrieve voting results for specified rounds.
+
+    Queries nominations and calculates results including vote counts, rankings, and nominee information.
+    Handles both ranked voting and regular voting types.
+
+    :param db: Database session
+    :param round_ids: Set of round IDs to filter results (None for all rounds)
+    :returns: List of result dictionaries with nomination and voting data
+    """
     q = db.query(Nomination)
     if round_ids is not None:
         q = q.filter(Nomination.round_id.in_(round_ids))
@@ -154,9 +192,14 @@ def get_results(db: Session, round_ids: set[int] | None = None):
 
 def merge_acting_groups(results: list[dict]) -> list[dict]:
     """
+    Merge acting groups for nominations with shared acting_group.
+
     For nominations that share the same NominationTemplate.acting_group,
     sum votes per person_id and keep the person only in the nomination with the highest score.
     The winner receives the total sum; other entries for that person are zeroed.
+
+    :param results: List of result dictionaries to process
+    :returns: Processed results with merged acting groups
     """
     from collections import defaultdict
 
@@ -224,6 +267,18 @@ def show_results(
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Display voting results in HTML format.
+
+    Shows results for contests and rounds, with filtering options.
+    Renders results in a web page with contest/round selection.
+
+    :param request: FastAPI request object
+    :param contest_id: Optional contest ID to filter results
+    :param round_id: Optional round ID to filter results
+    :param db: Database session
+    :returns: HTML response with results page
+    """
 
     latest_deadline = (
         db.query(
@@ -285,7 +340,18 @@ def export_results(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> StreamingResponse:
+    """
+    Export voting results to Excel format.
+
+    Generates an Excel spreadsheet with results for specified contest/round.
+    Creates separate sheets for each nomination with formatted data.
+
+    :param contest_id: Optional contest ID to export results for
+    :param round_id: Optional round ID to export results for
+    :param db: Database session
+    :returns: StreamingResponse with Excel file download
+    """
     round_ids: set[int] | None = None
     filename = "results.xlsx"
     if round_id:

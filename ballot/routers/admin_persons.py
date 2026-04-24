@@ -14,6 +14,16 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 @router.get("/persons", response_class=HTMLResponse)
 def list_persons(request: Request, db: Session = Depends(get_db)):
+    """
+    List all persons in the database.
+
+    Retrieves all persons with their associated nominees and related nomination/round information,
+    ordered alphabetically by name.
+
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with persons list template
+    """
     persons = (
         db.query(Person)
         .options(joinedload(Person.nominees).joinedload(Nominee.nomination).joinedload(Nomination.round))
@@ -28,7 +38,17 @@ def create_person(
     name: str = Form(...),
     url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Create a new person in the database.
+
+    Creates a person with the given name and optional URL if the person doesn't already exist.
+
+    :param name: Person name
+    :param url: Optional URL for the person
+    :param db: Database session
+    :returns: Redirect response to persons list
+    """
     name = name.strip()
     if not name:
         return RedirectResponse(url="/admin/persons", status_code=303)
@@ -43,7 +63,17 @@ def create_person(
 def bulk_create_persons(
     lines: str = Form(...),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Bulk create persons from text input.
+
+    Processes multi-line input where each line contains a person name and optionally a URL
+    separated by '|'. Skips existing persons and creates new ones.
+
+    :param lines: Multi-line text with person data (name|url format)
+    :param db: Database session
+    :returns: Redirect response to persons list with creation statistics
+    """
     created, skipped = 0, 0
     for line in lines.strip().splitlines():
         line = line.strip()
@@ -71,7 +101,16 @@ def bulk_create_persons(
 
 
 @router.post("/persons/{person_id}/delete")
-def delete_person(person_id: int, db: Session = Depends(get_db)):
+def delete_person(person_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Delete a person from the database.
+
+    Removes the person and sets person_id to NULL for any associated nominees.
+
+    :param person_id: ID of person to delete
+    :param db: Database session
+    :returns: Redirect response to persons list
+    """
     person = db.get(Person, person_id)
     if person:
         db.query(Nominee).filter(Nominee.person_id == person_id).update({"person_id": None})
@@ -86,7 +125,18 @@ def edit_person(
     name: str = Form(...),
     url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Edit a person's information.
+
+    Updates the name and URL of an existing person.
+
+    :param person_id: ID of person to edit
+    :param name: New name for the person
+    :param url: New URL for the person (optional)
+    :param db: Database session
+    :returns: Redirect response to persons list
+    """
     person = db.get(Person, person_id)
     if person:
         person.name = name.strip()
@@ -100,8 +150,18 @@ async def set_person_url(
     person_id: int,
     request: Request,
     db: Session = Depends(get_db),
-):
-    """Quick URL setter — back=<url> redirects to caller page after save."""
+) -> RedirectResponse:
+    """
+    Set URL for a person.
+
+    Updates the URL of an existing person and redirects back to the calling page.
+    Quick URL setter — back=<url> redirects to caller page after save.
+
+    :param person_id: ID of person to update
+    :param request: FastAPI request object containing form data
+    :param db: Database session
+    :returns: Redirect response to calling page
+    """
     form = await request.form()
     url_val = (form.get("url") or "").strip()
     back = (form.get("back") or "/admin/persons").strip()
@@ -116,6 +176,17 @@ async def set_person_url(
 
 @router.get("/persons/{person_id}", response_class=HTMLResponse)
 def person_detail(person_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Display detailed information about a specific person.
+
+    Retrieves a person and their associated nominees, organizing them by rounds and nominations.
+    Calculates statistics about longlist and final nomination counts.
+
+    :param person_id: ID of person to display
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with person detail template or 404 if not found
+    """
     person = (
         db.query(Person)
         .filter(Person.id == person_id)

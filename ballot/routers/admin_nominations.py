@@ -16,11 +16,31 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _all_years(db: Session) -> list[int]:
+    """
+    Get all distinct years from nominations.
+
+    Extracts unique year_filter values from nominations and returns them sorted
+    in descending order.
+
+    :param db: Database session
+    :returns: List of distinct years in descending order
+    """
     rows = db.query(Nomination.year_filter).distinct().all()
     return sorted({r[0] for r in rows if r[0]}, reverse=True)
 
 
-def _get_or_create_person(db: Session, name: str, url: str | None = None) -> Person:
+def _get_or_create_person(db: Session, name: str, url: Optional[str] = None) -> Person:
+    """
+    Get or create a person in the database.
+
+    Finds an existing person by name, or creates a new one if not found.
+    Updates person URL if provided and person doesn't already have one.
+
+    :param db: Database session
+    :param name: Person name
+    :param url: Optional URL for the person
+    :returns: Person object (existing or newly created)
+    """
     name = name.strip()
     p = db.query(Person).filter(Person.name == name).first()
     if not p:
@@ -32,7 +52,22 @@ def _get_or_create_person(db: Session, name: str, url: str | None = None) -> Per
     return p
 
 
-def _get_or_create_film(db: Session, title: str, year: int | None) -> Film | None:
+def _get_or_create_film(
+    db: Session, 
+    title: str, 
+    year: Optional[int]
+) -> Optional[Film]:
+    """
+    Get or create a film in the database.
+
+    Finds an existing film by title (and optionally year), or creates a new one
+    if not found. Requires year for new films.
+
+    :param db: Database session
+    :param title: Film title
+    :param year: Optional film year
+    :returns: Film object or None if title is empty or year is missing for new films
+    """
     title = title.strip()
     if not title:
         return None
@@ -49,8 +84,23 @@ def _get_or_create_film(db: Session, title: str, year: int | None) -> Film | Non
     return f
 
 
-def _set_nominee_persons(db: Session, nominee: Nominee, person_ids: list[int], person_urls: dict[int, str]):
-    """Replace all NomineePerson rows for a nominee with the given list."""
+def _set_nominee_persons(
+    db: Session, 
+    nominee: Nominee, 
+    person_ids: list[int], 
+    person_urls: dict[int, str]
+) -> None:
+    """
+    Replace all NomineePerson rows for a nominee with the given list.
+
+    Deletes existing person associations and creates new ones based on the provided
+    person IDs. Also updates person URLs if provided and person doesn't already have one.
+
+    :param db: Database session
+    :param nominee: Nominee object to update
+    :param person_ids: List of person IDs to associate with the nominee
+    :param person_urls: Dictionary mapping person IDs to URLs
+    """
     # Delete existing
     for np in list(nominee.persons):
         db.delete(np)
@@ -67,10 +117,26 @@ def _set_nominee_persons(db: Session, nominee: Nominee, person_ids: list[int], p
 
 
 def _film_to_dict(film: Film) -> dict:
+    """
+    Convert film object to dictionary.
+
+    Creates a simple dictionary representation of a film for JSON serialization.
+
+    :param film: Film object
+    :returns: Dictionary with film id, title, and year
+    """
     return {"id": film.id, "title": film.title, "year": film.year}
 
 
 def _person_to_dict(person: Person) -> dict:
+    """
+    Convert person object to dictionary.
+
+    Creates a simple dictionary representation of a person for JSON serialization.
+
+    :param person: Person object
+    :returns: Dictionary with person id, name, and url
+    """
     return {"id": person.id, "name": person.name, "url": person.url}
 
 
@@ -151,7 +217,10 @@ def list_nominations(
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/nominations")
-async def create_nomination(request: Request, db: Session = Depends(get_db)):
+async def create_nomination(
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     nom_type = NominationType(form.get("type", "RANK"))
     nominees_count_raw = form.get("nominees_count")
@@ -180,11 +249,17 @@ async def create_nomination(request: Request, db: Session = Depends(get_db)):
         parts.append(f"contest_id={contest_id}")
     if round_id_raw:
         parts.append(f"round_id={round_id_raw}")
-    return RedirectResponse(url="/admin/nominations" + ("?" + "&".join(parts) if parts else ""), status_code=303)
+    return RedirectResponse(
+        url="/admin/nominations" + ("?" + "&".join(parts) if parts else ""), status_code=303
+    )
 
 
 @router.post("/nominations/{nom_id}/edit")
-async def edit_nomination(nom_id: int, request: Request, db: Session = Depends(get_db)):
+async def edit_nomination(
+    nom_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     nom = db.get(Nomination, nom_id)
     if nom:
@@ -209,11 +284,17 @@ async def edit_nomination(nom_id: int, request: Request, db: Session = Depends(g
         parts.append(f"contest_id={contest_id}")
     if round_id:
         parts.append(f"round_id={round_id}")
-    return RedirectResponse(url="/admin/nominations" + ("?" + "&".join(parts) if parts else ""), status_code=303)
+    return RedirectResponse(
+        url="/admin/nominations" + ("?" + "&".join(parts) if parts else ""), status_code=303
+    )
 
 
 @router.post("/nominations/{nom_id}/delete")
-async def delete_nomination(nom_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_nomination(
+    nom_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     nom = db.get(Nomination, nom_id)
     if nom:
@@ -230,7 +311,11 @@ async def delete_nomination(nom_id: int, request: Request, db: Session = Depends
 
 
 @router.post("/nominations/{nom_id}/move")
-async def move_nomination(nom_id: int, request: Request, db: Session = Depends(get_db)):
+async def move_nomination(
+    nom_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     direction = form.get("direction", "up")
     nom = db.get(Nomination, nom_id)
@@ -268,7 +353,7 @@ def export_longlist(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> StreamingResponse:
     """Export longlists to Excel. Each nomination is a separate sheet.
     Filters by contest and round if provided."""
     q = (
@@ -387,7 +472,11 @@ def nomination_detail(
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/nominations/{nom_id}/nominees")
-async def add_nominee(nom_id: int, request: Request, db: Session = Depends(get_db)):
+async def add_nominee(
+    nom_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     film_id_raw = form.get("film_id")
     if not film_id_raw:
@@ -517,7 +606,11 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/nominees/{nominee_id}/edit")
-async def edit_nominee(nominee_id: int, request: Request, db: Session = Depends(get_db)):
+async def edit_nominee(
+    nominee_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     nominee = db.get(Nominee, nominee_id)
     if not nominee:
@@ -557,7 +650,11 @@ async def edit_nominee(nominee_id: int, request: Request, db: Session = Depends(
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/nominees/{nominee_id}/delete")
-async def delete_nominee(nominee_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_nominee(
+    nominee_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> RedirectResponse:
     form = await request.form()
     nominee = db.get(Nominee, nominee_id)
     if not nominee:

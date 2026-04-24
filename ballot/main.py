@@ -5,7 +5,6 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from ballot.database import engine, Base, run_migrations, get_db
 from ballot.auth import serializer
-import ballot.models  # noqa: F401
 from ballot.models import Voter
 from ballot.routers import (
     vote,
@@ -38,6 +37,14 @@ app.include_router(admin_templates.router)
 
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
+    """
+    Render the main login page.
+    
+    Displays the login form where voters can enter their name to authenticate.
+    
+    :param request: The incoming HTTP request
+    :returns: HTML template response with login form
+    """
     next_url = request.query_params.get("next", "")
     return templates.TemplateResponse("index.html", {"request": request, "next": next_url})
 
@@ -48,7 +55,19 @@ def login(
     name: str = Form(...),
     next: str = Form(default=""),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Process voter login and create session cookie.
+    
+    Validates the voter name, creates a new voter if not found,
+    and sets a signed cookie for authentication.
+    
+    :param request: The incoming HTTP request
+    :param name: Voter name from form submission
+    :param next: URL to redirect to after login
+    :param db: Database session dependency
+    :returns: Redirect response to either the original URL or /vote
+    """
     name = name.strip()
     if not name:
         return templates.TemplateResponse(
@@ -77,5 +96,12 @@ def login(
 
 
 @app.get("/admin")
-def admin_root():
+def admin_root() -> RedirectResponse:
+    """
+    Redirect admin root to films admin page.
+    
+    Provides a default redirect for the admin interface.
+    
+    :returns: Redirect response to /admin/films
+    """
     return RedirectResponse(url="/admin/films", status_code=302)

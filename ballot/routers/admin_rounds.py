@@ -28,6 +28,15 @@ templates_env = Jinja2Templates(directory="ballot/templates")
 
 
 def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
+    """
+    Parse deadline string to datetime object.
+
+    Converts ISO format deadline strings to datetime objects.
+    Returns None for invalid or empty strings.
+
+    :param v: Deadline string in ISO format
+    :returns: Parsed datetime object or None if parsing fails
+    """
     if v and v.strip():
         try:
             return datetime.fromisoformat(v.strip())
@@ -37,6 +46,14 @@ def _parse_deadline(v: Optional[str]) -> Optional[datetime]:
 
 
 def _nominee_label(nominee: Nominee) -> str:
+    """
+    Generate a display label for a nominee.
+
+    Creates a formatted label showing the nominee's name/persons and associated film information.
+
+    :param nominee: Nominee object to create label for
+    :returns: Formatted string label for display
+    """
     film_part = f"{nominee.film.title} ({nominee.film.year})" if nominee.film else "?"
     if getattr(nominee, 'persons_label', None):
         return f"{nominee.persons_label} — {film_part}"
@@ -49,6 +66,17 @@ def _nominee_label(nominee: Nominee) -> str:
 
 @router.get("/rounds", response_class=HTMLResponse)
 def list_rounds(request: Request, db: Session = Depends(get_db)):
+    """
+    Display list of contests and rounds in HTML format.
+
+    Shows all contests with their associated rounds, standalone rounds,
+    and nomination templates for management.
+
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with rounds management page
+    :rtype: _TemplateResponse
+    """
 
     latest_deadline = (
         db.query(
@@ -103,6 +131,20 @@ def create_contest(
     template_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a new contest with associated longlist round and nominations.
+
+    Creates a contest, longlist round, and nominations based on selected templates.
+    Sets up the initial voting structure for the contest.
+
+    :param request: FastAPI request object
+    :param year: Year of the contest
+    :param name: Name of the contest
+    :param deadline: Optional deadline for the longlist round
+    :param template_ids: List of template IDs to create nominations from
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     contest = Contest(
         year=year,
         name=name.strip(),
@@ -165,7 +207,18 @@ def add_nominations_to_contest(
     contest_id: int,
     template_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Add additional nominations to an existing contest.
+
+    Creates new nominations based on templates for an existing contest's longlist round.
+    Skips templates that are already associated with the contest.
+
+    :param contest_id: ID of the contest to add nominations to
+    :param template_ids: List of template IDs to create nominations from
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     contest = db.get(Contest, contest_id)
     if not contest or not template_ids:
         return RedirectResponse(url="/admin/rounds", status_code=303)
@@ -233,6 +286,15 @@ def add_nominations_to_contest(
 
 @router.post("/contests/{contest_id}/delete")
 def delete_contest(contest_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a contest from the database.
+
+    Removes the contest and all associated data (rounds, nominations, etc.).
+
+    :param contest_id: ID of the contest to delete
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     contest = db.get(Contest, contest_id)
     if contest:
         db.delete(contest)
@@ -244,7 +306,17 @@ def edit_contest(
     contest_id: int,
     name: str = Form(...),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Edit contest name.
+
+    Updates the name of an existing contest.
+
+    :param contest_id: ID of the contest to edit
+    :param name: New name for the contest
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     contest = db.get(Contest, contest_id)
     if contest:
         contest.name = name.strip()
@@ -260,6 +332,19 @@ def create_round(
     deadline: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a new standalone round.
+
+    Creates a round that is not associated with any contest.
+    Useful for special voting rounds or testing.
+
+    :param label: Name/label for the round
+    :param round_type: Type of round (LONGLIST/FINAL)
+    :param year: Year the round applies to
+    :param deadline: Optional deadline for the round
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     last = db.query(Round).order_by(Round.sort_order.desc()).first()
     order = (last.sort_order + 1) if last else 0
     db.add(Round(
@@ -281,7 +366,18 @@ def edit_round(
     label: str = Form(...),
     deadline: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Edit round details.
+
+    Updates the label and deadline of an existing round.
+
+    :param round_id: ID of the round to edit
+    :param label: New label for the round
+    :param deadline: New deadline for the round
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     rnd = db.get(Round, round_id)
     if rnd:
         rnd.label    = label.strip()
@@ -291,7 +387,16 @@ def edit_round(
 
 
 @router.post("/rounds/{round_id}/delete")
-def delete_round(round_id: int, db: Session = Depends(get_db)):
+def delete_round(round_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Delete a round from the database.
+
+    Removes the round and all associated data (nominations, votes, etc.).
+
+    :param round_id: ID of the round to delete
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     rnd = db.get(Round, round_id)
     if rnd:
         db.delete(rnd)
@@ -300,7 +405,17 @@ def delete_round(round_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/rounds/{round_id}/activate")
-def activate_round(round_id: int, db: Session = Depends(get_db)):
+def activate_round(round_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Activate a round for voting.
+
+    Sets the round as active and updates the associated contest status.
+    Can only activate rounds that have a deadline set.
+
+    :param round_id: ID of the round to activate
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     rnd = db.get(Round, round_id)
     if rnd and rnd.deadline:
         rnd.is_active = True
@@ -314,7 +429,16 @@ def activate_round(round_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/rounds/{round_id}/deactivate")
-def deactivate_round(round_id: int, db: Session = Depends(get_db)):
+def deactivate_round(round_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Deactivate a round for voting.
+
+    Sets the round as inactive and updates the associated contest status.
+
+    :param round_id: ID of the round to deactivate
+    :param db: Database session
+    :returns: Redirect response to rounds management page
+    """
     rnd = db.get(Round, round_id)
     if rnd:
         rnd.is_active = False
@@ -335,8 +459,19 @@ def promote_preview(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Show longlist results with checkboxes pre-filled using the exact same
-    logic as the results page (get_results + is_nominee flag)."""
+    """
+    Display longlist results with checkboxes for promotion selection.
+
+    Shows the same results as the public results page but with checkboxes
+    pre-filled based on the same selection logic. This allows admins to manually
+    confirm which nominees should be promoted to the final round.
+
+    :param round_id: ID of the longlist round to preview
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with promotion selection interface
+    :rtype: _TemplateResponse
+    """
     longlist = db.get(Round, round_id)
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
@@ -400,8 +535,18 @@ def promote_confirm(
     round_id: int,
     selected_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
-):
-    """Create the final round with manually confirmed nominees."""
+) -> RedirectResponse:
+    """
+    Create the final round with manually confirmed nominees.
+
+    Takes the selected nominees from the longlist promotion preview and creates
+    a new final round with those nominees. Updates the longlist round status.
+
+    :param round_id: ID of the longlist round
+    :param selected_ids: List of selected nominee IDs to promote
+    :param db: Database session
+    :returns: Redirect response to final round preview page
+    """
     longlist = db.get(Round, round_id)
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
@@ -473,6 +618,16 @@ def promote_confirm(
 
 @router.get("/rounds/{round_id}/preview", response_class=HTMLResponse)
 def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Display round preview page with all nominations and films.
+    Shows the round's details, all associated nominations, and all films.
+
+    :param round_id: ID of the round to preview
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with round preview
+    :rtype: _TemplateResponse
+    """
     rnd = db.get(Round, round_id)
     if not rnd:
         return RedirectResponse(url="/admin/rounds", status_code=303)
@@ -499,7 +654,18 @@ def toggle_shortlist(
     round_id: int,
     nominee_id: int,
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Toggle the shortlist status of a nominee.
+
+    Switches the is_shortlisted flag for a nominee between True and False.
+    This affects whether the nominee appears in shortlist views.
+
+    :param round_id: ID of the round containing the nominee
+    :param nominee_id: ID of the nominee to toggle
+    :param db: Database session
+    :returns: Redirect response to round preview page
+    """
     nominee = db.get(Nominee, nominee_id)
     if nominee:
         nominee.is_shortlisted = not nominee.is_shortlisted

@@ -120,7 +120,20 @@ def move_template(
     template_id: int,
     direction: str = Form(...),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Moves a Nomination Template up or down in the sort order list.
+
+    This function fetches all templates, determines the position of the
+    specified template, and then swaps its `sort_order` with the template
+    in the target direction.
+
+    :param template_id: The ID of the template to be moved.
+    :param direction: The direction of movement ('up' or 'down').
+    :param db: The SQLAlchemy database session object.
+    :return: Redirects to the template list page upon successful move.
+    :rtype: RedirectResponse
+    """
     all_tmpl = (
         db.query(NominationTemplate)
         .order_by(NominationTemplate.sort_order, NominationTemplate.id)

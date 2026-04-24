@@ -300,6 +300,20 @@ async def edit_vote_submit(
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Processes and commits the changes made to a voter's ballot via the form.
+
+    It first clears existing votes/rankings (scoped by round/contest) and then
+    re-creates the records based on the form submission. Finally, it updates
+    the RoundParticipation timestamp.
+
+    :param voter_id: The ID of the voter submitting the ballot changes.
+    :param request: FastAPI request object containing the form data (rankings/picks).
+    :param contest_id: Optional ID of the contest (used for scoping).
+    :param round_id: Optional ID of the round (scopes the update and timestamp).
+    :param db: The SQLAlchemy database session object.
+    :return: Redirects to the main voter list page with appropriate filters.
+    """
     voter = db.get(Voter, voter_id)
     if not voter:
         return RedirectResponse(url="/admin/voters", status_code=303)

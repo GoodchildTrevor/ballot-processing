@@ -4,7 +4,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, HTTPException
@@ -60,17 +60,44 @@ class BallotExportModel(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _content_disposition(filename: str) -> str:
+    """
+    Generate Content-Disposition header value for file download.
+
+    Creates a properly formatted Content-Disposition header that works
+    with both ASCII and UTF-8 filenames for browser downloads.
+
+    :param filename: Original filename to be downloaded
+    :returns: Formatted Content-Disposition header value
+    """
     ascii_name = filename.encode("ascii", "ignore").decode()
     encoded_name = quote(filename, safe="")
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
 
 
 def _safe_filename_label(raw: str) -> str:
+    """
+    Create a safe filename label from raw input.
+
+    Strips unsafe characters and limits length to prevent filesystem issues.
+
+    :param raw: Raw string to convert to safe filename
+    :returns: Safe filename label
+    """
     safe = SAFE_FILENAME_RE.sub("_", (raw or "").strip())[:60]
     return safe or "ballot"
 
 
 def _parse_draft_payload(body: Any) -> dict[str, Any]:
+    """
+    Parse and validate draft payload from request body.
+
+    Validates the incoming JSON payload against the DraftModel schema
+    and returns the validated data as a dictionary.
+
+    :param body: Raw request body data
+    :returns: Validated draft data as dictionary
+    :raises HTTPException: If payload validation fails
+    """
     try:
         return DraftModel.parse_obj(body).dict()
     except ValidationError:
@@ -78,6 +105,17 @@ def _parse_draft_payload(body: Any) -> dict[str, Any]:
 
 
 def _parse_export_payload(body: Any) -> list[dict[str, Any]]:
+    """
+    Parse and validate export payload from request body.
+
+    Validates the incoming JSON payload against the BallotExportModel schema,
+    enforces limits on nominations, rows, and columns, and returns the 
+    validated data as a list of dictionaries.
+
+    :param body: Raw request body data
+    :returns: Validated export data as list of dictionaries
+    :raises HTTPException: If payload validation fails or limits exceeded
+    """
     try:
         payload = BallotExportModel.parse_obj(body)
     except ValidationError:
@@ -107,7 +145,15 @@ def _parse_export_payload(body: Any) -> list[dict[str, Any]]:
     return nominations_data
 
 
-def _auto_width(ws):
+def _auto_width(ws: openpyxl.worksheet.worksheet.Worksheet) -> None:
+    """
+    Auto-adjust column widths in Excel worksheet.
+
+    Calculates optimal column width based on cell content length,
+    with a maximum width constraint to prevent excessively wide columns.
+
+    :param ws: OpenPyXL worksheet object
+    """
     for col in ws.columns:
         first = next((c for c in col if not isinstance(c, MergedCell)), None)
         if first is None:
@@ -117,12 +163,42 @@ def _auto_width(ws):
 
 
 def _sheet_title(name: str) -> str:
+    """
+    Sanitize sheet title for Excel compatibility.
+
+    Removes characters that are invalid in Excel sheet names and
+    truncates to the maximum allowed length (31 characters).
+
+    :param name: Original sheet name
+    :returns: Sanitized sheet title
+    """
     for ch in r'\/:*?[]':
         name = name.replace(ch, '')
     return name[:31]
 
 
-def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, link_font: Font):
+def _write_cell_with_link(
+        ws:openpyxl.worksheet.worksheet.Worksheet, 
+        row: int, 
+        col: int, 
+        label: str, 
+        url: Optional[str], 
+        link_font: Font
+    ):
+    """
+    Write a cell with optional hyperlink and styling.
+
+    Creates a cell with the specified label, and if a URL is provided,
+    makes it a clickable hyperlink with styled formatting.
+
+    :param ws: Worksheet object
+    :param row: row of the table
+    :param col: Column number (1-indexed)
+    :param label: Cell text content
+    :param url: Optional URL for hyperlink
+    :param link_font: Font styling for hyperlinks
+    :returns: Configured cell object
+    """
     cell = ws.cell(row=row, column=col, value=label)
     if url:
         cell.hyperlink = url
@@ -131,6 +207,15 @@ def _write_cell_with_link(ws, row: int, col: int, label: str, url: str | None, l
 
 
 def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
+    """
+    Build an Excel workbook with ballot data organized by nomination.
+
+    Creates a multi-sheet Excel workbook where each nomination becomes a separate sheet.
+    Handles proper formatting, hyperlink styling, and auto-width adjustment for readability.
+
+    :param nominations_data: List of nomination data dictionaries with name, header, and rows
+    :returns: BytesIO buffer containing the generated Excel workbook
+    """
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -397,6 +482,15 @@ def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
 # /{year}/vote/longlist
 @router.get("/{year}/vote/longlist", response_class=HTMLResponse)
 def vote_longlist(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Displays the voting page for a specific year's LONGLIST round.
+
+    :param year: The year of the active longlist round to display.
+    :param request: FastAPI request object providing context for the template response.
+    :param db: The SQLAlchemy database session object used to query rounds.
+    :return: Redirects to the appropriate voting page based on active round information.
+    :rtype: _TemplateResponse
+    """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year, RoundType.LONGLIST)
     if not rnd:
@@ -413,6 +507,17 @@ def vote_longlist(year: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/{year}/vote/longlist")
 async def submit_vote_longlist(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Process submission of votes for a specific year's LONGLIST round.
+    
+    Validates the active longlist round for the given year, checks if voting is open,
+    and processes the submitted votes through the _do_submit function.
+    
+    :param year: The year of the longlist round for which votes are being submitted.
+    :param request: FastAPI request object containing the vote data.
+    :param db: The SQLAlchemy database session object.
+    :return: Response from _do_submit function processing the vote submission.
+    """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year, RoundType.LONGLIST)
     if not rnd:
@@ -430,6 +535,15 @@ async def submit_vote_longlist(year: int, request: Request, db: Session = Depend
 # /{year}/vote/final
 @router.get("/{year}/vote/final", response_class=HTMLResponse)
 def vote_final(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Displays the voting page for a specific year's FINAL round.
+
+    :param year: The year of the active final round to display.
+    :param request: FastAPI request object providing context for the template response.
+    :param db: The SQLAlchemy database session object used to query rounds.
+    :return: Renders the voting page for the final round.
+    :rtype: _TemplateResponse
+    """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year, RoundType.FINAL)
     if not rnd:
@@ -446,6 +560,17 @@ def vote_final(year: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/{year}/vote/final")
 async def submit_vote_final(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Process submission of votes for a specific year's FINAL round.
+    
+    Validates the active final round for the given year, checks if voting is open,
+    and processes the submitted votes through the _do_submit function.
+    
+    :param year: The year of the final round for which votes are being submitted.
+    :param request: FastAPI request object containing the vote data.
+    :param db: The SQLAlchemy database session object.
+    :return: Response from _do_submit function processing the vote submission.
+    """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year, RoundType.FINAL)
     if not rnd:
@@ -464,6 +589,11 @@ async def submit_vote_year(year: int, request: Request, db: Session = Depends(ge
     """
     Compatibility POST endpoint: accept form posts to /{year}/vote and dispatch
     to the currently active round (FINAL or LONGLIST).
+    
+    :param year: The year for which votes are being submitted.
+    :param request: FastAPI request object containing the vote data.
+    :param db: The SQLAlchemy database session object.
+    :return: Response from _do_submit function processing the vote submission.
     """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year)

@@ -14,10 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy models."""
     pass
 
 
 def get_db():
+    """
+    Dependency to get a database session.
+    
+    Creates a new database session and ensures it's closed after use.
+    Used as a FastAPI dependency to inject database sessions into endpoints.
+    
+    :returns: Database session generator
+    """
     db = SessionLocal()
     try:
         yield db
@@ -151,6 +160,15 @@ _MIGRATIONS = [
 
 
 def run_migrations():
+    """
+    Run database migrations to update schema.
+    
+    Executes a series of SQL statements to migrate the database schema.
+    Handles exceptions gracefully, ignoring known safe errors like
+    "already exists" or "duplicate column" errors.
+    
+    :raises Exception: If an unexpected migration error occurs
+    """
     with engine.connect() as conn:
         for stmt in _MIGRATIONS:
             try:

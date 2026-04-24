@@ -9,16 +9,19 @@ from ballot.database import Base
 
 
 class NominationType(str, enum.Enum):
+    """Enumeration of nomination types."""
     RANK = "RANK"
     PICK = "PICK"
 
 
 class RoundType(str, enum.Enum):
+    """Enumeration of round types."""
     LONGLIST = "LONGLIST"
     FINAL    = "FINAL"
 
 
 class ContestStatus(str, enum.Enum):
+    """Enumeration of contest statuses."""
     DRAFT           = "DRAFT"
     LONGLIST_ACTIVE = "LONGLIST_ACTIVE"
     LONGLIST_CLOSED = "LONGLIST_CLOSED"
@@ -31,6 +34,7 @@ class ContestStatus(str, enum.Enum):
 # ---------------------------------------------------------------------------
 
 class Contest(Base):
+    """Contest represents a voting event for a specific year."""
     __tablename__ = "contests"
     id     = Column(Integer, primary_key=True)
     year   = Column(Integer, nullable=False, unique=True)
@@ -75,6 +79,7 @@ class NominationTemplate(Base):
 # ---------------------------------------------------------------------------
 
 class ContestNomination(Base):
+    """Link between a Contest and a NominationTemplate."""
     __tablename__ = "contest_nominations"
     id          = Column(Integer, primary_key=True)
     contest_id  = Column(Integer, ForeignKey("contests.id"),             nullable=False)
@@ -95,6 +100,7 @@ class ContestNomination(Base):
 # ---------------------------------------------------------------------------
 
 class Round(Base):
+    """Voting round within a contest."""
     __tablename__ = "rounds"
     id         = Column(Integer, primary_key=True)
     label      = Column(String, nullable=False)
@@ -117,6 +123,7 @@ class Round(Base):
 # ---------------------------------------------------------------------------
 
 class Voter(Base):
+    """Person who participates in voting."""
     __tablename__ = "voters"
     id   = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
@@ -128,6 +135,7 @@ class Voter(Base):
 
 
 class RoundParticipation(Base):
+    """Tracks a voter's participation in a round."""
     __tablename__ = "round_participations"
     id       = Column(Integer, primary_key=True)
     round_id = Column(Integer, ForeignKey("rounds.id"),  nullable=False)
@@ -148,6 +156,7 @@ class RoundParticipation(Base):
 # ---------------------------------------------------------------------------
 
 class Film(Base):
+    """Film entity that can be nominated."""
     __tablename__ = "films"
     id       = Column(Integer, primary_key=True)
     title    = Column(String, nullable=False)
@@ -158,6 +167,7 @@ class Film(Base):
 
 
 class Person(Base):
+    """Person entity (actor, director, etc.) that can be nominated."""
     __tablename__ = "persons"
     id   = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -171,6 +181,7 @@ class Person(Base):
 # ---------------------------------------------------------------------------
 
 class Nomination(Base):
+    """Category of items that voters can nominate."""
     __tablename__ = "nominations"
     id             = Column(Integer, primary_key=True)
     name           = Column(String,  nullable=False)
@@ -197,6 +208,7 @@ class Nomination(Base):
 # ---------------------------------------------------------------------------
 
 class NomineePerson(Base):
+    """Many-to-many relationship between Nominee and Person."""
     __tablename__ = "nominee_persons"
     id         = Column(Integer, primary_key=True)
     nominee_id = Column(Integer, ForeignKey("nominees.id"), nullable=False)
@@ -214,6 +226,7 @@ class NomineePerson(Base):
 # ---------------------------------------------------------------------------
 
 class Nominee(Base):
+    """Specific item (film, person, etc.) that can be nominated."""
     __tablename__ = "nominees"
     id             = Column(Integer, primary_key=True)
     nomination_id  = Column(Integer, ForeignKey("nominations.id"), nullable=False)
@@ -232,6 +245,11 @@ class Nominee(Base):
 
     @property
     def all_persons(self):
+        """
+        Get all persons associated with this nominee.
+        
+        :returns: List of Person objects
+        """
         if self.persons:
             return [np.person for np in self.persons]
         if self.person:
@@ -240,11 +258,22 @@ class Nominee(Base):
 
     @property
     def persons_label(self) -> str:
+        """
+        Get a label for displaying the persons associated with this nominee.
+        
+        :returns: Comma-separated string of person names
+        """
         return ", ".join(p.name for p in self.all_persons)
 
     @property
     def label_for_sort(self) -> str:
-        """Alphabetic sort key: person name > item > film title."""
+        """
+        Get alphabetic sort key for this nominee.
+        
+        Sorts by person name > item > film title.
+        
+        :returns: Lowercase string for sorting
+        """
         persons = self.all_persons
         if persons:
             return persons[0].name.lower()
@@ -254,7 +283,11 @@ class Nominee(Base):
 
     @property
     def display_label(self) -> str:
-        """Human-readable label for JS ballot preview."""
+        """
+        Get human-readable label for JS ballot preview.
+        
+        :returns: Formatted string with persons, item, and film information
+        """
         persons = self.all_persons
         film_title = self.film.title if self.film else ""
         film_year = self.film.year if self.film else ""
@@ -271,6 +304,7 @@ class Nominee(Base):
 # ---------------------------------------------------------------------------
 
 class Vote(Base):
+    """Record of a voter's selection for a nominee."""
     __tablename__ = "votes"
     id           = Column(Integer, primary_key=True)
     voter_id     = Column(Integer, ForeignKey("voters.id"),   nullable=False)
@@ -286,6 +320,7 @@ class Vote(Base):
 
 
 class Ranking(Base):
+    """Record of a voter's ranking for a film in a nomination."""
     __tablename__ = "rankings"
     id            = Column(Integer, primary_key=True)
     voter_id      = Column(Integer, ForeignKey("voters.id"),      nullable=False)

@@ -14,6 +14,16 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 @router.get("/films", response_class=HTMLResponse)
 def list_films(request: Request, db: Session = Depends(get_db)):
+    """
+    List all films in the database.
+
+    Retrieves all films ordered by year (descending) and title, along with all persons
+    ordered by name, and renders the admin films page.
+
+    :param request: The incoming HTTP request
+    :param db: Database session dependency
+    :returns: HTML template response with films and persons data
+    """
     films = db.query(Film).order_by(Film.year.desc(), Film.title).all()
     persons = db.query(Person).order_by(Person.name).all()
     return templates.TemplateResponse(request, "admin/films.html", {
@@ -28,7 +38,19 @@ def create_film(
     year: int = Form(...),
     url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Create a new film in the database.
+
+    Adds a new film with the provided title, year, and optional URL.
+    Redirects back to the films list page after creation.
+
+    :param title: Film title
+    :param year: Film release year
+    :param url: Optional URL for the film
+    :param db: Database session dependency
+    :returns: Redirect response to films list page
+    """
     db.add(Film(title=title.strip(), year=year, url=url.strip() if url and url.strip() else None))
     db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
@@ -39,7 +61,18 @@ def bulk_create_films(
     year: int = Form(...),
     lines: str = Form(...),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Bulk create films from text input.
+
+    Processes multiple film entries from a text area, where each line can contain
+    title|url format. Creates new films and skips existing ones.
+
+    :param year: Year for all films being created
+    :param lines: Text containing film entries (one per line)
+    :param db: Database session dependency
+    :returns: Redirect response with creation statistics
+    """
     created, skipped = 0, 0
     for line in lines.strip().splitlines():
         line = line.strip()
@@ -68,6 +101,17 @@ def bulk_create_films(
 
 @router.get("/films/{film_id}", response_class=HTMLResponse)
 def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Show detailed information about a specific film.
+
+    Retrieves film with all related nominees, nominations, and persons, then categorizes
+    them into finals and longlists for display.
+
+    :param film_id: ID of the film to display
+    :param request: The incoming HTTP request
+    :param db: Database session dependency
+    :returns: HTML template response with film details and related data
+    """
     film = (
         db.query(Film)
         .options(
@@ -114,7 +158,20 @@ def edit_film(
     year: int = Form(...),
     url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Edit an existing film.
+
+    Updates film title, year, and URL based on form input.
+    Redirects back to films list after update.
+
+    :param film_id: ID of the film to edit
+    :param title: New film title
+    :param year: New film release year
+    :param url: New URL for the film
+    :param db: Database session dependency
+    :returns: Redirect response to films list page
+    """
     film = db.get(Film, film_id)
     if film:
         film.title = title.strip()
@@ -125,7 +182,16 @@ def edit_film(
 
 
 @router.post("/films/{film_id}/delete")
-def delete_film(film_id: int, db: Session = Depends(get_db)):
+def delete_film(film_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Delete a film from the database.
+
+    Removes the film and all associated nominees, then redirects back to films list.
+
+    :param film_id: ID of the film to delete
+    :param db: Database session dependency
+    :returns: Redirect response to films list page
+    """
     film = db.get(Film, film_id)
     if film:
         db.query(Nominee).filter(Nominee.film_id == film_id).delete()
@@ -142,7 +208,21 @@ def add_nominee_from_film(
     item: Optional[str] = Form(None),
     item_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Add a nominee to a film for a specific nomination.
+
+    Creates a new nominee record linking a film to a nomination with optional person and item details.
+    Avoids creating duplicate nominees.
+
+    :param film_id: ID of the film to add nominee to
+    :param nomination_id: ID of the nomination category
+    :param person_id: Optional ID of the person associated with this nominee
+    :param item: Optional item description
+    :param item_url: Optional URL for the item
+    :param db: Database session dependency
+    :returns: Redirect response back to film detail page
+    """
     from ballot.models import NominationType
     nom = db.get(Nomination, nomination_id)
     if not nom:
@@ -167,6 +247,16 @@ def add_nominee_from_film(
 
 @router.get("/nominees/{nominee_id}/edit")
 def edit_nominee_get(nominee_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Show edit form for a specific nominee.
+
+    Retrieves the nominee and all available films and persons for the edit form.
+
+    :param nominee_id: ID of the nominee to edit
+    :param request: The incoming HTTP request
+    :param db: Database session dependency
+    :returns: HTML template response with nominee edit form
+    """
     nominee = db.get(Nominee, nominee_id)
     if not nominee:
         return RedirectResponse(url="/admin/films", status_code=303)
@@ -187,7 +277,21 @@ def edit_nominee(
     item: Optional[str] = Form(None),
     item_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Update an existing nominee.
+
+    Modifies the nominee's film, person, item, and item URL based on form input.
+    Redirects back to either the nomination page or films list.
+
+    :param nominee_id: ID of the nominee to update
+    :param film_id: New film ID for the nominee
+    :param person_id: Optional new person ID
+    :param item: Optional new item description
+    :param item_url: Optional new item URL
+    :param db: Database session dependency
+    :returns: Redirect response to appropriate page
+    """
     nominee = db.get(Nominee, nominee_id)
     if nominee:
         nominee.film_id = film_id
@@ -204,7 +308,18 @@ def delete_nominee(
     nominee_id: int,
     back: str = Form("films"),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Delete a nominee from the database.
+
+    Removes the nominee and redirects back to either the nomination page or films list
+    based on the 'back' parameter.
+
+    :param nominee_id: ID of the nominee to delete
+    :param back: Where to redirect after deletion ('films' or 'nomination')
+    :param db: Database session dependency
+    :returns: Redirect response to appropriate page
+    """
     nominee = db.get(Nominee, nominee_id)
     if nominee:
         nom_id = nominee.nomination_id
