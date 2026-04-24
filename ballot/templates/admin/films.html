@@ -21,6 +21,13 @@
 </div>
 {% endif %}
 
+{% set bulk_deleted = request.query_params.get('bulk_deleted') %}
+{% if bulk_deleted %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
+  Удалено: <strong>{{ bulk_deleted }}</strong> фильмов
+</div>
+{% endif %}
+
 {# ── Single film form ── #}
 <div class="bg-white shadow rounded-xl p-6 mb-4">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить фильм</h2>
@@ -101,6 +108,19 @@
 </script>
 
 <div x-data="filmsTable()" class="bg-white shadow rounded-xl p-6">
+  <div x-show="selected.size > 0"
+       x-transition
+       class="flex items-center gap-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">
+    <span class="text-red-700 font-medium" x-text="'Выбрано: ' + selected.size + ' фильмов'"></span>
+    <form method="post" action="/admin/films/bulk-delete" @submit.prevent="submitBulkDelete($el)">
+      <button type="submit"
+              class="bg-red-600 text-white px-4 py-1.5 rounded-lg hover:bg-red-700 transition text-sm">
+        Удалить выбранные
+      </button>
+    </form>
+    <button @click="selected = new Set()"
+            class="text-gray-400 hover:text-gray-600 text-xs underline">Снять выделение</button>
+  </div>
 
   {# Year filter pills #}
   <div class="flex flex-wrap gap-1 mb-3">
@@ -130,6 +150,12 @@
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b select-none">
       <tr>
+        <th class="pb-2 pr-2 w-6">
+          <input type="checkbox"
+                 :checked="isAllSelected()"
+                 @change="toggleAll()"
+                 class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+        </th>
         <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('title')">
           Название <span x-text="sortIcon('title')" class="text-xs"></span>
         </th>
@@ -148,6 +174,12 @@
     <tbody>
       <template x-for="film in filtered()" :key="film.id">
         <tr class="border-b last:border-0 hover:bg-gray-50 transition" x-data="{ editing: false }">
+          <td class="py-2 pr-2 w-6">
+            <input type="checkbox"
+                   :checked="selected.has(film.id)"
+                   @change="toggleSelect(film.id)"
+                   class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+          </td>
           <td class="py-2 pr-4">
             <span x-show="!editing">
               <template x-if="film.url">
@@ -213,6 +245,7 @@ function filmsTable() {
     allYears,
     col: 'year',
     dir: 'desc',
+    selected: new Set(),
 
     saveState() {
       try {
@@ -226,6 +259,35 @@ function filmsTable() {
     setYear(y) {
       this.yearFilter = y;
       this.saveState();
+    },
+    toggleSelect(id) {
+      if (this.selected.has(id)) this.selected.delete(id);
+      else this.selected.add(id);
+      this.selected = new Set(this.selected);
+    },
+    toggleAll() {
+      const ids = this.filtered().map(f => f.id);
+      const allChecked = ids.length > 0 && ids.every(id => this.selected.has(id));
+      if (allChecked) ids.forEach(id => this.selected.delete(id));
+      else ids.forEach(id => this.selected.add(id));
+      this.selected = new Set(this.selected);
+    },
+    isAllSelected() {
+      const ids = this.filtered().map(f => f.id);
+      return ids.length > 0 && ids.every(id => this.selected.has(id));
+    },
+    submitBulkDelete(form) {
+      if (!this.selected.size) return;
+      if (!confirm(`Удалить ${this.selected.size} фильмов? Это действие необратимо.`)) return;
+      form.querySelectorAll('input[name="ids"]').forEach(el => el.remove());
+      this.selected.forEach(id => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'ids';
+        inp.value = id;
+        form.appendChild(inp);
+      });
+      form.submit();
     },
 
     sortBy(c) {

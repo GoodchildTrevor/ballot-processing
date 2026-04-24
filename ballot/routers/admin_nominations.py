@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -599,6 +599,23 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
     if not_found:
         params += f"&bulk_not_found={','.join(not_found)}"
     return RedirectResponse(url=f"/admin/nominations/{nom_id}?{params}", status_code=303)
+
+
+@router.post("/nominations/{nomination_id}/nominees/bulk-delete")
+def bulk_delete_nominees(
+    nomination_id: int,
+    ids: list[int] = Form(...),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    db.query(Nominee).filter(
+        Nominee.id.in_(ids),
+        Nominee.nomination_id == nomination_id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/nominations/{nomination_id}?bulk_deleted={len(ids)}",
+        status_code=303,
+    )
 
 
 # ─────────────────────────────────────────────────────────────

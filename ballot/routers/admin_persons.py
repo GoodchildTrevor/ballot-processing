@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -96,6 +96,20 @@ def bulk_create_persons(
     db.commit()
     return RedirectResponse(
         url=f"/admin/persons?bulk_created={created}&bulk_skipped={skipped}",
+        status_code=303,
+    )
+
+
+@router.post("/persons/bulk-delete")
+def bulk_delete_persons(
+    ids: List[int] = Form(...),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    db.query(Nominee).filter(Nominee.person_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Person).filter(Person.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/persons?bulk_deleted={len(ids)}",
         status_code=303,
     )
 

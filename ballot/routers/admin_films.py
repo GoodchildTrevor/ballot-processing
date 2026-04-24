@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -95,6 +95,20 @@ def bulk_create_films(
     db.commit()
     return RedirectResponse(
         url=f"/admin/films?bulk_created={created}&bulk_skipped={skipped}",
+        status_code=303,
+    )
+
+
+@router.post("/films/bulk-delete")
+def bulk_delete_films(
+    ids: List[int] = Form(...),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    db.query(Nominee).filter(Nominee.film_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Film).filter(Film.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/films?bulk_deleted={len(ids)}",
         status_code=303,
     )
 

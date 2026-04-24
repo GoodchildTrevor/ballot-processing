@@ -14,6 +14,13 @@
 </div>
 {% endif %}
 
+{% set bulk_deleted = request.query_params.get('bulk_deleted') %}
+{% if bulk_deleted %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">
+  Удалено: <strong>{{ bulk_deleted }}</strong> персон
+</div>
+{% endif %}
+
 <div class="bg-white shadow rounded-xl p-6 mb-4">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Добавить персону</h2>
   <form method="post" action="/admin/persons" class="flex flex-wrap gap-3 items-end">
@@ -83,6 +90,19 @@ const PERSONS_DATA = [
 </script>
 
 <div x-data="personsTable()" class="bg-white shadow rounded-xl p-6">
+  <div x-show="selected.size > 0"
+       x-transition
+       class="flex items-center gap-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">
+    <span class="text-red-700 font-medium" x-text="'Выбрано: ' + selected.size + ' персон'"></span>
+    <form method="post" action="/admin/persons/bulk-delete" @submit.prevent="submitBulkDelete($el)">
+      <button type="submit"
+              class="bg-red-600 text-white px-4 py-1.5 rounded-lg hover:bg-red-700 transition text-sm">
+        Удалить выбранные
+      </button>
+    </form>
+    <button @click="selected = new Set()"
+            class="text-gray-400 hover:text-gray-600 text-xs underline">Снять выделение</button>
+  </div>
 
   <div class="flex flex-wrap gap-3 items-center mb-4">
     <input x-model="search" type="text" placeholder="Поиск по имени..."
@@ -93,6 +113,12 @@ const PERSONS_DATA = [
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b select-none">
       <tr>
+        <th class="pb-2 pr-2 w-6">
+          <input type="checkbox"
+                 :checked="isAllSelected()"
+                 @change="toggleAll()"
+                 class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+        </th>
         <th class="pb-2 pr-4 cursor-pointer hover:text-indigo-600" @click="sortBy('name')">
           Имя <span x-text="sortIcon('name')" class="text-xs"></span>
         </th>
@@ -108,6 +134,12 @@ const PERSONS_DATA = [
     <tbody>
       <template x-for="p in filtered()" :key="p.id">
         <tr class="border-b last:border-0 hover:bg-gray-50 align-top" x-data="{ editing: false }">
+          <td class="py-2 pr-2 w-6">
+            <input type="checkbox"
+                   :checked="selected.has(p.id)"
+                   @change="toggleSelect(p.id)"
+                   class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+          </td>
 
           {# Person name — always links to internal card; external icon if url exists #}
           <td class="py-2 pr-4">
@@ -188,6 +220,7 @@ function personsTable() {
     search: '',
     col: 'name',
     dir: 'asc',
+    selected: new Set(),
     sortBy(c) {
       if (this.col === c) this.dir = this.dir === 'asc' ? 'desc' : 'asc';
       else { this.col = c; this.dir = (c === 'longlist_count' || c === 'shortlist_count') ? 'desc' : 'asc'; }
@@ -208,7 +241,36 @@ function personsTable() {
         return 0;
       });
       return rows;
-    }
+    },
+    toggleSelect(id) {
+      if (this.selected.has(id)) this.selected.delete(id);
+      else this.selected.add(id);
+      this.selected = new Set(this.selected);
+    },
+    toggleAll() {
+      const ids = this.filtered().map(p => p.id);
+      const allChecked = ids.length > 0 && ids.every(id => this.selected.has(id));
+      if (allChecked) ids.forEach(id => this.selected.delete(id));
+      else ids.forEach(id => this.selected.add(id));
+      this.selected = new Set(this.selected);
+    },
+    isAllSelected() {
+      const ids = this.filtered().map(p => p.id);
+      return ids.length > 0 && ids.every(id => this.selected.has(id));
+    },
+    submitBulkDelete(form) {
+      if (!this.selected.size) return;
+      if (!confirm(`Удалить ${this.selected.size} персон? Это действие необратимо.`)) return;
+      form.querySelectorAll('input[name="ids"]').forEach(el => el.remove());
+      this.selected.forEach(id => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'ids';
+        inp.value = id;
+        form.appendChild(inp);
+      });
+      form.submit();
+    },
   }
 }
 </script>

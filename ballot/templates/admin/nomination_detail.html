@@ -2,6 +2,12 @@
 {% block title %}{{ nom.name }}{% endblock %}
 {% block content %}
 <a href="/admin/nominations" class="text-sm text-indigo-500 hover:underline">← Все номинации</a>
+{% set bulk_deleted = request.query_params.get('bulk_deleted') %}
+{% if bulk_deleted %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mt-3 mb-4 text-sm">
+  Удалено: <strong>{{ bulk_deleted }}</strong> номинантов
+</div>
+{% endif %}
 
 <div x-data="{ editing: false }" class="mt-2 mb-6">
   <div x-show="!editing" class="flex items-start gap-3">
@@ -346,14 +352,71 @@
       },
     };
   }
+
+  function nomineesBulkDelete(nominationId, ids) {
+    return {
+      nominationId,
+      allIds: ids || [],
+      selected: new Set(),
+      toggleSelect(id) {
+        if (this.selected.has(id)) this.selected.delete(id);
+        else this.selected.add(id);
+        this.selected = new Set(this.selected);
+      },
+      toggleAll() {
+        const allChecked = this.allIds.length > 0 && this.allIds.every(id => this.selected.has(id));
+        if (allChecked) this.allIds.forEach(id => this.selected.delete(id));
+        else this.allIds.forEach(id => this.selected.add(id));
+        this.selected = new Set(this.selected);
+      },
+      isAllSelected() {
+        return this.allIds.length > 0 && this.allIds.every(id => this.selected.has(id));
+      },
+      submitBulkDelete(form) {
+        if (!this.selected.size) return;
+        if (!confirm(`Удалить ${this.selected.size} номинантов? Это действие необратимо.`)) return;
+        form.querySelectorAll('input[name="ids"]').forEach(el => el.remove());
+        this.selected.forEach(id => {
+          const inp = document.createElement('input');
+          inp.type = 'hidden';
+          inp.name = 'ids';
+          inp.value = id;
+          form.appendChild(inp);
+        });
+        form.submit();
+      },
+    };
+  }
 </script>
 
-<div class="bg-white shadow rounded-xl p-6">
+<div class="bg-white shadow rounded-xl p-6"
+     x-data="nomineesBulkDelete({{ nom.id }}, [{% for nominee in nom.nominees %}{{ nominee.id }}{% if not loop.last %}, {% endif %}{% endfor %}])">
   <h2 class="text-base font-semibold mb-4 text-gray-700">Лонг-лист ({{ nom.nominees | length }}{% if nom.nominees_count %} / {{ nom.nominees_count }}{% endif %})</h2>
   {% if nom.nominees %}
+  <div x-show="selected.size > 0"
+       x-transition
+       class="flex items-center gap-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">
+    <span class="text-red-700 font-medium" x-text="'Выбрано: ' + selected.size + ' номинантов'"></span>
+    <form method="post"
+          :action="'/admin/nominations/' + nominationId + '/nominees/bulk-delete'"
+          @submit.prevent="submitBulkDelete($el)">
+      <button type="submit"
+              class="bg-red-600 text-white px-4 py-1.5 rounded-lg hover:bg-red-700 transition text-sm">
+        Удалить выбранные
+      </button>
+    </form>
+    <button @click="selected = new Set()"
+            class="text-gray-400 hover:text-gray-600 text-xs underline">Снять выделение</button>
+  </div>
   <table class="w-full text-sm">
     <thead class="text-left text-gray-500 border-b">
       <tr>
+        <th class="pb-2 pr-2 w-6">
+          <input type="checkbox"
+                 :checked="isAllSelected()"
+                 @change="toggleAll()"
+                 class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+        </th>
         <th class="pb-2 pr-4">Фильм</th>
         <th class="pb-2 pr-4">Год</th>
         <th class="pb-2 pr-4">Персона</th>
@@ -365,6 +428,12 @@
       {% for nominee in nom.nominees %}
       <tr class="border-b last:border-0 align-top"
           x-data="rowEditor({{ nominee.id }})">
+        <td class="py-2 pr-2 w-6">
+          <input type="checkbox"
+                 :checked="selected.has({{ nominee.id }})"
+                 @change="toggleSelect({{ nominee.id }})"
+                 class="rounded border-gray-300 text-indigo-600 cursor-pointer" />
+        </td>
 
         {# Film cell #}
         <td class="py-2 pr-4 font-medium">
