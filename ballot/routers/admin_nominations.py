@@ -9,7 +9,7 @@ from ballot.models import (
     Contest, Film, Nomination, NominationType, Nominee, NomineePerson, Person, Round
 )
 from ballot.auth import require_subadmin
-import io, openpyxl
+import io, openpyxl, unicodedata
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
@@ -34,15 +34,18 @@ def _get_or_create_person(db: Session, name: str, url: Optional[str] = None) -> 
     Get or create a person in the database.
 
     Finds an existing person by name, or creates a new one if not found.
-    Updates person URL if provided and person doesn't already have one.
+    Uses NFKC normalization for consistent matching. SQLite does not support
+    NFKC natively, so normalization is done in Python before lookup and storage.
 
     :param db: Database session
     :param name: Person name
     :param url: Optional URL for the person
     :returns: Person object (existing or newly created)
     """
-    name = name.strip()
-    p = db.query(Person).filter(Person.name == name).first()
+    name = unicodedata.normalize("NFKC", name.strip())
+    # Normalize existing persons in DB for lookup
+    existing = db.query(Person).all()
+    p = next((person for person in existing if unicodedata.normalize("NFKC", person.name) == name), None)
     if not p:
         p = Person(name=name, url=url.strip() if url and url.strip() else None)
         db.add(p)
