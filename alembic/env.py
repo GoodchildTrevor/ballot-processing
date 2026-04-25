@@ -22,11 +22,6 @@ from ballot.models import *  # noqa: F401, F403
 
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
-
 
 def get_url():
     """Get database URL from environment or config."""
@@ -86,3 +81,4 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+    
