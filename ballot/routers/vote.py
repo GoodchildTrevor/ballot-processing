@@ -270,6 +270,14 @@ def _build_xlsx_per_nomination(nominations_data: list[dict]) -> io.BytesIO:
 def _get_or_create_participation(
     db: Session, round_id: int, voter_id: int
 ) -> RoundParticipation:
+    """
+    Get or create a participation record for a voter in a round.
+    
+    :param db: Database session
+    :param round_id: ID of the round
+    :param voter_id: ID of the voter
+    :returns: RoundParticipation object
+    """
     p = db.query(RoundParticipation).filter_by(
         round_id=round_id, voter_id=voter_id
     ).first()
@@ -281,6 +289,13 @@ def _get_or_create_participation(
 
 
 def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
+    """
+    Get nominations for a round.
+    
+    :param db: Database session
+    :param round_id: ID of the round
+    :returns: List of Nomination objects
+    """
     return (
         db.query(Nomination)
         .options(
@@ -293,7 +308,19 @@ def _nominations_for_round(db: Session, round_id: int) -> list[Nomination]:
     )
 
 
-def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: set[int], rnd: Round):
+def _check_cross_nomination_conflict(
+    db: Session, 
+    voter_id: int, 
+    selected_nids: set[int], 
+    rnd: Round) -> None:
+    """
+    Check for cross-nomination conflicts.
+    
+    :param db: Database session
+    :param voter_id: ID of the voter
+    :param selected_nids: Set of nominee IDs
+    :param rnd: Round object
+    """
     if not selected_nids:
         return
 
@@ -354,10 +381,13 @@ def _check_cross_nomination_conflict(db: Session, voter_id: int, selected_nids: 
 def _find_active_round_for_year(
     db: Session, year: int, round_type: RoundType | None = None
 ) -> Round | None:
-    """Return the active round for the year.
-
-    If round_type is given — return only that type.
-    Otherwise prefer FINAL over LONGLIST.
+    """
+    Find the active round for the year.
+    
+    :param db: Database session
+    :param year: Year
+    :param round_type: Optional round type
+    :returns: Round object or None
     """
     q = db.query(Round).filter(
         Round.year == year,
@@ -378,8 +408,11 @@ def _find_active_round_for_year(
 
 
 def _find_latest_active_round(db: Session) -> Round | None:
-    """Return the active round with the latest deadline.
-    If deadlines are equal or absent, prefer FINAL, then higher year.
+    """
+    Find the latest active round.
+    
+    :param db: Database session
+    :returns: Round object or None
     """
     active = (
         db.query(Round)
@@ -400,6 +433,15 @@ def _find_latest_active_round(db: Session) -> Round | None:
 
 
 def _render_vote_page(request, db, rnd, voter):
+    """
+    Render the vote page.
+    
+    :param request: FastAPI request object
+    :param db: Database session
+    :param rnd: Round object
+    :param voter: Voter object
+    :returns: TemplateResponse object
+    """
     nominations = _nominations_for_round(db, rnd.id)
     participation = _get_or_create_participation(db, rnd.id, voter.id)
     db.commit()
@@ -415,11 +457,11 @@ def _render_vote_page(request, db, rnd, voter):
 
 
 def _deadline_passed(rnd: Round) -> bool:
-    """Return True if the round has a deadline and it has passed.
-
-    Handles both naive (no tzinfo) and aware datetimes stored in DB.
-    For naive datetimes we treat them as server local time and convert to UTC
-    before comparing with current UTC time.
+    """
+    Check if the round has a deadline and it has passed.
+    
+    :param rnd: Round object
+    :returns: True if the round has a deadline and it has passed
     """
     if not rnd.deadline:
         return False
@@ -433,6 +475,13 @@ def _deadline_passed(rnd: Round) -> bool:
 
 
 def _check_round_open(request, rnd) -> HTMLResponse | None:
+    """
+    Check if the round is open.
+    
+    :param request: FastAPI request object
+    :param rnd: Round object
+    :returns: TemplateResponse object or None
+    """
     if not rnd or not rnd.is_active:
         return templates.TemplateResponse(
             request, "voting_closed.html",
@@ -454,6 +503,13 @@ def _check_round_open(request, rnd) -> HTMLResponse | None:
 
 @router.get("/vote", response_class=HTMLResponse)
 def vote_redirect(request: Request, db: Session = Depends(get_db)):
+    """
+    Redirect to the most relevant active round.
+    
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: RedirectResponse object
+    """
     active = _find_latest_active_round(db)
     if not active:
         return templates.TemplateResponse(
@@ -468,6 +524,14 @@ def vote_redirect(request: Request, db: Session = Depends(get_db)):
 # /{year}/vote  — prefers FINAL, redirects to typed URL
 @router.get("/{year}/vote", response_class=HTMLResponse)
 def vote_page_year(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Display the vote page for a specific year.
+    
+    :param year: Year
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: TemplateResponse object
+    """
     rnd = _find_active_round_for_year(db, year)
     if not rnd:
         return templates.TemplateResponse(
@@ -611,6 +675,14 @@ async def submit_vote_year(year: int, request: Request, db: Session = Depends(ge
 
 @router.post("/{year}/draft")
 async def save_draft_year(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Save a draft for a specific year.
+    
+    :param year: Year
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: Dictionary with "ok" and "error" keys
+    """
     voter: Voter = request.state.voter
     rnd = _find_active_round_for_year(db, year)
     if not rnd:
@@ -628,6 +700,14 @@ async def save_draft_year(year: int, request: Request, db: Session = Depends(get
 
 @router.post("/{year}/ballot-export")
 async def ballot_export(year: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Export a ballot for a specific year.
+    
+    :param year: Year
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: StreamingResponse object
+    """
     voter: Voter = request.state.voter
     nominations_data = _parse_export_payload(await request.json())
     buf = _build_xlsx_per_nomination(nominations_data)
@@ -646,6 +726,14 @@ async def ballot_export(year: int, request: Request, db: Session = Depends(get_d
 
 @router.get("/rounds/{round_id}/vote", response_class=HTMLResponse)
 def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Display the vote page for a specific round.
+    
+    :param round_id: ID of the round
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: TemplateResponse object
+    """
     rnd = db.get(Round, round_id)
     if not rnd:
         return templates.TemplateResponse(
@@ -659,6 +747,14 @@ def vote_page(round_id: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/rounds/{round_id}/draft")
 async def save_draft(round_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Save a draft for a specific round.
+    
+    :param round_id: ID of the round
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: Dictionary with "ok" and "error" keys
+    """
     body = _parse_draft_payload(await request.json())
     p = _get_or_create_participation(db, round_id, request.state.voter.id)
     p.draft = body
@@ -668,6 +764,14 @@ async def save_draft(round_id: int, request: Request, db: Session = Depends(get_
 
 @router.post("/rounds/{round_id}/vote")
 async def submit_vote_compat(round_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Submit a vote for a specific round.
+    
+    :param round_id: ID of the round
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: Response from _do_submit function processing the vote submission.
+    """
     voter: Voter = request.state.voter
     rnd = db.get(Round, round_id)
     err = _check_round_open(request, rnd)
@@ -681,7 +785,15 @@ async def submit_vote_compat(round_id: int, request: Request, db: Session = Depe
 # ---------------------------------------------------------------------------
 
 async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
-    # Defense in depth: re-check round open/deadline to prevent direct POST bypass
+    """
+    Process the vote submission.
+    
+    :param request: FastAPI request object
+    :param db: Database session
+    :param rnd: Round object
+    :param voter: Voter object
+    :returns: Response from _do_submit function processing the vote submission.
+    """
     err = _check_round_open(request, rnd)
     if err:
         return err
@@ -690,11 +802,6 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
     form = await request.form()
     is_final = (rnd.round_type.value == "FINAL")
 
-    # Server-side validation: runner-up (if provided) — ensure consistency with picks.
-    # Rules:
-    #  - If runner-up chosen but no main pick => invalid.
-    #  - If runner-up equals the sole selected winner => invalid.
-    #  - Runner-up is allowed to be not among picks otherwise.
     invalid_runnerups: list[tuple[Nomination, str]] = []
     picks_map: dict[str, list[str]] = {}
     runnerups_map: dict[str, str] = {}
@@ -724,8 +831,6 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                 if picks_set and nom.has_runner_up:
                     invalid_runnerups.append((nom, "missing_ru"))
 
-    # Server-side validation for pick/rank constraints and runner-up consistency.
-    # Gather rank answers to report back in draft if invalid.
     ranks_map: dict[str, dict[str, int]] = {}
     errors: list[str] = []
 
@@ -916,6 +1021,13 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
 
 @router.get("/thank-you", response_class=HTMLResponse)
 def thank_you(request: Request, db: Session = Depends(get_db)):
+    """
+    Display the thank you page.
+    
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: TemplateResponse object
+    """
     voter: Voter = request.state.voter
     round_id_str = request.query_params.get("round_id")
     has_votes = False
@@ -941,6 +1053,14 @@ def thank_you(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/my-ballot/{round_id}/export")
 def export_my_ballot(round_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Export my ballot for a specific round.
+    
+    :param round_id: ID of the round
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: StreamingResponse object
+    """
     voter: Voter = request.state.voter
     p = db.query(RoundParticipation).filter_by(
         round_id=round_id, voter_id=voter.id

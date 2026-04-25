@@ -13,7 +13,7 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 @router.get("/persons", response_class=HTMLResponse)
-def list_persons(request: Request, db: Session = Depends(get_db)):
+def list_persons(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     List all persons in the database.
 
@@ -189,7 +189,7 @@ async def set_person_url(
 
 
 @router.get("/persons/{person_id}", response_class=HTMLResponse)
-def person_detail(person_id: int, request: Request, db: Session = Depends(get_db)):
+def person_detail(person_id: int, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     Display detailed information about a specific person.
 

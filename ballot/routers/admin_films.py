@@ -13,7 +13,7 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 @router.get("/films", response_class=HTMLResponse)
-def list_films(request: Request, db: Session = Depends(get_db)):
+def list_films(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     List all films in the database.
 
@@ -114,7 +114,7 @@ def bulk_delete_films(
 
 
 @router.get("/films/{film_id}", response_class=HTMLResponse)
-def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)):
+def film_detail(film_id: int, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     Show detailed information about a specific film.
 
@@ -260,7 +260,7 @@ def add_nominee_from_film(
 
 
 @router.get("/nominees/{nominee_id}/edit")
-def edit_nominee_get(nominee_id: int, request: Request, db: Session = Depends(get_db)):
+def edit_nominee_get(nominee_id: int, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     Show edit form for a specific nominee.
 

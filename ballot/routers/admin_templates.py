@@ -17,14 +17,26 @@ templates = Jinja2Templates(directory="ballot/templates")
 
 
 def _int(value: Optional[str]) -> Optional[int]:
-    """Convert form string to int; return None for empty / missing values."""
+    """
+    Convert form string to int; return None for empty / missing values.
+    
+    :param value: String value to convert
+    :returns: Integer value or None if conversion fails
+    """
     if value is None or value.strip() == "":
         return None
     return int(value)
 
 
 @router.get("/templates", response_class=HTMLResponse)
-def list_templates(request: Request, db: Session = Depends(get_db)):
+def list_templates(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """
+    Display list of nomination templates in HTML format.
+    
+    :param request: FastAPI request object
+    :param db: Database session
+    :returns: HTML response with nomination templates list page
+    """
     tmps = (
         db.query(NominationTemplate)
         .order_by(NominationTemplate.sort_order, NominationTemplate.id)
@@ -45,7 +57,20 @@ def create_template(
     final_promotes_count: Optional[str] = Form(None),
     acting_group: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Create a new nomination template.
+    
+    :param name: Name of the template
+    :param description: Description of the template
+    :param type: Type of the template
+    :param longlist_pick_min: Minimum number of picks for longlist
+    :param longlist_pick_max: Maximum number of picks for longlist
+    :param final_promotes_count: Number of promotes for final
+    :param acting_group: Acting group for the template
+    :param db: Database session
+    :returns: RedirectResponse to the templates list page
+    """
     last = (
         db.query(NominationTemplate)
         .order_by(NominationTemplate.sort_order.desc())
@@ -77,7 +102,21 @@ def edit_template(
     final_promotes_count: Optional[str] = Form(None),
     acting_group: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Edit a nomination template.
+    
+    :param template_id: ID of the template to edit
+    :param name: Name of the template
+    :param description: Description of the template
+    :param type: Type of the template
+    :param longlist_pick_min: Minimum number of picks for longlist
+    :param longlist_pick_max: Maximum number of picks for longlist
+    :param final_promotes_count: Number of promotes for final
+    :param acting_group: Acting group for the template
+    :param db: Database session
+    :returns: RedirectResponse to the templates list page
+    """
     tmpl = db.get(NominationTemplate, template_id)
     if tmpl:
         tmpl.name = name.strip()
@@ -92,7 +131,14 @@ def edit_template(
 
 
 @router.post("/templates/{template_id}/archive")
-def archive_template(template_id: int, db: Session = Depends(get_db)):
+def archive_template(template_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Archive a nomination template.
+    
+    :param template_id: ID of the template to archive
+    :param db: Database session
+    :returns: RedirectResponse to the templates list page
+    """
     tmpl = db.get(NominationTemplate, template_id)
     if tmpl:
         tmpl.is_archived = not tmpl.is_archived
@@ -101,7 +147,14 @@ def archive_template(template_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/templates/{template_id}/delete")
-def delete_template(template_id: int, db: Session = Depends(get_db)):
+def delete_template(template_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Delete a nomination template.
+    
+    :param template_id: ID of the template to delete
+    :param db: Database session
+    :returns: RedirectResponse to the templates list page
+    """
     used = (
         db.query(ContestNomination)
         .filter(ContestNomination.template_id == template_id)
@@ -119,20 +172,14 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 def move_template(
     template_id: int,
     direction: str = Form(...),
-    db: Session = Depends(get_db),
-) -> RedirectResponse:
+    db: Session = Depends(get_db)) -> RedirectResponse:
     """
-    Moves a Nomination Template up or down in the sort order list.
-
-    This function fetches all templates, determines the position of the
-    specified template, and then swaps its `sort_order` with the template
-    in the target direction.
-
-    :param template_id: The ID of the template to be moved.
-    :param direction: The direction of movement ('up' or 'down').
-    :param db: The SQLAlchemy database session object.
-    :return: Redirects to the template list page upon successful move.
-    :rtype: RedirectResponse
+    Move a nomination template up or down in the sort order list.
+    
+    :param template_id: ID of the template to move
+    :param direction: Direction to move the template
+    :param db: Database session
+    :returns: RedirectResponse to the templates list page
     """
     all_tmpl = (
         db.query(NominationTemplate)

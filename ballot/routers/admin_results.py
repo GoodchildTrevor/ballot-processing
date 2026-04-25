@@ -27,12 +27,10 @@ def _build_content_disposition(filename: str) -> str:
     :param filename: Original filename (may contain Unicode characters)
     :returns: Formatted Content-Disposition header string
     """
-    # ASCII fallback для старых клиентов и чтобы пройти latin-1 в Starlette
     ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename)
     if not ascii_fallback.strip():
         ascii_fallback = "results.csv"
 
-    # RFC 5987 / RFC 6266
     encoded = quote(filename, safe="")
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
@@ -57,12 +55,9 @@ def _annotate_rows(rows: list, count: Optional[int], has_runner_up: bool = False
     for i, row in enumerate(rows):
         runner_ups = row.get("runner_ups", 0) if has_runner_up else None
         if prev_score is None or row["score"] != prev_score:
-            # Different votes - new rank
             rank = i + 1
         elif has_runner_up and runner_ups != prev_runner_ups:
-            # Same votes but different runner-ups - new rank
             rank = i + 1
-        # else: same votes AND same runner-ups (if applicable) - same rank
         row["position"] = rank
         row["is_nominee"] = bool(count and rank <= count)
         prev_score = row["score"]
@@ -114,11 +109,9 @@ def get_results(db: Session, round_ids: set[int] | None = None):
     for nom in nominations:
         rnd = round_cache.get(nom.round_id) if nom.round_id else None
         if nom.type == NominationType.RANK:
-            # Count total nominees in this nomination for dynamic scoring
             nominees_count = db.query(func.count(Nominee.id)).filter(
                 Nominee.nomination_id == nom.id
             ).scalar() or 10
-            # Score: last place = 1 point, first place = nominees_count points
             rows_raw = (
                 db.query(Film.title, func.sum(nominees_count + 1 - Ranking.rank).label("score"))
                 .join(Ranking, Ranking.film_id == Film.id)
@@ -185,7 +178,6 @@ def get_results(db: Session, round_ids: set[int] | None = None):
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
 
-    # Post-processing: merge acting groups (aggregate scores by person across linked templates)
     results = merge_acting_groups(results)
     return results
 
@@ -203,18 +195,15 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
     """
     from collections import defaultdict
 
-    # group items by acting_group
     group_map: dict[str, list[dict]] = defaultdict(list)
     for item in results:
         nom = item.get("nom")
         tmpl = getattr(nom.contest_nomination, "template", None) if nom and nom.contest_nomination else None
-        # Prefer acting_group set on Nomination (per-contest override); fall back to template acting_group
         ag = getattr(nom, "acting_group", None) or (getattr(tmpl, "acting_group", None) if tmpl else None)
         if ag:
             group_map[ag].append(item)
 
     for group, items in group_map.items():
-        # person_id -> {nomination_id: score}
         person_votes: dict[int, dict[int, int]] = defaultdict(dict)
         for item in items:
             for row in item.get("rows", []):
@@ -242,7 +231,6 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
                         if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
                             row["cols"][1] = 0
 
-    # Re-sort and re-annotate only nominations that belong to an acting group
     affected_nom_ids = {item["nom"].id for items in group_map.values() for item in items}
 
     for item in results:
@@ -266,7 +254,7 @@ def show_results(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> HTMLResponse:
     """
     Display voting results in HTML format.
 

@@ -65,7 +65,7 @@ def _nominee_label(nominee: Nominee) -> str:
 
 
 @router.get("/rounds", response_class=HTMLResponse)
-def list_rounds(request: Request, db: Session = Depends(get_db)):
+def list_rounds(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     Display list of contests and rounds in HTML format.
 
@@ -75,7 +75,6 @@ def list_rounds(request: Request, db: Session = Depends(get_db)):
     :param request: FastAPI request object
     :param db: Database session
     :returns: HTML response with rounds management page
-    :rtype: _TemplateResponse
     """
 
     latest_deadline = (
@@ -130,7 +129,7 @@ def create_contest(
     deadline: Optional[str] = Form(None),
     template_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
     """
     Create a new contest with associated longlist round and nominations.
 
@@ -285,7 +284,7 @@ def add_nominations_to_contest(
 
 
 @router.post("/contests/{contest_id}/delete")
-def delete_contest(contest_id: int, db: Session = Depends(get_db)):
+def delete_contest(contest_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
     """
     Delete a contest from the database.
 
@@ -331,7 +330,7 @@ def create_round(
     year: int = Form(...),
     deadline: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
     """
     Create a new standalone round.
 
@@ -451,14 +450,12 @@ def deactivate_round(round_id: int, db: Session = Depends(get_db)) -> RedirectRe
     return RedirectResponse(url="/admin/rounds", status_code=303)
 
 
-# ── Promote: GET shows the selection page, POST/confirm creates the final ──
-
 @router.get("/rounds/{round_id}/promote", response_class=HTMLResponse)
 def promote_preview(
     round_id: int,
     request: Request,
     db: Session = Depends(get_db),
-):
+) -> HTMLResponse:
     """
     Display longlist results with checkboxes for promotion selection.
 
@@ -476,11 +473,8 @@ def promote_preview(
     if not longlist or longlist.round_type != RoundType.LONGLIST:
         return RedirectResponse(url="/admin/rounds", status_code=303)
 
-    # Reuse identical logic from results page
     results = get_results(db, round_ids={longlist.id})
 
-    # For each nomination we need nominee_id per label so the form can
-    # submit nominee PKs. Build label -> nominee_id map per nomination.
     nominations_by_id = {
         nom.id: nom
         for nom in db.query(Nomination)
@@ -498,11 +492,9 @@ def promote_preview(
         nom = item["nom"]
         nom_obj = nominations_by_id.get(nom.id, nom)
 
-        # Build label -> nominee map
         label_to_nominee: dict[str, Nominee] = {}
         for n in nom_obj.nominees:
             label_to_nominee[_nominee_label(n)] = n
-            # RANK nominations: label is just film title
             if n.film:
                 label_to_nominee[n.film.title] = n
 
@@ -518,7 +510,6 @@ def promote_preview(
                 "voters": row["voters"],
                 "position": row["position"],
                 "row_num": i + 1,
-                # auto_selected = exactly what results page marks green
                 "auto_selected": row["is_nominee"],
             })
 
@@ -617,7 +608,7 @@ def promote_confirm(
 
 
 @router.get("/rounds/{round_id}/preview", response_class=HTMLResponse)
-def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)):
+def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     """
     Display round preview page with all nominations and films.
     Shows the round's details, all associated nominations, and all films.
@@ -626,7 +617,6 @@ def preview_round(round_id: int, request: Request, db: Session = Depends(get_db)
     :param request: FastAPI request object
     :param db: Database session
     :returns: HTML response with round preview
-    :rtype: _TemplateResponse
     """
     rnd = db.get(Round, round_id)
     if not rnd:

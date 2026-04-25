@@ -17,8 +17,15 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="ballot/templates")
 
 
-def _voter_voted_at(voter: Voter, round_ids: set[int] | None, db: Session) -> datetime | None:
-    """Return the most recent voted_at for this voter within the given rounds."""
+def _voter_voted_at(voter: Voter, round_ids: set[int] | None, db: Session) -> Optional[datetime]:
+    """
+    Get the most recent voted_at for a voter within the given rounds.
+    
+    :param voter: Voter object
+    :param round_ids: Set of round IDs
+    :param db: Database session
+    :returns: Most recent voted_at or None if no participation record exists
+    """
     q = db.query(RoundParticipation).filter(
         RoundParticipation.voter_id == voter.id,
         RoundParticipation.voted_at.isnot(None),
@@ -49,10 +56,18 @@ def _voter_voted_at(voter: Voter, round_ids: set[int] | None, db: Session) -> da
 def list_voters(
     request: Request,
     contest_id: Optional[int] = Query(None),
-    round_id: Optional[int] = Query(None),  # optional: filter to a single round
+    round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
-
+) -> HTMLResponse:
+    """
+    Display list of voters in HTML format.
+    
+    :param request: FastAPI request object
+    :param contest_id: Optional contest ID to filter voters
+    :param round_id: Optional round ID to filter voters
+    :param db: Database session
+    :returns: HTML response with voters list page
+    """
     latest_deadline = (
         db.query(
             Round.contest_id,
@@ -88,14 +103,11 @@ def list_voters(
         )
 
         if round_id:
-            # Validate that this round belongs to the selected contest
             selected_round = next((r for r in all_rounds if r.id == round_id), None)
 
         if selected_round:
             round_ids = {selected_round.id}
         elif all_rounds:
-            # Default: show the first round (usually LONGLIST / tour 1)
-            # User can switch via tabs
             selected_round = all_rounds[0]
             round_ids = {selected_round.id}
         else:
@@ -112,7 +124,6 @@ def list_voters(
         .all()
     )
 
-    # Nominations scoped to selected round(s)
     if round_ids:
         nominations = (
             db.query(Nomination)
@@ -161,10 +172,18 @@ def delete_voter_vote(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
+    """
+    Delete a voter's vote for a specific round.
+    
+    :param voter_id: ID of the voter
+    :param contest_id: Optional contest ID
+    :param round_id: Optional round ID
+    :param db: Database session
+    :returns: RedirectResponse to the voters list page
+    """
     voter = db.get(Voter, voter_id)
     if voter and round_id:
-        # Scoped delete: only remove votes/rankings for the specific round
         nom_ids = [
             n.id for n in db.query(Nomination)
             .filter(Nomination.round_id == round_id)
@@ -191,7 +210,6 @@ def delete_voter_vote(
         ).update({"voted_at": None, "draft": None})
         db.commit()
     elif voter:
-        # Fallback: delete everything (legacy, no round specified)
         db.query(Vote).filter(Vote.voter_id == voter_id).delete()
         db.query(Ranking).filter(Ranking.voter_id == voter_id).delete()
         db.query(RoundParticipation).filter(
@@ -215,7 +233,17 @@ def edit_vote_form(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> HTMLResponse:
+    """
+    Display the edit vote form for a voter.
+    
+    :param voter_id: ID of the voter
+    :param request: FastAPI request object
+    :param contest_id: Optional contest ID
+    :param round_id: Optional round ID
+    :param db: Database session
+    :returns: HTML response with edit vote form
+    """
     voter = (
         db.query(Voter)
         .options(
@@ -228,7 +256,6 @@ def edit_vote_form(
     if not voter:
         return HTMLResponse("Участник не найден.", status_code=404)
 
-    # Scope nominations to round_id if given, else contest
     if round_id:
         nominations = (
             db.query(Nomination)
@@ -299,7 +326,7 @@ async def edit_vote_submit(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
     """
     Processes and commits the changes made to a voter's ballot via the form.
 
@@ -318,7 +345,6 @@ async def edit_vote_submit(
     if not voter:
         return RedirectResponse(url="/admin/voters", status_code=303)
 
-    # Scope delete to round if specified
     if round_id:
         nom_ids = [n.id for n in db.query(Nomination).filter(Nomination.round_id == round_id).all()]
         nominee_ids = [n.id for n in db.query(Nominee).filter(Nominee.nomination_id.in_(nom_ids)).all()] if nom_ids else []
