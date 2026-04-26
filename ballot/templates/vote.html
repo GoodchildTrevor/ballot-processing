@@ -155,7 +155,7 @@
                  id="pick_{{ nom.id }}_{{ nominee.id }}"
                  class="w-5 h-5 text-indigo-600 rounded pick-cb"
                  data-nom="{{ nom.id }}"
-                 {% if draft and (nom.id|string) in draft.get('picks',{}) and (nominee.id|string) in draft['picks'][(nom.id|string)] %}checked{% endif %} />
+                 {% if draft and (nom.id|string) in draft.get('picks',{}) and nominee.id in draft['picks'][(nom.id|string)] %}checked{% endif %} />
           <label for="pick_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-800">
             {% if nominee.persons_label %}
               {% if nominee.person and nominee.person.url %}
@@ -228,7 +228,7 @@
           <input type="checkbox" name="runnerup_{{ nom.id }}" value="{{ nominee.id }}"
                  id="ru_{{ nom.id }}_{{ nominee.id }}" class="w-4 h-4 text-amber-500 runnerup-cb"
                  data-nom="{{ nom.id }}"
-                 {% if draft and draft.get('runnerups',{}).get(nom.id|string) == (nominee.id|string) %}checked{% endif %} />
+                 {% if draft and draft.get('runnerups',{}).get(nom.id|string) == nominee.id %}checked{% endif %} />
           <label for="ru_{{ nom.id }}_{{ nominee.id }}" class="flex-1 cursor-pointer text-base text-gray-700">
             {% if nominee.persons_label %}
               {% if nominee.person and nominee.person.url %}
@@ -629,8 +629,8 @@ function collectState() {
   document.querySelectorAll('input.pick-cb').forEach(cb => {
     const m = cb.name.match(/pick_(\d+)/);
     if (!m || !cb.checked) return;
-    if (!picks[m[1]]) picks[m[1]] = {};
-    picks[m[1]][cb.value] = true;
+    if (!picks[m[1]]) picks[m[1]] = [];
+    picks[m[1]].push(parseInt(cb.value, 10));
   });
   document.querySelectorAll('input[type=number][name^=rank_]').forEach(inp => {
     const m = inp.name.match(/rank_(\d+)_(\d+)/);
@@ -649,7 +649,7 @@ function renderBallot() {
   let html = '';
   NOM_DATA.forEach(nom => {
     const errors = nom.type === 'PICK'
-      ? getPickErrors(nom, picks[nom.id] ? Object.keys(picks[nom.id]).length : 0)
+      ? getPickErrors(nom, picks[nom.id] ? picks[nom.id].length : 0)
       : getRankErrors(nom, Object.values(ranks[nom.id] || {}).map(Number));
     const hasError = errors.length > 0;
     const editBtn = `<button type="button" onclick="goToSlide(${nom.slideIndex})"
@@ -659,7 +659,7 @@ function renderBallot() {
     html += `<div class="px-5 py-4 ${borderCls}"><div class="flex items-center gap-2 mb-2">
       <span class="font-semibold text-gray-800 text-base">${nom.name}</span>${editBtn}</div>`;
     if (nom.type === 'PICK') {
-      const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
+      const chosen = picks[nom.id] || [];
       if (chosen.length === 0) {
         html += `<p class="text-gray-400 text-sm italic">Пропущено</p>`;
       } else {
@@ -705,7 +705,7 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
     let header, rows;
     if (nom.type === 'PICK') {
       header = ['Номинант', 'Выбор'];
-      const chosen = picks[nom.id] ? Object.keys(picks[nom.id]) : [];
+      const chosen = picks[nom.id] || [];
       if (chosen.length === 0) {
         rows = [{ cols: ['(пропущено)', ''], urls: [null, null] }];
       } else {
@@ -753,7 +753,7 @@ function collectDraft() {
   const runnerups = {};
   document.querySelectorAll('.runnerup-cb:checked').forEach(r => {
     const nomId = r.dataset.nom;
-    if (nomId) runnerups[nomId] = r.value;
+    if (nomId) runnerups[nomId] = parseInt(r.value, 10);
   });
   return { picks, ranks, runnerups };
 }
