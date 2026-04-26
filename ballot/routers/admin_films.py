@@ -101,7 +101,8 @@ def merge_films_page(request: Request, db: Session = Depends(get_db)) -> HTMLRes
     # Sort by score descending
     pairs.sort(key=lambda x: -x["score"])
     
-    merged = request.query_params.get("merged")
+    merged_raw = request.query_params.get("merged")
+    merged = int(merged_raw) if merged_raw and merged_raw.isdigit() else None
     
     return templates.TemplateResponse(request, "admin/films_merge.html", {
         "pairs": pairs,
