@@ -7,7 +7,17 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from rapidfuzz import fuzz
 from ballot.database import get_db
-from ballot.models import Film, Nominee, Nomination, Person, Ranking, Round, RoundType
+from ballot.models import (
+    Film,
+    Nominee,
+    NomineePerson,
+    Nomination,
+    Person,
+    Ranking,
+    Round,
+    RoundType,
+    Vote,
+)
 from ballot.auth import require_subadmin
 from ballot.utils import _normalize
 
@@ -135,16 +145,80 @@ async def merge_films_execute(request: Request, db: Session = Depends(get_db)) -
         remove = db.get(Film, remove_id)
         if not keep or not remove:
             continue
-        
-        # Move all nominees to the keep film
-        db.query(Nominee).filter(Nominee.film_id == remove_id).update(
-            {"film_id": keep_id}, synchronize_session=False
-        )
 
-        # Rankings also reference films via NOT NULL FK, so re-link before delete.
-        db.query(Ranking).filter(Ranking.film_id == remove_id).update(
-            {"film_id": keep_id}, synchronize_session=False
-        )
+        # Deduplicate nominees while moving from remove -> keep.
+        remove_nominees = db.query(Nominee).filter(Nominee.film_id == remove_id).all()
+        for src_nominee in remove_nominees:
+            dst_nominee = (
+                db.query(Nominee)
+                .filter(
+                    Nominee.film_id == keep_id,
+                    Nominee.nomination_id == src_nominee.nomination_id,
+                    Nominee.person_id == src_nominee.person_id,
+                    Nominee.item == src_nominee.item,
+                )
+                .first()
+            )
+
+            if not dst_nominee:
+                src_nominee.film_id = keep_id
+                continue
+
+            # Keep useful metadata from source nominee if destination has gaps.
+            if not dst_nominee.item_url and src_nominee.item_url:
+                dst_nominee.item_url = src_nominee.item_url
+            dst_nominee.is_shortlisted = dst_nominee.is_shortlisted or src_nominee.is_shortlisted
+
+            # Merge votes and avoid uq_vote_voter_nominee conflicts.
+            src_votes = db.query(Vote).filter(Vote.nominee_id == src_nominee.id).all()
+            for vote in src_votes:
+                duplicate_vote = (
+                    db.query(Vote)
+                    .filter(Vote.voter_id == vote.voter_id, Vote.nominee_id == dst_nominee.id)
+                    .first()
+                )
+                if duplicate_vote:
+                    duplicate_vote.is_runner_up = duplicate_vote.is_runner_up or vote.is_runner_up
+                    db.delete(vote)
+                else:
+                    vote.nominee_id = dst_nominee.id
+
+            # Merge nominee-person links and avoid uq_nominee_person conflicts.
+            src_links = db.query(NomineePerson).filter(NomineePerson.nominee_id == src_nominee.id).all()
+            for link in src_links:
+                duplicate_link = (
+                    db.query(NomineePerson)
+                    .filter(
+                        NomineePerson.nominee_id == dst_nominee.id,
+                        NomineePerson.person_id == link.person_id,
+                    )
+                    .first()
+                )
+                if duplicate_link:
+                    db.delete(link)
+                else:
+                    link.nominee_id = dst_nominee.id
+
+            db.delete(src_nominee)
+
+        # Deduplicate rankings while moving from remove -> keep.
+        remove_rankings = db.query(Ranking).filter(Ranking.film_id == remove_id).all()
+        for src_ranking in remove_rankings:
+            dst_ranking = (
+                db.query(Ranking)
+                .filter(
+                    Ranking.voter_id == src_ranking.voter_id,
+                    Ranking.nomination_id == src_ranking.nomination_id,
+                    Ranking.film_id == keep_id,
+                )
+                .first()
+            )
+            if dst_ranking:
+                # Smaller rank means higher priority.
+                dst_ranking.rank = min(dst_ranking.rank, src_ranking.rank)
+                db.delete(src_ranking)
+            else:
+                src_ranking.film_id = keep_id
 
         # Use bulk delete to avoid ORM setting child FK columns to NULL on flush.
         db.query(Film).filter(Film.id == remove_id).delete(synchronize_session=False)
