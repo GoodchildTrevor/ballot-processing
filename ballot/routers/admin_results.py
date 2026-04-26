@@ -140,19 +140,26 @@ def get_results(db: Session, round_ids: set[int] | None = None):
             results.append({"nom": nom, "round": rnd, "rows": rows})
         else:
             # Treat NULL is_runner_up as regular vote (legacy rows before strict non-null data).
+            # Important: count only real Vote rows (outer join adds NULL placeholders).
             is_runner_up = func.coalesce(Vote.is_runner_up, False)
             # Count regular votes and runner-up votes separately
             rows_raw = (
                 db.query(
                     Nominee,
-                    func.sum(case((is_runner_up == False, 1), else_=0)).label("votes"),
-                    func.sum(case((is_runner_up == True, 1), else_=0)).label("runner_ups")
+                    func.sum(
+                        case(((Vote.id.is_not(None)) & (is_runner_up == False), 1), else_=0)
+                    ).label("votes"),
+                    func.sum(
+                        case(((Vote.id.is_not(None)) & (is_runner_up == True), 1), else_=0)
+                    ).label("runner_ups")
                 )
                 .outerjoin(Vote, Vote.nominee_id == Nominee.id)
                 .filter(Nominee.nomination_id == nom.id)
                 .group_by(Nominee.id)
-                .order_by(func.sum(case((is_runner_up == False, 1), else_=0)).desc(),
-                          func.sum(case((is_runner_up == True, 1), else_=0)).desc())
+                .order_by(
+                    func.sum(case(((Vote.id.is_not(None)) & (is_runner_up == False), 1), else_=0)).desc(),
+                    func.sum(case(((Vote.id.is_not(None)) & (is_runner_up == True), 1), else_=0)).desc(),
+                )
                 .all()
             )
             rows = []
