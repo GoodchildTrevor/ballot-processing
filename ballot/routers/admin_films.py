@@ -1,12 +1,15 @@
-import re
 from typing import List, Optional
+from itertools import combinations
+from collections import defaultdict
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
+from rapidfuzz import fuzz
 from ballot.database import get_db
 from ballot.models import Film, Nominee, Nomination, Person, Round, RoundType
 from ballot.auth import require_subadmin
+from ballot.utils import _normalize
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
@@ -54,6 +57,96 @@ def create_film(
     db.add(Film(title=title.strip(), year=year, url=url.strip() if url and url.strip() else None))
     db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)
+
+
+@router.get("/films/merge", response_class=HTMLResponse)
+def merge_films_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    """
+    Show page with suspicious film pairs that might be duplicates.
+    
+    Groups films by year and finds pairs with similar titles using fuzzy matching.
+    The canonical film (to keep) is determined by the one with more nominees.
+    
+    :param request: The incoming HTTP request
+    :param db: Database session dependency
+    :returns: HTML template response with pairs of similar films
+    """
+    films = db.query(Film).order_by(Film.year, Film.title).all()
+    
+    # Group by year
+    by_year = defaultdict(list)
+    for f in films:
+        by_year[f.year].append(f)
+    
+    # Get threshold from query param (default 85)
+    threshold = int(request.query_params.get("threshold", 85))
+    
+    pairs = []
+    for year, group in by_year.items():
+        for a, b in combinations(group, 2):
+            score = fuzz.ratio(_normalize(a.title), _normalize(b.title))
+            if score >= threshold:
+                # Canonical — the one with more nominees
+                a_count = db.query(Nominee).filter(Nominee.film_id == a.id).count()
+                b_count = db.query(Nominee).filter(Nominee.film_id == b.id).count()
+                keep, remove = (a, b) if a_count >= b_count else (b, a)
+                pairs.append({
+                    "keep": keep,
+                    "remove": remove,
+                    "score": score,
+                    "keep_count": max(a_count, b_count),
+                    "remove_count": min(a_count, b_count),
+                })
+    
+    # Sort by score descending
+    pairs.sort(key=lambda x: -x["score"])
+    
+    merged = request.query_params.get("merged")
+    
+    return templates.TemplateResponse(request, "admin/films_merge.html", {
+        "pairs": pairs,
+        "threshold": threshold,
+        "merged": merged,
+    })
+
+
+@router.post("/films/merge")
+async def merge_films_execute(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    """
+    Execute the merge of selected film pairs.
+    
+    For each checked pair, moves all nominees from the 'remove' film to the 'keep' film,
+    then deletes the 'remove' film.
+    
+    :param request: The incoming HTTP request with form data
+    :param db: Database session dependency
+    :returns: Redirect response back to merge page with merge count
+    """
+    form = await request.form()
+    merged = 0
+    for key, val in form.multi_items():
+        if not key.startswith("merge_"):
+            continue
+        keep_id = int(key.removeprefix("merge_"))
+        remove_id = int(val)
+        
+        keep = db.get(Film, keep_id)
+        remove = db.get(Film, remove_id)
+        if not keep or not remove:
+            continue
+        
+        # Move all nominees to the keep film
+        db.query(Nominee).filter(Nominee.film_id == remove_id).update(
+            {"film_id": keep_id}, synchronize_session=False
+        )
+        db.delete(remove)
+        db.flush()
+        merged += 1
+    
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/films/merge?merged={merged}", status_code=303
+    )
 
 
 @router.post("/films/bulk")

@@ -1,4 +1,3 @@
-import unicodedata
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -10,23 +9,11 @@ from ballot.models import (
     Contest, Film, Nomination, NominationType, Nominee, NomineePerson, Person, Round
 )
 from ballot.auth import require_subadmin
+from ballot.utils import _normalize
 import io, openpyxl
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
-
-
-def _normalize(value: str) -> str:
-    """
-    Normalize a string by applying NFKC unicode normalization and stripping whitespace.
-    Converts non-breaking spaces (\xa0) and other unicode variants to standard characters.
-
-    :param value: Input string
-    :returns: Normalized string
-    """
-    if not value:
-        return value
-    return unicodedata.normalize("NFKC", value).strip()
 
 
 def _all_years(db: Session) -> list[int]:
