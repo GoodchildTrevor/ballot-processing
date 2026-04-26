@@ -81,6 +81,33 @@
 {% set is_final = (round.round_type.value == 'FINAL') %}
 {% for nom in nominations %}
 <div class="slide hidden" data-slide="{{ loop.index }}" data-nom-id="{{ nom.id }}">
+
+  {# ── TOP NAV ── #}
+  <div class="flex items-center justify-between mb-3 gap-2">
+    <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
+            class="border border-gray-300 text-gray-600 px-5 py-2 rounded-xl text-sm hover:bg-gray-50 transition shrink-0">
+      ← Назад
+    </button>
+    <div class="flex items-center gap-2 text-xs">
+      <button type="button" onclick="goToSlide(0)"
+              class="text-gray-400 hover:text-indigo-600 border border-gray-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        ☰ Оглавление
+      </button>
+      <button type="button" onclick="saveDraftManual()"
+              class="save-btn text-gray-400 hover:text-blue-600 border border-gray-200 hover:border-blue-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        💾 Сохранить
+      </button>
+      <button type="button" onclick="goToSlide({{ nominations|length + 1 }})"
+              class="text-gray-400 hover:text-green-600 border border-gray-200 hover:border-green-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        ✓ Итоги
+      </button>
+    </div>
+    <button type="button" onclick="goToSlide({{ loop.index + 1 }})"
+            class="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition shrink-0">
+      {% if loop.last %}Проверить →{% else %}Далее →{% endif %}
+    </button>
+  </div>
+
   <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
     <div class="bg-gray-50 border-b border-gray-200 px-5 py-3 flex flex-wrap items-center gap-3">
@@ -242,7 +269,7 @@
 
   </div>
 
-  {# ── nav ── #}
+  {# ── BOTTOM NAV ── #}
   <div class="flex items-center justify-between mt-4 gap-2">
     <button type="button" onclick="goToSlide({{ loop.index - 1 }})"
             class="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-xl text-base hover:bg-gray-50 transition shrink-0">
@@ -252,6 +279,10 @@
       <button type="button" onclick="goToSlide(0)"
               class="text-gray-400 hover:text-indigo-600 border border-gray-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
         ☰ Оглавление
+      </button>
+      <button type="button" onclick="saveDraftManual()"
+              class="save-btn text-gray-400 hover:text-blue-600 border border-gray-200 hover:border-blue-300 px-2.5 py-1 rounded-lg transition whitespace-nowrap">
+        💾 Сохранить
       </button>
       <span id="autosave-indicator" class="text-gray-300 whitespace-nowrap">автосохранение</span>
       <button type="button" onclick="goToSlide({{ nominations|length + 1 }})"
@@ -386,7 +417,6 @@ goToSlide(0);
   window._getPickGroups = () => groups;
   window._updatePickGroup = updateGroup;
   Object.keys(groups).forEach(updateGroup);
-  // Radios: allow deselect by clicking already-selected radio (defer deselect to after native toggle)
   document.querySelectorAll('input.pick-cb').forEach(r => {
     r.addEventListener('mousedown', function() {
       this.dataset.wasChecked = this.checked ? 'true' : 'false';
@@ -395,7 +425,6 @@ goToSlide(0);
       const was = this.dataset.wasChecked === 'true';
       if (was) {
         const input = this;
-        // Defer to after native handling so we reliably clear the checked state
         setTimeout(() => {
           input.checked = false;
           input.dataset.wasChecked = 'false';
@@ -411,7 +440,6 @@ goToSlide(0);
       if (nom && window._updatePickGroup) window._updatePickGroup(nom);
     });
   });
-  // Also set wasChecked when clicking the label (some browsers/fire modes trigger mousedown on label)
   document.querySelectorAll('label[for^="pick_"]').forEach(lb => {
     lb.addEventListener('mousedown', function() {
       const id = this.getAttribute('for');
@@ -421,7 +449,7 @@ goToSlide(0);
   });
 })();
 
-// runner-up: behave like single-select but keep checkbox semantics so user can deselect
+// runner-up: single-select with deselect
 document.querySelectorAll('.runnerup-cb').forEach(cb => {
   cb.addEventListener('change', () => {
     const nomId = cb.dataset.nom;
@@ -548,20 +576,14 @@ function getRunnerUpErrors() {
     if (nom.type !== 'PICK' || !nom.has_runner_up) return;
     const ruChecked = [...document.querySelectorAll(`.runnerup-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
     const pickedCbs = [...document.querySelectorAll(`.pick-cb[data-nom="${nom.id}"]`)].filter(c => c.checked);
-
-    // Winner selected but no runner-up chosen
     if (pickedCbs.length > 0 && ruChecked.length === 0) {
       e.push(`«${nom.name}»: выбран победитель, но runner-up не указан`);
       return;
     }
-
-    // Runner-up chosen but no winner
     if (ruChecked.length > 0 && pickedCbs.length === 0) {
       e.push(`«${nom.name}»: выбран runner-up, но победитель не отмечен`);
       return;
     }
-
-    // Победитель и runner-up — один и тот же номинант
     if (ruChecked.length > 0 && pickedCbs.length === 1 && pickedCbs[0].value === ruChecked[0].value) {
       e.push(`«${nom.name}»: победитель и runner-up — один и тот же номинант`);
       return;
@@ -585,7 +607,7 @@ function collectAllErrors() {
   return e;
 }
 
-// ── validateAndSubmit — вызывается только через onclick ──
+// ── validateAndSubmit ──
 function validateAndSubmit() {
   const errors = collectAllErrors();
   const banner = document.getElementById('error-banner');
@@ -725,7 +747,7 @@ document.getElementById('export-xlsx-btn').addEventListener('click', async funct
   a.click();
 });
 
-// ── Autosave draft ──
+// ── Draft ──
 function collectDraft() {
   const { picks, ranks } = collectState();
   const runnerups = {};
@@ -738,30 +760,57 @@ function collectDraft() {
 
 const autosaveIndicator = document.getElementById('autosave-indicator');
 let draftTimer = null;
+let isSaving = false;
+
 async function saveDraft() {
-  await fetch(`/${YEAR}/draft`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(collectDraft()),
-  });
-  if (autosaveIndicator) {
-    autosaveIndicator.textContent = '✓ сохранено';
-    autosaveIndicator.classList.add('text-green-400');
-    autosaveIndicator.classList.remove('text-gray-300');
-    setTimeout(() => {
-      autosaveIndicator.textContent = 'автосохранение';
-      autosaveIndicator.classList.remove('text-green-400');
-      autosaveIndicator.classList.add('text-gray-300');
-    }, 2000);
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    await fetch(`/${YEAR}/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collectDraft()),
+    });
+    if (autosaveIndicator) {
+      autosaveIndicator.textContent = '✓ сохранено';
+      autosaveIndicator.classList.add('text-green-400');
+      autosaveIndicator.classList.remove('text-gray-300');
+      setTimeout(() => {
+        autosaveIndicator.textContent = 'автосохранение';
+        autosaveIndicator.classList.remove('text-green-400');
+        autosaveIndicator.classList.add('text-gray-300');
+      }, 2000);
+    }
+  } finally {
+    isSaving = false;
   }
 }
 
+async function saveDraftManual() {
+  // Immediately save and give visible feedback on all save buttons
+  clearTimeout(draftTimer);
+  document.querySelectorAll('.save-btn').forEach(btn => {
+    btn.textContent = '⏳ Сохранение...';
+    btn.disabled = true;
+  });
+  await saveDraft();
+  document.querySelectorAll('.save-btn').forEach(btn => {
+    btn.textContent = '✅ Сохранено!';
+    setTimeout(() => {
+      btn.textContent = '💾 Сохранить';
+      btn.disabled = false;
+    }, 2000);
+  });
+}
+
+// Autosave on change (debounced 3s)
 document.querySelectorAll('#vote-form input').forEach(el => {
   el.addEventListener('change', () => {
     clearTimeout(draftTimer);
     draftTimer = setTimeout(saveDraft, 3000);
   });
 });
+// Periodic autosave every 60s
 setInterval(saveDraft, 60000);
 
 updateToc();
@@ -779,7 +828,6 @@ updateToc();
   function expireVoting() {
     try { if (typeof draftTimer !== 'undefined') clearTimeout(draftTimer); } catch(e) {}
     try { if (typeof saveDraftInterval !== 'undefined') clearInterval(saveDraftInterval); } catch(e) {}
-    // Reload the page so the server renders the proper voting_closed page (avoids showing admin UI client-side)
     window.location.reload();
   }
 
