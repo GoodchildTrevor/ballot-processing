@@ -28,7 +28,7 @@ def _build_content_disposition(filename: str) -> str:
     :returns: Formatted Content-Disposition header string
     """
     ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename)
-    if not ascii_fallback.strip():
+    if not ascii_fallback.replace("_", "").strip():
         ascii_fallback = "results.csv"
 
     encoded = quote(filename, safe="")
@@ -56,7 +56,7 @@ def _annotate_rows(rows: list, count: Optional[int], has_runner_up: bool = False
         runner_ups = row.get("runner_ups", 0) if has_runner_up else None
         if prev_score is None or row["score"] != prev_score:
             rank = i + 1
-        elif has_runner_up and runner_ups != prev_runner_ups:
+        elif has_runner_up and row["score"] == prev_score and runner_ups != prev_runner_ups:
             rank = i + 1
         row["position"] = rank
         row["is_nominee"] = bool(count and rank <= count)
@@ -112,7 +112,7 @@ def get_results(db: Session, round_ids: set[int] | None = None):
             actual_count = db.query(func.count(Nominee.id)).filter(
                 Nominee.nomination_id == nom.id
             ).scalar() or 10
-            nominees_count = nom.nominees_count or actual_count
+            nominees_count = actual_count if nom.nominees_count is None else nom.nominees_count
             rows_raw = (
                 db.query(Film.title, func.sum(nominees_count + 1 - Ranking.rank).label("score"))
                 .join(Ranking, Ranking.film_id == Film.id)
@@ -121,12 +121,15 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 .order_by(func.sum(nominees_count + 1 - Ranking.rank).desc())
                 .all()
             )
+            # Cache films and voters to avoid N+1 queries
+            films_cache = {f.id: f.title for f in db.query(Film).all()}
+            voters_cache = {v.id: v.name for v in db.query(Voter).all()}
             film_voters_map = {}
             for r in db.query(Ranking).filter(Ranking.nomination_id == nom.id).all():
-                film = db.get(Film, r.film_id)
-                voter = db.get(Voter, r.voter_id)
-                if film and voter:
-                    film_voters_map.setdefault(film.title, []).append((voter.name, r.rank))
+                film_title = films_cache.get(r.film_id)
+                voter_name = voters_cache.get(r.voter_id)
+                if film_title and voter_name:
+                    film_voters_map.setdefault(film_title, []).append((voter_name, r.rank))
             rows = []
             for r in rows_raw:
                 voter_entries = sorted(film_voters_map.get(r.title, []), key=lambda x: x[0])
@@ -162,14 +165,16 @@ def get_results(db: Session, round_ids: set[int] | None = None):
                 )
                 .all()
             )
+            # Cache voters to avoid N+1 queries
+            voters_cache = {v.id: v.name for v in db.query(Voter).all()}
             rows = []
             for nominee, votes, runner_ups in rows_raw:
                 label = _nominee_label(nominee)
                 voter_names = ", ".join(
-                    sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if not v.is_runner_up)
+                    sorted(voters_cache.get(v.voter_id, "") for v in nominee.votes if not v.is_runner_up)
                 )
                 runner_up_names = ", ".join(
-                    sorted(db.get(Voter, v.voter_id).name for v in nominee.votes if v.is_runner_up)
+                    sorted(voters_cache.get(v.voter_id, "") for v in nominee.votes if v.is_runner_up)
                 )
                 person_ids = (
                     [np.person_id for np in nominee.persons]
@@ -188,7 +193,8 @@ def get_results(db: Session, round_ids: set[int] | None = None):
             rows = _annotate_rows(rows, nom.nominees_count, nom.has_runner_up)
             results.append({"nom": nom, "round": rnd, "rows": rows})
 
-    results = merge_acting_groups(results)
+    # Temporarily disabled for debugging
+    # results = merge_acting_groups(results)
     return results
 
 
@@ -225,7 +231,7 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
             if len(votes_by_nom) <= 1:
                 continue
             total = sum(votes_by_nom.values())
-            best_nom_id = max(votes_by_nom, key=votes_by_nom.get)
+            best_nom_id = max(votes_by_nom.items(), key=lambda x: (x[1], -x[0]))[0]
             for item in items:
                 for row in item.get("rows", []):
                     pids = row.get("person_ids") or []
@@ -249,13 +255,12 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
         nom = item["nom"]
         if nom.id not in affected_nom_ids:
             continue
-        if nom.type != NominationType.RANK:
-            item_rows = item.get("rows", [])
-            item_rows.sort(
-                key=lambda r: (r.get("score", 0), r.get("runner_ups", 0)),
-                reverse=True,
-            )
-            item["rows"] = _annotate_rows(item_rows, nom.nominees_count, nom.has_runner_up)
+        item_rows = item.get("rows", [])
+        item_rows.sort(
+            key=lambda r: (r.get("score", 0), r.get("runner_ups", 0)),
+            reverse=True,
+        )
+        item["rows"] = _annotate_rows(item_rows, nom.nominees_count, nom.has_runner_up)
 
     return results
 
@@ -373,7 +378,13 @@ def export_results(
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for item in results:
-        ws = wb.create_sheet(title=item["nom"].name[:31])
+        # Ensure unique sheet names
+        title = item["nom"].name[:31]
+        i = 1
+        while title in wb.sheetnames:
+            title = f"{item['nom'].name[:28]}_{i}"
+            i += 1
+        ws = wb.create_sheet(title=title)
         if item["nom"].type == NominationType.RANK:
             include_nominee = bool(item["nom"].nominees_count and (not item.get("round") or item["round"].tour != 2))
             ws.append(["Участник", "Очки", "Проголосовали (место)",
