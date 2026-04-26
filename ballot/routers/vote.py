@@ -864,7 +864,6 @@ async def _do_submit(request: Request, db: Session, rnd: Round, voter: Voter):
                 # detect duplicate ranks
                 if len(rank_entries) != len(set(rank_entries)):
                     errors.append(f"«{nom.name}»: одно место указано дважды")
-                    errors.append(f"одно место 2 и более раз в RANK: {nom.name}")
                 # detect overflow
                 max_val = (nom.nominees_count if (not (rnd.round_type.value == "FINAL") and nom.nominees_count) else len(nom.nominees))
                 if any(r > max_val for r in rank_entries):
