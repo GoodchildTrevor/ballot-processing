@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from rapidfuzz import fuzz
 from ballot.database import get_db
-from ballot.models import Film, Nominee, Nomination, Person, Round, RoundType
+from ballot.models import Film, Nominee, Nomination, Person, Ranking, Round, RoundType
 from ballot.auth import require_subadmin
 from ballot.utils import _normalize
 
@@ -139,7 +139,14 @@ async def merge_films_execute(request: Request, db: Session = Depends(get_db)) -
         db.query(Nominee).filter(Nominee.film_id == remove_id).update(
             {"film_id": keep_id}, synchronize_session=False
         )
-        db.delete(remove)
+
+        # Rankings also reference films via NOT NULL FK, so re-link before delete.
+        db.query(Ranking).filter(Ranking.film_id == remove_id).update(
+            {"film_id": keep_id}, synchronize_session=False
+        )
+
+        # Use bulk delete to avoid ORM setting child FK columns to NULL on flush.
+        db.query(Film).filter(Film.id == remove_id).delete(synchronize_session=False)
         db.flush()
         merged += 1
     
@@ -302,6 +309,7 @@ def delete_film(film_id: int, db: Session = Depends(get_db)) -> RedirectResponse
     film = db.get(Film, film_id)
     if film:
         db.query(Nominee).filter(Nominee.film_id == film_id).delete()
+        db.query(Ranking).filter(Ranking.film_id == film_id).delete(synchronize_session=False)
         db.delete(film)
         db.commit()
     return RedirectResponse(url="/admin/films", status_code=303)

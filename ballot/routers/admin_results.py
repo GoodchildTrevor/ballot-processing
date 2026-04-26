@@ -228,6 +228,8 @@ def merge_acting_groups(results: list[dict]) -> list[dict]:
                             row["cols"][1] = total
                     else:
                         row["score"] = 0
+                        row["voters"] = ""
+                        row["runner_up_voters"] = ""
                         if isinstance(row.get("cols"), list) and len(row["cols"]) > 1:
                             row["cols"][1] = 0
 
