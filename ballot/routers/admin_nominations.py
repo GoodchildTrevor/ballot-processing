@@ -1,3 +1,4 @@
+import unicodedata
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -9,10 +10,23 @@ from ballot.models import (
     Contest, Film, Nomination, NominationType, Nominee, NomineePerson, Person, Round
 )
 from ballot.auth import require_subadmin
-import io, openpyxl, unicodedata
+import io, openpyxl
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_subadmin)])
 templates = Jinja2Templates(directory="ballot/templates")
+
+
+def _normalize(value: str) -> str:
+    """
+    Normalize a string by applying NFKC unicode normalization and stripping whitespace.
+    Converts non-breaking spaces (\xa0) and other unicode variants to standard characters.
+
+    :param value: Input string
+    :returns: Normalized string
+    """
+    if not value:
+        return value
+    return unicodedata.normalize("NFKC", value).strip()
 
 
 def _all_years(db: Session) -> list[int]:
@@ -33,63 +47,78 @@ def _get_or_create_person(db: Session, name: str, url: Optional[str] = None) -> 
     """
     Get or create a person in the database.
 
-    Finds an existing person by name, or creates a new one if not found.
-    Uses NFKC normalization for consistent matching. SQLite does not support
-    NFKC natively, so normalization is done in Python before lookup and storage.
+    Finds an existing person by normalized name (NFKC), or creates a new one if not found.
+    Updates person URL if provided and person doesn't already have one.
 
     :param db: Database session
     :param name: Person name
     :param url: Optional URL for the person
     :returns: Person object (existing or newly created)
     """
-    name = unicodedata.normalize("NFKC", name.strip())
-    existing = db.query(Person).all()
-    p = next((person for person in existing if unicodedata.normalize("NFKC", person.name) == name), None)
+    name = _normalize(name)
+    url = _normalize(url) if url else None
+
+    # Fetch all persons and compare normalized to handle \xa0 in existing records
+    all_persons = db.query(Person).all()
+    p = next((x for x in all_persons if _normalize(x.name) == name), None)
+
     if not p:
-        p = Person(name=name, url=url.strip() if url and url.strip() else None)
+        p = Person(name=name, url=url or None)
         db.add(p)
         db.flush()
-    elif url and url.strip() and not p.url:
-        p.url = url.strip()
+    else:
+        # Fix dirty name in place
+        if p.name != name:
+            p.name = name
+        if url and not p.url:
+            p.url = url
     return p
 
 
 def _get_or_create_film(
-    db: Session, 
-    title: str, 
+    db: Session,
+    title: str,
     year: Optional[int]
 ) -> Optional[Film]:
     """
     Get or create a film in the database.
 
-    Finds an existing film by title (and optionally year), or creates a new one
-    if not found. Requires year for new films.
+    Finds an existing film by normalized title (NFKC) and optionally year,
+    or creates a new one if not found. Requires year for new films.
 
     :param db: Database session
     :param title: Film title
     :param year: Optional film year
     :returns: Film object or None if title is empty or year is missing for new films
     """
-    title = title.strip()
+    title = _normalize(title)
     if not title:
         return None
-    q = db.query(Film).filter(Film.title == title)
+
+    # Fetch candidates and compare normalized to handle dirty existing records
+    q = db.query(Film)
     if year:
         q = q.filter(Film.year == year)
-    f = q.first()
+    candidates = q.all()
+    f = next((x for x in candidates if _normalize(x.title) == title), None)
+
     if not f:
         if not year:
             return None
         f = Film(title=title, year=year)
         db.add(f)
         db.flush()
+    else:
+        # Fix dirty title in place
+        if f.title != title:
+            f.title = title
     return f
 
 
 def _set_nominee_persons(
-    db: Session, 
-    nominee: Nominee, 
-    person_ids: list[int], 
+    db: Session,
+    nominee: Nominee,
+    person_ids: list[int],
     person_urls: dict[int, str]
 ) -> None:
     """
@@ -103,9 +132,11 @@ def _set_nominee_persons(
     :param person_ids: List of person IDs to associate with the nominee
     :param person_urls: Dictionary mapping person IDs to URLs
     """
+    # Delete existing
     for np in list(nominee.persons):
         db.delete(np)
     db.flush()
+    # Insert new
     for pid in person_ids:
         url = person_urls.get(pid)
         person = db.get(Person, pid)
@@ -140,22 +171,17 @@ def _person_to_dict(person: Person) -> dict:
     return {"id": person.id, "name": person.name, "url": person.url}
 
 
+# ─────────────────────────────────────────────────────────────
+# LIST
+# ─────────────────────────────────────────────────────────────
+
 @router.get("/nominations", response_class=HTMLResponse)
 def list_nominations(
     request: Request,
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
-    """
-    Display list of nominations in HTML format.
-    
-    :param request: FastAPI request object
-    :param contest_id: Optional contest ID to filter nominations
-    :param round_id: Optional round ID to filter nominations
-    :param db: Database session
-    :returns: HTML response with nominations list page
-    """
+):
     years = _all_years(db)
 
     latest_deadline = (
@@ -217,18 +243,15 @@ def list_nominations(
     })
 
 
+# ─────────────────────────────────────────────────────────────
+# CREATE / EDIT / DELETE / MOVE  (nominations)
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/nominations")
 async def create_nomination(
-    request: Request, 
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Create a new nomination.
-    
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nominations list page
-    """
     form = await request.form()
     nom_type = NominationType(form.get("type", "RANK"))
     nominees_count_raw = form.get("nominees_count")
@@ -264,18 +287,10 @@ async def create_nomination(
 
 @router.post("/nominations/{nom_id}/edit")
 async def edit_nomination(
-    nom_id: int, 
-    request: Request, 
+    nom_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Edit a nomination.
-    
-    :param nom_id: ID of the nomination to edit
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nominations list page
-    """
     form = await request.form()
     nom = db.get(Nomination, nom_id)
     if nom:
@@ -307,18 +322,10 @@ async def edit_nomination(
 
 @router.post("/nominations/{nom_id}/delete")
 async def delete_nomination(
-    nom_id: int, 
-    request: Request, 
+    nom_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Delete a nomination.
-    
-    :param nom_id: ID of the nomination to delete
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nominations list page
-    """
     form = await request.form()
     nom = db.get(Nomination, nom_id)
     if nom:
@@ -336,18 +343,10 @@ async def delete_nomination(
 
 @router.post("/nominations/{nom_id}/move")
 async def move_nomination(
-    nom_id: int, 
-    request: Request, 
+    nom_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Move a nomination up or down in the sort order list.
-    
-    :param nom_id: ID of the nomination to move
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nominations list page
-    """
     form = await request.form()
     direction = form.get("direction", "up")
     nom = db.get(Nomination, nom_id)
@@ -376,21 +375,18 @@ async def move_nomination(
     return RedirectResponse(url="/admin/nominations" + ("?" + "&".join(parts) if parts else ""), status_code=303)
 
 
+# ─────────────────────────────────────────────────────────────
+# EXPORT
+# ─────────────────────────────────────────────────────────────
+
 @router.get("/nominations/export-longlist")
 def export_longlist(
     contest_id: Optional[int] = Query(None),
     round_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    """
-    Export longlists to Excel. Each nomination is a separate sheet.
-    Filters by contest and round if provided.
-    
-    :param contest_id: Optional contest ID to export longlists for
-    :param round_id: Optional round ID to export longlists for
-    :param db: Database session
-    :returns: StreamingResponse with Excel file download
-    """
+    """Export longlists to Excel. Each nomination is a separate sheet.
+    Filters by contest and round if provided."""
     q = (
         db.query(Nomination)
         .options(
@@ -417,7 +413,7 @@ def export_longlist(
     for nom in nominations:
         ws.append([nom.name, len(nom.nominees)])
 
-        nom_ws = wb.create_sheet(title=nom.name[:31])  # Excel sheet name limit
+        nom_ws = wb.create_sheet(title=nom.name[:31])
         nom_ws.append(["Фильм", "Год", "Персоны", "Item", "Item URL"])
 
         for nominee in sorted(nom.nominees, key=lambda n: (n.film.title if n.film else "", n.item or "")):
@@ -445,6 +441,10 @@ def export_longlist(
     )
 
 
+# ─────────────────────────────────────────────────────────────
+# NOMINATION DETAIL
+# ─────────────────────────────────────────────────────────────
+
 @router.get("/nominations/{nom_id}", response_class=HTMLResponse)
 def nomination_detail(
     nom_id: int,
@@ -456,21 +456,7 @@ def nomination_detail(
     bulk_persons_created: Optional[int] = Query(None),
     bulk_not_found: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
-    """
-    Display detailed information about a specific nomination.
-    
-    :param nom_id: ID of the nomination to display
-    :param request: FastAPI request object
-    :param error: Optional error message
-    :param bulk_created: Optional number of films created
-    :param bulk_skipped: Optional number of films skipped
-    :param bulk_films_created: Optional number of films created
-    :param bulk_persons_created: Optional number of persons created
-    :param bulk_not_found: Optional list of films not found
-    :param db: Database session
-    :returns: HTML response with nomination detail page
-    """
+):
     nom = (
         db.query(Nomination)
         .options(
@@ -508,20 +494,16 @@ def nomination_detail(
     })
 
 
+# ─────────────────────────────────────────────────────────────
+# ADD SINGLE NOMINEE
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/nominations/{nom_id}/nominees")
 async def add_nominee(
-    nom_id: int, 
-    request: Request, 
+    nom_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Add a single nominee to a nomination.
-    
-    :param nom_id: ID of the nomination to add the nominee to
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nomination detail page
-    """
     form = await request.form()
     film_id_raw = form.get("film_id")
     if not film_id_raw:
@@ -574,16 +556,12 @@ async def add_nominee(
     return RedirectResponse(url=f"/admin/nominations/{nom_id}", status_code=303)
 
 
+# ─────────────────────────────────────────────────────────────
+# BULK ADD NOMINEES
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/nominations/{nom_id}/nominees/bulk")
-async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
-    """
-    Bulk add nominees to a nomination.
-    
-    :param nom_id: ID of the nomination to add the nominees to
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nomination detail page
-    """
+async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends(get_db)):
     nom = db.get(Nomination, nom_id)
     if not nom:
         return RedirectResponse(url="/admin/nominations", status_code=303)
@@ -600,12 +578,12 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
             continue
 
         parts = [p.strip() for p in line.split("|")]
-        film_title   = parts[0] if len(parts) > 0 else ""
-        person_name = parts[1] if len(parts) > 1 else ""
-        person_url   = parts[2] if len(parts) > 2 else ""
-        item         = parts[3] if len(parts) > 3 else ""
-        item_url     = parts[4] if len(parts) > 4 else ""
-        
+        film_title  = _normalize(parts[0]) if len(parts) > 0 else ""
+        person_name = _normalize(parts[1]) if len(parts) > 1 else ""
+        person_url  = _normalize(parts[2]) if len(parts) > 2 else ""
+        item        = _normalize(parts[3]) if len(parts) > 3 else ""
+        item_url    = _normalize(parts[4]) if len(parts) > 4 else ""
+
         if not film_title:
             continue
 
@@ -618,13 +596,16 @@ async def bulk_add_nominees(nom_id: int, request: Request, db: Session = Depends
 
         person_objs: list[Person] = []
         if person_name:
-            was_new = not db.query(Person).filter(Person.name == person_name).first()
+            all_persons = db.query(Person).all()
+            existing_person = next(
+                (x for x in all_persons if _normalize(x.name) == person_name), None
+            )
+            was_new = existing_person is None
             p = _get_or_create_person(db, person_name, person_url)
             if was_new:
                 persons_created += 1
             person_objs.append(p)
 
-        # Duplicate check
         existing = db.query(Nominee).filter_by(
             nomination_id=nom_id,
             film_id=film.id,
@@ -669,14 +650,6 @@ def bulk_delete_nominees(
     ids: list[int] = Form(...),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    """
-    Bulk delete nominees from a nomination.
-    
-    :param nomination_id: ID of the nomination to delete the nominees from
-    :param ids: List of nominee IDs to delete
-    :param db: Database session
-    :returns: RedirectResponse to the nomination detail page
-    """
     db.query(Nominee).filter(
         Nominee.id.in_(ids),
         Nominee.nomination_id == nomination_id,
@@ -688,20 +661,16 @@ def bulk_delete_nominees(
     )
 
 
+# ─────────────────────────────────────────────────────────────
+# EDIT SINGLE NOMINEE (inline in detail table)
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/nominees/{nominee_id}/edit")
 async def edit_nominee(
-    nominee_id: int, 
-    request: Request, 
+    nominee_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Edit a single nominee.
-    
-    :param nominee_id: ID of the nominee to edit
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nomination detail page
-    """
     form = await request.form()
     nominee = db.get(Nominee, nominee_id)
     if not nominee:
@@ -733,20 +702,16 @@ async def edit_nominee(
     return RedirectResponse(url=f"/admin/nominations/{nominee.nomination_id}", status_code=303)
 
 
+# ─────────────────────────────────────────────────────────────
+# DELETE NOMINEE
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/nominees/{nominee_id}/delete")
 async def delete_nominee(
-    nominee_id: int, 
-    request: Request, 
+    nominee_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> RedirectResponse:
-    """
-    Delete a single nominee.
-    
-    :param nominee_id: ID of the nominee to delete
-    :param request: FastAPI request object
-    :param db: Database session
-    :returns: RedirectResponse to the nomination detail page
-    """
     form = await request.form()
     nominee = db.get(Nominee, nominee_id)
     if not nominee:
